@@ -53,6 +53,7 @@ const AuthLoginScreen = () => {
   const [initAttempts, setInitAttempts] = useState<number>(0);
   const [checkingSession, setCheckingSession] = useState(true);
   const [redirecting, setRedirecting] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
 
   useEffect(() => {
     const checkExistingSession = async () => {
@@ -187,6 +188,7 @@ const AuthLoginScreen = () => {
         setLoginError("Web3Auth not initialized.");
         return;
       }
+      setLoginLoading(true);
 
       const loginResult = await web3auth.login({ loginProvider: "google" });
 
@@ -222,11 +224,13 @@ const AuthLoginScreen = () => {
 
       const check = await checkUserExists(email);
       if (check.exists) {
-        const session = await loginExistingUser(email);
+        const token = check.token
+          ? check.token
+          : (await loginExistingUser(email)).token;
         await SecureStore.setItemAsync(
           "banter_session",
           JSON.stringify({
-            token: session.token,
+            token,
             email,
           })
         );
@@ -247,6 +251,8 @@ const AuthLoginScreen = () => {
       }
     } catch (error) {
       setLoginError((error as Error)?.message ?? "Login failed");
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -274,15 +280,18 @@ const AuthLoginScreen = () => {
       <Pressable
         style={[
           styles.googleButton,
-          (isInitializing || !web3auth) && styles.googleButtonDisabled,
+          (isInitializing || !web3auth || loginLoading) &&
+            styles.googleButtonDisabled,
         ]}
         onPress={login}
-        disabled={isInitializing || !web3auth}
+        disabled={isInitializing || !web3auth || loginLoading}
       >
-        {isInitializing ? (
+        {isInitializing || loginLoading ? (
           <>
             <ActivityIndicator color="#0d0d0d" />
-            <Text style={styles.googleButtonText}>Initializing...</Text>
+            <Text style={styles.googleButtonText}>
+              {isInitializing ? "Initializing..." : "Signing you in..."}
+            </Text>
           </>
         ) : (
           <>

@@ -53,22 +53,19 @@ export default function ProfileScreen() {
   }, [sessionLoaded, session?.token, router]);
 
   const fetchMe = async () => {
-    const fetchMe = async () => {
-      if (!session?.token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        setLoading(true);
-        const data = await apiFetch("/auth/me", undefined, true);
-        setMe(data.user || data);
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMe();
+    if (!session?.token) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await apiFetch("/auth/me", undefined, true);
+      setMe(data.user || data);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -146,7 +143,7 @@ export default function ProfileScreen() {
     </View>
   );
 
-  if (!sessionLoaded || loading) {
+  if (!sessionLoaded) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
@@ -174,6 +171,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {loading ? <Text style={styles.muted}>Loading profile…</Text> : null}
 
         <Pressable style={styles.bannerWrap} onPress={() => bannerUrl && setShowBanner(true)}>
           {bannerUrl ? (

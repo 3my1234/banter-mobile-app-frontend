@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -19,6 +21,8 @@ import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
 import { normalizeMediaUrl } from "@/lib/media";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 
 const ROAST_PREFIX = "[ROAST]";
 const REACTIONS = [
@@ -75,6 +79,8 @@ export default function PostDetail() {
   const [error, setError] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showMedia, setShowMedia] = useState(false);
+  const [savingMedia, setSavingMedia] = useState(false);
 
   const loadPost = useCallback(async () => {
     if (!id) return;
@@ -183,7 +189,7 @@ export default function PostDetail() {
             </Text>
             <Text style={styles.body}>{stripRoastPrefix(post.content || "")}</Text>
             {mediaUrl ? (
-              <View style={styles.mediaWrapper}>
+              <Pressable style={styles.mediaWrapper} onPress={() => setShowMedia(true)}>
                 {post.mediaType === "video" ? (
                   <Video
                     source={{ uri: mediaUrl }}
@@ -196,11 +202,12 @@ export default function PostDetail() {
                     source={{ uri: mediaUrl }}
                     style={[styles.media, { aspectRatio: 16 / 9 }]}
                     contentFit="cover"
+                    contentPosition="center"
                     transition={180}
                     cachePolicy="memory-disk"
                   />
                 )}
-              </View>
+              </Pressable>
             ) : null}
             {isRoast && (
               <View style={{ marginTop: 10 }}>
@@ -227,6 +234,27 @@ export default function PostDetail() {
       </View>
     );
   }, [post, avatarUrl, displayName, handle, createdAt, isRoast, mediaUrl]);
+
+  const saveMedia = async () => {
+    if (!mediaUrl) return;
+    setSavingMedia(true);
+    try {
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (!perm.granted) {
+        throw new Error("Permission denied");
+      }
+      const ext = mediaUrl.split(".").pop()?.split("?")[0] || "jpg";
+      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
+      const download = await FileSystem.downloadAsync(mediaUrl, fileUri);
+      const asset = await MediaLibrary.createAssetAsync(download.uri);
+      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      Alert.alert("Saved", "Media saved to your gallery.");
+    } catch (e: any) {
+      Alert.alert("Save failed", e.message || "Could not save media.");
+    } finally {
+      setSavingMedia(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -306,6 +334,41 @@ export default function PostDetail() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {mediaUrl ? (
+        <Modal transparent visible={showMedia} animationType="fade">
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowMedia(false)}>
+            {post?.mediaType === "video" ? (
+              <Video
+                source={{ uri: mediaUrl }}
+                style={styles.modalMedia}
+                resizeMode={ResizeMode.CONTAIN}
+                useNativeControls
+              />
+            ) : (
+              <ExpoImage
+                source={{ uri: mediaUrl }}
+                style={styles.modalMedia}
+                contentFit="contain"
+                contentPosition="center"
+                cachePolicy="memory-disk"
+              />
+            )}
+          </Pressable>
+          <View style={[styles.modalActions, { paddingBottom: 12 + insets.bottom }]}>
+            <Pressable style={styles.modalBtn} onPress={() => setShowMedia(false)}>
+              <Text style={styles.modalBtnText}>Close</Text>
+            </Pressable>
+            <Pressable style={styles.modalBtnPrimary} onPress={saveMedia} disabled={savingMedia}>
+              {savingMedia ? (
+                <ActivityIndicator color="#0d0d0d" />
+              ) : (
+                <Text style={styles.modalBtnPrimaryText}>Save</Text>
+              )}
+            </Pressable>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -328,7 +391,14 @@ const styles = StyleSheet.create({
   name: { color: "#fafafa", fontWeight: "700" },
   handle: { color: "#888", fontWeight: "400" },
   body: { color: "#fafafa", marginTop: 4, lineHeight: 20 },
-  mediaWrapper: { marginTop: 8, borderRadius: 12, overflow: "hidden", backgroundColor: "#111" },
+  mediaWrapper: {
+    marginTop: 8,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "#1f1f1f",
+  },
   media: { width: "100%" },
   voteActions: { flexDirection: "row", gap: 10, marginTop: 8 },
   stayBtn: {
@@ -389,4 +459,36 @@ const styles = StyleSheet.create({
   muted: { color: "#888", marginTop: 8 },
   error: { color: "#ff6b35", paddingHorizontal: 16, paddingTop: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalMedia: { width: "96%", height: "80%" },
+  modalActions: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  modalBtn: {
+    flex: 1,
+    backgroundColor: "#1f1f1f",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  modalBtnText: { color: "#fff", fontWeight: "700" },
+  modalBtnPrimary: {
+    flex: 1,
+    backgroundColor: "#ff6b35",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  modalBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
 });

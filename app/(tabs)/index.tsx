@@ -52,6 +52,7 @@ export default function HomeFeed() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"forYou" | "following" | "hot">("forYou");
+  const [meAvatar, setMeAvatar] = useState<string | null>(null);
 
   const loadPosts = useCallback(async () => {
     try {
@@ -95,14 +96,26 @@ export default function HomeFeed() {
     }
   }, [tab]);
 
+  const loadMe = useCallback(async () => {
+    try {
+      const data = await apiFetch("/auth/me", undefined, true);
+      const user = data.user || data;
+      setMeAvatar(normalizeMediaUrl(user?.avatarUrl) ?? null);
+    } catch {
+      setMeAvatar(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     loadPosts();
+    loadMe();
   }, [loadPosts]);
 
   useFocusEffect(
     useCallback(() => {
       loadPosts();
-    }, [loadPosts])
+      loadMe();
+    }, [loadPosts, loadMe])
   );
 
   const handleRefresh = () => {
@@ -198,6 +211,7 @@ export default function HomeFeed() {
                         : { aspectRatio: 16 / 9 },
                     ]}
                     contentFit="cover"
+                    contentPosition="center"
                     transition={180}
                     cachePolicy="memory-disk"
                   />
@@ -240,7 +254,19 @@ export default function HomeFeed() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
         <View style={styles.topBar}>
-          <View style={styles.avatarSmall} />
+          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+            {meAvatar ? (
+              <ExpoImage
+                source={{ uri: meAvatar }}
+                style={styles.avatarSmall}
+                contentFit="cover"
+                transition={180}
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <View style={styles.avatarSmall} />
+            )}
+          </Pressable>
           <Text style={styles.brand}>Banter</Text>
           <FontAwesome name="cog" size={18} color="#fff" />
         </View>
@@ -349,8 +375,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "#1f1f1f",
   },
-  media: { width: "100%" },
+  media: { width: "100%", alignSelf: "center" },
   voteActions: {
     flexDirection: "row",
     gap: 10,
