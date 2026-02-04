@@ -4,7 +4,7 @@
     "slug": "banter-v3",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/banter-logo.png",
     "scheme": "banterv3",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -18,11 +18,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/banter-logo.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.banterapp.banterv3"
     },
     "web": {
       "bundler": "metro",
