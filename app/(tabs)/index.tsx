@@ -36,6 +36,7 @@ type Post = {
   commentCount?: number;
   reactionCount?: number;
   shareCount?: number;
+  reactionBreakdown?: Record<string, number>;
 };
 
 const ROAST_PREFIX = "[ROAST]";
@@ -93,6 +94,7 @@ export default function HomeFeed() {
           commentCount: post.commentCount ?? 0,
           reactionCount: post.reactionCount ?? 0,
           shareCount: post.shareCount ?? 0,
+          reactionBreakdown: post.reactionBreakdown || {},
         } as Post;
       });
       setPosts(mapped);
@@ -188,12 +190,20 @@ export default function HomeFeed() {
       };
 
       const onReactionUpdate = (payload: any) => {
-        const { postId, reactionCount } = payload || {};
+        const { postId, reactionCount, reactionBreakdown } = payload || {};
         if (!postId) return;
-        if (typeof reactionCount !== "number") return;
         setPosts((prev) =>
           prev.map((p) =>
-            p.id === postId ? { ...p, reactionCount } : p
+            p.id === postId
+              ? {
+                  ...p,
+                  reactionCount:
+                    typeof reactionCount === "number"
+                      ? reactionCount
+                      : p.reactionCount,
+                  reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
+                }
+              : p
           )
         );
       };
@@ -254,6 +264,8 @@ export default function HomeFeed() {
 
   const renderItem = ({ item }: { item: Post }) => {
     const isRoast = item.type === "roast";
+    const loveCount = item.reactionBreakdown?.LOVE ?? 0;
+    const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
     return (
       <Pressable style={styles.card} onPress={() => router.push(`/post/${item.id}`)}>
         <View style={styles.row}>
@@ -354,10 +366,20 @@ export default function HomeFeed() {
                   {isRoast ? "Rebanter" : "Repost"}
                 </Text>
               </View>
-              <View style={styles.actionItem}>
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => handleReaction(item.id, "LOVE")}
+              >
                 <FontAwesome name="heart" size={14} color="#9ca3af" />
-                <Text style={styles.actionText}>{item.reactionCount ?? 0}</Text>
-              </View>
+                <Text style={styles.actionText}>{loveCount}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => handleReaction(item.id, "ANGRY")}
+              >
+                <FontAwesome name="thumbs-down" size={14} color="#9ca3af" />
+                <Text style={styles.actionText}>{dislikeCount}</Text>
+              </Pressable>
               <Pressable
                 style={styles.actionItem}
                 onPress={() => handleShare(item)}
@@ -543,3 +565,27 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 });
+  const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
+    try {
+      const data = await apiFetch("/reactions", {
+        method: "POST",
+        body: JSON.stringify({ postId, type }),
+      });
+      const reactionCount = data?.reactionCount;
+      const reactionBreakdown = data?.reactionBreakdown;
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                reactionCount:
+                  typeof reactionCount === "number" ? reactionCount : p.reactionCount,
+                reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
+              }
+            : p
+        )
+      );
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };

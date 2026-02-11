@@ -29,14 +29,6 @@ import * as MediaLibrary from "expo-media-library";
 import { getSocket } from "@/lib/socket";
 
 const ROAST_PREFIX = "[ROAST]";
-const REACTIONS = [
-  { type: "LIKE", icon: "heart-o" },
-  { type: "LOVE", icon: "heart" },
-  { type: "LAUGH", icon: "smile-o" },
-  { type: "FIRE", icon: "fire" },
-  { type: "ANGRY", icon: "frown-o" },
-  { type: "SAD", icon: "meh-o" },
-] as const;
 
 type Post = {
   id: string;
@@ -141,7 +133,7 @@ export default function PostDetail() {
     }
   };
 
-  const handleReaction = async (type: string) => {
+  const handleReaction = async (type: "LOVE" | "ANGRY") => {
     if (!post) return;
     try {
       const data = await apiFetch("/reactions", {
@@ -379,29 +371,23 @@ export default function PostDetail() {
                 </View>
               </View>
             )}
-            <View style={styles.reactionsRow}>
-              {REACTIONS.map((r) => (
-                <Pressable
-                  key={r.type}
-                  style={styles.reactionItem}
-                  onPress={() => handleReaction(r.type)}
-                >
-                  <FontAwesome name={r.icon as any} size={16} color="#9ca3af" />
-                  <Text style={styles.reactionCount}>
-                    {post.reactionBreakdown?.[r.type] ?? 0}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
             <View style={styles.metaRow}>
               <View style={styles.metaItem}>
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
               <View style={styles.metaItem}>
-                <FontAwesome name="smile-o" size={14} color="#9ca3af" />
-                <Text style={styles.metaText}>Reactions {post.reactionCount ?? 0}</Text>
+                <FontAwesome name="retweet" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{isRoast ? "Rebanter" : "Repost"}</Text>
               </View>
+              <Pressable style={styles.metaItem} onPress={() => handleReaction("LOVE")}>
+                <FontAwesome name="heart" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.reactionBreakdown?.LOVE ?? 0}</Text>
+              </Pressable>
+              <Pressable style={styles.metaItem} onPress={() => handleReaction("ANGRY")}>
+                <FontAwesome name="thumbs-down" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.reactionBreakdown?.ANGRY ?? 0}</Text>
+              </Pressable>
               <View style={styles.metaItem}>
                 <FontAwesome name="share-alt" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.shareCount ?? 0}</Text>
@@ -627,9 +613,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   voteBtnText: { color: "#fafafa", fontWeight: "700" },
-  reactionsRow: { flexDirection: "row", gap: 18, marginTop: 12 },
-  reactionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
-  reactionCount: { color: "#9ca3af", fontSize: 12 },
   metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
   metaText: { color: "#9ca3af", fontSize: 12 },
