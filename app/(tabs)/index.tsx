@@ -17,6 +17,7 @@ import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
 import { useFocusEffect } from "@react-navigation/native";
+import { getSocket } from "@/lib/socket";
 
 type Post = {
   id: string;
@@ -31,6 +32,8 @@ type Post = {
   avatarUrl?: string | null;
   tags?: string[];
   league?: string | null;
+  commentCount?: number;
+  reactionCount?: number;
 };
 
 const ROAST_PREFIX = "[ROAST]";
@@ -85,6 +88,8 @@ export default function HomeFeed() {
           avatarUrl: avatarUrl ?? null,
           tags: post.tags || [],
           league: post.league || null,
+          commentCount: post.commentCount ?? 0,
+          reactionCount: post.reactionCount ?? 0,
         } as Post;
       });
       setPosts(mapped);
@@ -124,28 +129,93 @@ export default function HomeFeed() {
   };
 
   const handleVote = async (postId: string, voteType: "STAY" | "DROP") => {
-    const previous = posts;
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              stayVotes: p.stayVotes + (voteType === "STAY" ? 1 : 0),
-              dropVotes: p.dropVotes + (voteType === "DROP" ? 1 : 0),
-            }
-          : p
-      )
-    );
     try {
-      await apiFetch("/votes", {
+      const data = await apiFetch("/votes", {
         method: "POST",
         body: JSON.stringify({ postId, voteType }),
       });
+      const next = data?.post;
+      if (next?.id) {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === next.id
+              ? { ...p, stayVotes: next.stayVotes, dropVotes: next.dropVotes }
+              : p
+          )
+        );
+      }
     } catch (e: any) {
-      setPosts(previous);
       setError(e.message);
     }
   };
+
+  React.useEffect(() => {
+    let active = true;
+    let socket: any;
+
+    const setup = async () => {
+      socket = await getSocket();
+      if (!active) return;
+
+      const onVoteUpdate = (payload: any) => {
+        const { postId, stayVotes, dropVotes } = payload || {};
+        if (!postId) return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, stayVotes, dropVotes } : p
+          )
+        );
+      };
+
+      const onPostHidden = (payload: any) => {
+        const { postId } = payload || {};
+        if (!postId) return;
+        setPosts((prev) => prev.filter((p) => p.id !== postId));
+      };
+
+      const onCommentCreated = (payload: any) => {
+        const { postId, commentCount } = payload || {};
+        if (!postId) return;
+        if (typeof commentCount !== "number") return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, commentCount } : p
+          )
+        );
+      };
+
+      const onReactionUpdate = (payload: any) => {
+        const { postId, reactionCount } = payload || {};
+        if (!postId) return;
+        if (typeof reactionCount !== "number") return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, reactionCount } : p
+          )
+        );
+      };
+
+      socket.on("vote-update", onVoteUpdate);
+      socket.on("post-hidden", onPostHidden);
+      socket.on("comment-created", onCommentCreated);
+      socket.on("reaction-update", onReactionUpdate);
+
+      socket.on("post-stays", () => {});
+    };
+
+    setup();
+
+    return () => {
+      active = false;
+      if (socket) {
+        socket.off("vote-update");
+        socket.off("post-hidden");
+        socket.off("comment-created");
+        socket.off("reaction-update");
+        socket.off("post-stays");
+      }
+    };
+  }, []);
 
   const visiblePosts = useMemo(() => posts, [posts]);
 

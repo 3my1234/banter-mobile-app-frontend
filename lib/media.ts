@@ -93,11 +93,23 @@ export async function uploadToS3(uploadUrl: string, uri: string, mimeType: strin
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
-const S3_BUCKET =
-  process.env.EXPO_PUBLIC_S3_BUCKET_NAME ?? "baze-bucket";
-const S3_REGION =
-  process.env.EXPO_PUBLIC_S3_REGION ?? "eu-north-1";
-const S3_BASE = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com`;
+const MEDIA_BASE =
+  process.env.EXPO_PUBLIC_MEDIA_BASE_URL ?? "https://media.sportbanter.online";
+const MEDIA_BASE_URL = MEDIA_BASE.replace(/\/+$/, "");
+
+function toCdnUrl(keyOrPath: string) {
+  const normalized = keyOrPath.replace(/^\/+/, "");
+  return `${MEDIA_BASE_URL}/${normalized}`;
+}
+
+function extractCdnPathFromS3(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.replace(/^\/+/, "");
+  } catch {
+    return "";
+  }
+}
 
 export function normalizeMediaUrl(url?: string | null) {
   if (!url) return undefined;
@@ -113,12 +125,16 @@ export function normalizeMediaUrl(url?: string | null) {
     const idx = normalized.indexOf(viewPrefix);
     const key = normalized.slice(idx + viewPrefix.length).replace(/^\/+/, "");
     if (key) {
-      return `${S3_BASE}/${key}`;
+      return toCdnUrl(key);
     }
+  }
+  if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(normalized)) {
+    const path = extractCdnPathFromS3(normalized);
+    if (path) return toCdnUrl(path);
   }
   if (!/^https?:\/\//.test(normalized)) {
     const trimmed = normalized.replace(/^\/+/, "");
-    normalized = `${S3_BASE}/${trimmed}`;
+    normalized = toCdnUrl(trimmed);
   }
   return normalized;
 }

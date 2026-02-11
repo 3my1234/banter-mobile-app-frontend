@@ -16,6 +16,8 @@ import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl, pickMedia, presignUpload, uploadToS3 } from "@/lib/media";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
+import * as Clipboard from "expo-clipboard";
 
 type Session = { token: string; email?: string };
 
@@ -30,6 +32,7 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [showAvatar, setShowAvatar] = useState(false);
   const [showBanner, setShowBanner] = useState(false);
+  const [copiedWallet, setCopiedWallet] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSession = async () => {
@@ -136,11 +139,36 @@ export default function ProfileScreen() {
     }
   };
 
+  const formatAddress = (value?: string) => {
+    if (!value) return "-";
+    if (value.length <= 12) return value;
+    return `${value.slice(0, 6)}...${value.slice(-4)}`;
+  };
+
+  const handleCopy = async (label: string, value?: string) => {
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setCopiedWallet(label);
+    setTimeout(() => setCopiedWallet(null), 1500);
+  };
+
   const Row = ({ label, value }: { label: string; value?: string }) => (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
       <Text style={styles.value}>{value ?? "-"}</Text>
     </View>
+  );
+
+  const WalletRow = ({ label, value }: { label: string; value?: string }) => (
+    <Pressable style={styles.walletRow} onPress={() => handleCopy(label, value)}>
+      <View style={styles.walletInfo}>
+        <Text style={styles.walletLabel}>{label}</Text>
+        <Text style={styles.walletValue} numberOfLines={1}>
+          {formatAddress(value)}
+        </Text>
+      </View>
+      <FontAwesome name="copy" size={14} color="#9ca3af" />
+    </Pressable>
   );
 
   if (!sessionLoaded) {
@@ -211,9 +239,14 @@ export default function ProfileScreen() {
         <Text style={styles.bio}>{bio}</Text>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Wallets</Text>
-          <Row label="Solana" value={me?.solanaAddress} />
-          <Row label="Movement" value={me?.movementAddress} />
+          <View style={styles.walletHeader}>
+            <Text style={styles.sectionTitle}>Wallets</Text>
+            {copiedWallet ? (
+              <Text style={styles.copiedText}>Copied {copiedWallet}</Text>
+            ) : null}
+          </View>
+          <WalletRow label="Solana" value={me?.solanaAddress} />
+          <WalletRow label="Movement" value={me?.movementAddress} />
         </View>
 
         <View style={styles.card}>
@@ -280,9 +313,27 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: "700", color: "#fff" },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#fff", marginBottom: 8 },
   card: { backgroundColor: "#111", borderRadius: 12, padding: 14 },
+  walletHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  copiedText: { color: "#10b981", fontSize: 12 },
   row: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
   label: { color: "#999" },
   value: { color: "#fff", textAlign: "right", flex: 1, marginLeft: 12 },
+  walletRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderTopColor: "#1f1f1f",
+    borderTopWidth: 1,
+  },
+  walletInfo: { flex: 1, marginRight: 10 },
+  walletLabel: { color: "#9ca3af", fontSize: 12 },
+  walletValue: { color: "#e5e7eb", fontSize: 13, marginTop: 2 },
   muted: { color: "#999", marginTop: 8 },
   error: { color: "#ff6b35" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },

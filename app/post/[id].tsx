@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
+import { Image as RNImage } from "react-native";
 import { Video, ResizeMode } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
@@ -23,6 +24,7 @@ import VoteGauge from "@/components/VoteGauge";
 import { normalizeMediaUrl } from "@/lib/media";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
+import { getSocket } from "@/lib/socket";
 
 const ROAST_PREFIX = "[ROAST]";
 const REACTIONS = [
@@ -44,6 +46,8 @@ type Post = {
   league?: string | null;
   stayVotes: number;
   dropVotes: number;
+  commentCount?: number;
+  reactionCount?: number;
   createdAt: string;
   user?: {
     id: string;
@@ -81,6 +85,7 @@ export default function PostDetail() {
   const [submitting, setSubmitting] = useState(false);
   const [showMedia, setShowMedia] = useState(false);
   const [savingMedia, setSavingMedia] = useState(false);
+  const [detailAspect, setDetailAspect] = useState<number | null>(null);
 
   const loadPost = useCallback(async () => {
     if (!id) return;
@@ -113,19 +118,20 @@ export default function PostDetail() {
 
   const handleVote = async (voteType: "STAY" | "DROP") => {
     if (!post) return;
-    const prev = post;
-    setPost({
-      ...post,
-      stayVotes: post.stayVotes + (voteType === "STAY" ? 1 : 0),
-      dropVotes: post.dropVotes + (voteType === "DROP" ? 1 : 0),
-    });
     try {
-      await apiFetch("/votes", {
+      const data = await apiFetch("/votes", {
         method: "POST",
         body: JSON.stringify({ postId: post.id, voteType }),
       });
+      const next = data?.post;
+      if (next?.id) {
+        setPost({
+          ...post,
+          stayVotes: next.stayVotes,
+          dropVotes: next.dropVotes,
+        });
+      }
     } catch (e: any) {
-      setPost(prev);
       setError(e.message);
     }
   };
@@ -133,10 +139,15 @@ export default function PostDetail() {
   const handleReaction = async (type: string) => {
     if (!post) return;
     try {
-      await apiFetch("/reactions", {
+      const data = await apiFetch("/reactions", {
         method: "POST",
         body: JSON.stringify({ postId: post.id, type }),
       });
+      if (typeof data?.reactionCount === "number") {
+        setPost((prev) =>
+          prev ? { ...prev, reactionCount: data.reactionCount } : prev
+        );
+      }
     } catch (e: any) {
       setError(e.message);
     }
@@ -151,7 +162,15 @@ export default function PostDetail() {
         body: JSON.stringify({ postId: post.id, content: commentText.trim() }),
       });
       const created = data.comment || data;
-      setComments((prev) => [...prev, created]);
+      setComments((prev) => {
+        const exists = prev.some((c) => c.id === created.id);
+        return exists ? prev : [...prev, created];
+      });
+      if (typeof data?.commentCount === "number") {
+        setPost((prev) =>
+          prev ? { ...prev, commentCount: data.commentCount } : prev
+        );
+      }
       setCommentText("");
     } catch (e: any) {
       setError(e.message);
@@ -166,6 +185,103 @@ export default function PostDetail() {
   const handle = post?.user?.username ? `@${post.user.username}` : "@banter";
   const createdAt = post?.createdAt ? formatRelativeTime(post.createdAt) : "";
   const isRoast = !!post?.isRoast || (post?.content || "").startsWith(ROAST_PREFIX);
+
+  useEffect(() => {
+    if (!mediaUrl) {
+      setDetailAspect(null);
+      return;
+    }
+    if (post?.mediaType === "video") {
+      setDetailAspect(16 / 9);
+      return;
+    }
+    RNImage.getSize(
+      mediaUrl,
+      (width, height) => {
+        if (width && height) {
+          const aspect = width / height;
+          const clamped = Math.min(Math.max(aspect, 0.75), 1.91);
+          setDetailAspect(clamped);
+        }
+      },
+      () => setDetailAspect(16 / 9)
+    );
+  }, [mediaUrl, post?.mediaType]);
+
+  useEffect(() => {
+    let active = true;
+    let socket: any;
+
+    const setup = async () => {
+      if (!id) return;
+      socket = await getSocket();
+      if (!active) return;
+
+      socket.emit("join-post", id);
+
+      const onVoteUpdate = (payload: any) => {
+        const { postId, stayVotes, dropVotes } = payload || {};
+        if (!postId) return;
+        setPost((prev) =>
+          prev && prev.id === postId ? { ...prev, stayVotes, dropVotes } : prev
+        );
+      };
+
+      const onPostHidden = (payload: any) => {
+        const { postId } = payload || {};
+        if (!postId) return;
+        setPost((prev) => (prev && prev.id === postId ? prev : prev));
+        if (postId === id) {
+          setError("This post has been hidden.");
+        }
+      };
+
+      const onCommentCreated = (payload: any) => {
+        const { postId, comment, commentCount } = payload || {};
+        if (!postId || postId !== id || !comment?.id) return;
+        setComments((prev) => {
+          const exists = prev.some((c) => c.id === comment.id);
+          return exists ? prev : [...prev, comment];
+        });
+        if (typeof commentCount === "number") {
+          setPost((prev) =>
+            prev ? { ...prev, commentCount } : prev
+          );
+        }
+      };
+
+      const onReactionUpdate = (payload: any) => {
+        const { postId, reactionCount } = payload || {};
+        if (!postId || postId !== id) return;
+        if (typeof reactionCount === "number") {
+          setPost((prev) =>
+            prev ? { ...prev, reactionCount } : prev
+          );
+        }
+      };
+
+      socket.on("vote-update", onVoteUpdate);
+      socket.on("post-hidden", onPostHidden);
+      socket.on("comment-created", onCommentCreated);
+      socket.on("reaction-update", onReactionUpdate);
+
+      socket.on("post-stays", () => {});
+    };
+
+    setup();
+
+    return () => {
+      active = false;
+      if (socket) {
+        if (id) socket.emit("leave-post", id);
+        socket.off("vote-update");
+        socket.off("post-hidden");
+        socket.off("comment-created");
+        socket.off("reaction-update");
+        socket.off("post-stays");
+      }
+    };
+  }, [id]);
 
   const header = useMemo(() => {
     if (!post) return null;
@@ -193,15 +309,15 @@ export default function PostDetail() {
                 {post.mediaType === "video" ? (
                   <Video
                     source={{ uri: mediaUrl }}
-                    style={[styles.media, { aspectRatio: 16 / 9 }]}
+                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
                     resizeMode={ResizeMode.COVER}
                     useNativeControls
                   />
                 ) : (
                   <ExpoImage
                     source={{ uri: mediaUrl }}
-                    style={[styles.media, { aspectRatio: 16 / 9 }]}
-                    contentFit="cover"
+                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
+                    contentFit="contain"
                     contentPosition="center"
                     transition={180}
                     cachePolicy="memory-disk"
