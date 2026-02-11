@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   Share,
@@ -360,12 +361,20 @@ export default function HomeFeed() {
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
               </Pressable>
-              <View style={styles.actionItem}>
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => {
+                  Alert.alert(
+                    isRoast ? "Rebanter" : "Repost",
+                    "Repost/Rebanter is coming soon."
+                  );
+                }}
+              >
                 <FontAwesome name="retweet" size={14} color="#9ca3af" />
                 <Text style={styles.actionText}>
                   {isRoast ? "Rebanter" : "Repost"}
                 </Text>
-              </View>
+              </Pressable>
               <Pressable
                 style={styles.actionItem}
                 onPress={() => handleReaction(item.id, "LOVE")}

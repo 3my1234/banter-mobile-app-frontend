@@ -376,10 +376,18 @@ export default function PostDetail() {
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
-              <View style={styles.metaItem}>
+              <Pressable
+                style={styles.metaItem}
+                onPress={() =>
+                  Alert.alert(
+                    isRoast ? "Rebanter" : "Repost",
+                    "Repost/Rebanter is coming soon."
+                  )
+                }
+              >
                 <FontAwesome name="retweet" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{isRoast ? "Rebanter" : "Repost"}</Text>
-              </View>
+              </Pressable>
               <Pressable style={styles.metaItem} onPress={() => handleReaction("LOVE")}>
                 <FontAwesome name="heart" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.LOVE ?? 0}</Text>
@@ -388,10 +396,6 @@ export default function PostDetail() {
                 <FontAwesome name="thumbs-down" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.ANGRY ?? 0}</Text>
               </Pressable>
-              <View style={styles.metaItem}>
-                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
-                <Text style={styles.metaText}>{post.shareCount ?? 0}</Text>
-              </View>
               <Pressable
                 style={styles.metaItem}
                 onPress={async () => {
@@ -415,8 +419,8 @@ export default function PostDetail() {
                   }
                 }}
               >
-                <FontAwesome name="send" size={14} color="#9ca3af" />
-                <Text style={styles.metaText}>Share</Text>
+                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.shareCount ?? 0}</Text>
               </Pressable>
             </View>
           </View>
