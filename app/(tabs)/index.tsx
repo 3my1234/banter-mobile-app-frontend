@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   Share,
@@ -38,6 +37,7 @@ type Post = {
   reactionCount?: number;
   shareCount?: number;
   reactionBreakdown?: Record<string, number>;
+  repostCount?: number;
 };
 
 const ROAST_PREFIX = "[ROAST]";
@@ -96,6 +96,7 @@ export default function HomeFeed() {
           reactionCount: post.reactionCount ?? 0,
           shareCount: post.shareCount ?? 0,
           reactionBreakdown: post.reactionBreakdown || {},
+          repostCount: post.repostCount ?? 0,
         } as Post;
       });
       setPosts(mapped);
@@ -150,6 +151,31 @@ export default function HomeFeed() {
           )
         );
       }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
+    try {
+      const data = await apiFetch("/reactions", {
+        method: "POST",
+        body: JSON.stringify({ postId, type }),
+      });
+      const reactionCount = data?.reactionCount;
+      const reactionBreakdown = data?.reactionBreakdown;
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                reactionCount:
+                  typeof reactionCount === "number" ? reactionCount : p.reactionCount,
+                reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
+              }
+            : p
+        )
+      );
     } catch (e: any) {
       setError(e.message);
     }
@@ -220,11 +246,23 @@ export default function HomeFeed() {
         );
       };
 
+      const onRepostUpdate = (payload: any) => {
+        const { postId, repostCount } = payload || {};
+        if (!postId) return;
+        if (typeof repostCount !== "number") return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, repostCount } : p
+          )
+        );
+      };
+
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
       socket.on("comment-created", onCommentCreated);
       socket.on("reaction-update", onReactionUpdate);
       socket.on("share-update", onShareUpdate);
+      socket.on("repost-update", onRepostUpdate);
 
       socket.on("post-stays", () => {});
     };
@@ -239,6 +277,7 @@ export default function HomeFeed() {
         socket.off("comment-created");
         socket.off("reaction-update");
         socket.off("share-update");
+        socket.off("repost-update");
         socket.off("post-stays");
       }
     };
@@ -260,6 +299,21 @@ export default function HomeFeed() {
       }
     } catch {
       // ignore
+    }
+  };
+
+  const handleRepost = async (item: Post) => {
+    try {
+      const data = await apiFetch(`/posts/${item.id}/repost`, { method: "POST" });
+      if (typeof data?.repostCount === "number") {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === item.id ? { ...p, repostCount: data.repostCount } : p
+          )
+        );
+      }
+    } catch (e: any) {
+      setError(e.message);
     }
   };
 
@@ -361,19 +415,9 @@ export default function HomeFeed() {
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
               </Pressable>
-              <Pressable
-                style={styles.actionItem}
-                onPress={() => {
-                  Alert.alert(
-                    isRoast ? "Rebanter" : "Repost",
-                    "Repost/Rebanter is coming soon."
-                  );
-                }}
-              >
+              <Pressable style={styles.actionItem} onPress={() => handleRepost(item)}>
                 <FontAwesome name="retweet" size={14} color="#9ca3af" />
-                <Text style={styles.actionText}>
-                  {isRoast ? "Rebanter" : "Repost"}
-                </Text>
+                <Text style={styles.actionText}>{item.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable
                 style={styles.actionItem}
@@ -574,27 +618,3 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 });
-  const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
-    try {
-      const data = await apiFetch("/reactions", {
-        method: "POST",
-        body: JSON.stringify({ postId, type }),
-      });
-      const reactionCount = data?.reactionCount;
-      const reactionBreakdown = data?.reactionBreakdown;
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                reactionCount:
-                  typeof reactionCount === "number" ? reactionCount : p.reactionCount,
-                reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
-              }
-            : p
-        )
-      );
-    } catch (e: any) {
-      setError(e.message);
-    }
-  };

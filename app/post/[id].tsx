@@ -44,6 +44,7 @@ type Post = {
   reactionCount?: number;
   shareCount?: number;
   reactionBreakdown?: Record<string, number>;
+  repostCount?: number;
   createdAt: string;
   user?: {
     id: string;
@@ -148,6 +149,20 @@ export default function PostDetail() {
       if (data?.reactionBreakdown) {
         setPost((prev) =>
           prev ? { ...prev, reactionBreakdown: data.reactionBreakdown } : prev
+        );
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleRepost = async () => {
+    if (!post) return;
+    try {
+      const data = await apiFetch(`/posts/${post.id}/repost`, { method: "POST" });
+      if (typeof data?.repostCount === "number") {
+        setPost((prev) =>
+          prev ? { ...prev, repostCount: data.repostCount } : prev
         );
       }
     } catch (e: any) {
@@ -291,11 +306,22 @@ export default function PostDetail() {
         }
       };
 
+      const onRepostUpdate = (payload: any) => {
+        const { postId, repostCount } = payload || {};
+        if (!postId || postId !== id) return;
+        if (typeof repostCount === "number") {
+          setPost((prev) =>
+            prev ? { ...prev, repostCount } : prev
+          );
+        }
+      };
+
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
       socket.on("comment-created", onCommentCreated);
       socket.on("reaction-update", onReactionUpdate);
       socket.on("share-update", onShareUpdate);
+      socket.on("repost-update", onRepostUpdate);
 
       socket.on("post-stays", () => {});
     };
@@ -311,6 +337,7 @@ export default function PostDetail() {
         socket.off("comment-created");
         socket.off("reaction-update");
         socket.off("share-update");
+        socket.off("repost-update");
         socket.off("post-stays");
       }
     };
@@ -376,17 +403,9 @@ export default function PostDetail() {
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
-              <Pressable
-                style={styles.metaItem}
-                onPress={() =>
-                  Alert.alert(
-                    isRoast ? "Rebanter" : "Repost",
-                    "Repost/Rebanter is coming soon."
-                  )
-                }
-              >
+              <Pressable style={styles.metaItem} onPress={handleRepost}>
                 <FontAwesome name="retweet" size={14} color="#9ca3af" />
-                <Text style={styles.metaText}>{isRoast ? "Rebanter" : "Repost"}</Text>
+                <Text style={styles.metaText}>{post.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable style={styles.metaItem} onPress={() => handleReaction("LOVE")}>
                 <FontAwesome name="heart" size={14} color="#9ca3af" />
