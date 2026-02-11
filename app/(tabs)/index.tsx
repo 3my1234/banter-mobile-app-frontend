@@ -35,6 +35,7 @@ type Post = {
   league?: string | null;
   commentCount?: number;
   reactionCount?: number;
+  shareCount?: number;
 };
 
 const ROAST_PREFIX = "[ROAST]";
@@ -91,6 +92,7 @@ export default function HomeFeed() {
           league: post.league || null,
           commentCount: post.commentCount ?? 0,
           reactionCount: post.reactionCount ?? 0,
+          shareCount: post.shareCount ?? 0,
         } as Post;
       });
       setPosts(mapped);
@@ -196,10 +198,22 @@ export default function HomeFeed() {
         );
       };
 
+      const onShareUpdate = (payload: any) => {
+        const { postId, shareCount } = payload || {};
+        if (!postId) return;
+        if (typeof shareCount !== "number") return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, shareCount } : p
+          )
+        );
+      };
+
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
       socket.on("comment-created", onCommentCreated);
       socket.on("reaction-update", onReactionUpdate);
+      socket.on("share-update", onShareUpdate);
 
       socket.on("post-stays", () => {});
     };
@@ -213,6 +227,7 @@ export default function HomeFeed() {
         socket.off("post-hidden");
         socket.off("comment-created");
         socket.off("reaction-update");
+        socket.off("share-update");
         socket.off("post-stays");
       }
     };
@@ -224,6 +239,14 @@ export default function HomeFeed() {
     try {
       const message = item.text?.trim() || "Banter post";
       await Share.share({ message });
+      const data = await apiFetch(`/posts/${item.id}/share`, { method: "POST" });
+      if (typeof data?.shareCount === "number") {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === item.id ? { ...p, shareCount: data.shareCount } : p
+          )
+        );
+      }
     } catch {
       // ignore
     }
@@ -326,6 +349,12 @@ export default function HomeFeed() {
                 <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
               </Pressable>
               <View style={styles.actionItem}>
+                <FontAwesome name="retweet" size={14} color="#9ca3af" />
+                <Text style={styles.actionText}>
+                  {isRoast ? "Rebanter" : "Repost"}
+                </Text>
+              </View>
+              <View style={styles.actionItem}>
                 <FontAwesome name="heart" size={14} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.reactionCount ?? 0}</Text>
               </View>
@@ -334,7 +363,7 @@ export default function HomeFeed() {
                 onPress={() => handleShare(item)}
               >
                 <FontAwesome name="share-alt" size={14} color="#9ca3af" />
-                <Text style={styles.actionText}>Share</Text>
+                <Text style={styles.actionText}>{item.shareCount ?? 0}</Text>
               </Pressable>
             </View>
           </View>

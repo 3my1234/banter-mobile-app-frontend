@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -49,6 +50,8 @@ type Post = {
   dropVotes: number;
   commentCount?: number;
   reactionCount?: number;
+  shareCount?: number;
+  reactionBreakdown?: Record<string, number>;
   createdAt: string;
   user?: {
     id: string;
@@ -87,6 +90,7 @@ export default function PostDetail() {
   const [showMedia, setShowMedia] = useState(false);
   const [savingMedia, setSavingMedia] = useState(false);
   const [detailAspect, setDetailAspect] = useState<number | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const loadPost = useCallback(async () => {
     if (!id) return;
@@ -149,6 +153,11 @@ export default function PostDetail() {
           prev ? { ...prev, reactionCount: data.reactionCount } : prev
         );
       }
+      if (data?.reactionBreakdown) {
+        setPost((prev) =>
+          prev ? { ...prev, reactionBreakdown: data.reactionBreakdown } : prev
+        );
+      }
     } catch (e: any) {
       setError(e.message);
     }
@@ -209,6 +218,21 @@ export default function PostDetail() {
   }, [mediaUrl, post?.mediaType]);
 
   useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     let active = true;
     let socket: any;
 
@@ -251,11 +275,26 @@ export default function PostDetail() {
       };
 
       const onReactionUpdate = (payload: any) => {
-        const { postId, reactionCount } = payload || {};
+        const { postId, reactionCount, reactionBreakdown } = payload || {};
         if (!postId || postId !== id) return;
         if (typeof reactionCount === "number") {
           setPost((prev) =>
             prev ? { ...prev, reactionCount } : prev
+          );
+        }
+        if (reactionBreakdown) {
+          setPost((prev) =>
+            prev ? { ...prev, reactionBreakdown } : prev
+          );
+        }
+      };
+
+      const onShareUpdate = (payload: any) => {
+        const { postId, shareCount } = payload || {};
+        if (!postId || postId !== id) return;
+        if (typeof shareCount === "number") {
+          setPost((prev) =>
+            prev ? { ...prev, shareCount } : prev
           );
         }
       };
@@ -264,6 +303,7 @@ export default function PostDetail() {
       socket.on("post-hidden", onPostHidden);
       socket.on("comment-created", onCommentCreated);
       socket.on("reaction-update", onReactionUpdate);
+      socket.on("share-update", onShareUpdate);
 
       socket.on("post-stays", () => {});
     };
@@ -278,6 +318,7 @@ export default function PostDetail() {
         socket.off("post-hidden");
         socket.off("comment-created");
         socket.off("reaction-update");
+        socket.off("share-update");
         socket.off("post-stays");
       }
     };
@@ -340,8 +381,15 @@ export default function PostDetail() {
             )}
             <View style={styles.reactionsRow}>
               {REACTIONS.map((r) => (
-                <Pressable key={r.type} onPress={() => handleReaction(r.type)}>
+                <Pressable
+                  key={r.type}
+                  style={styles.reactionItem}
+                  onPress={() => handleReaction(r.type)}
+                >
                   <FontAwesome name={r.icon as any} size={16} color="#9ca3af" />
+                  <Text style={styles.reactionCount}>
+                    {post.reactionBreakdown?.[r.type] ?? 0}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -351,18 +399,37 @@ export default function PostDetail() {
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
               <View style={styles.metaItem}>
-                <FontAwesome name="heart" size={14} color="#9ca3af" />
-                <Text style={styles.metaText}>{post.reactionCount ?? 0}</Text>
+                <FontAwesome name="smile-o" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>Reactions {post.reactionCount ?? 0}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.shareCount ?? 0}</Text>
               </View>
               <Pressable
                 style={styles.metaItem}
-                onPress={() =>
-                  Share.share({
-                    message: `${stripRoastPrefix(post.content || "")}`,
-                  })
-                }
+                onPress={async () => {
+                  try {
+                    await Share.share({
+                      message: `${stripRoastPrefix(post.content || "")}`,
+                    });
+                  } finally {
+                    try {
+                      const data = await apiFetch(`/posts/${post.id}/share`, {
+                        method: "POST",
+                      });
+                      if (typeof data?.shareCount === "number") {
+                        setPost((prev) =>
+                          prev ? { ...prev, shareCount: data.shareCount } : prev
+                        );
+                      }
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }}
               >
-                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <FontAwesome name="send" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>Share</Text>
               </Pressable>
             </View>
@@ -450,11 +517,18 @@ export default function PostDetail() {
             loadPost();
             loadComments();
           }}
-          contentContainerStyle={{ paddingBottom: 140 + insets.bottom }}
+          contentContainerStyle={{
+            paddingBottom: 140 + insets.bottom + keyboardHeight,
+          }}
           keyboardShouldPersistTaps="handled"
         />
 
-        <View style={[styles.commentComposer, { paddingBottom: 8 + insets.bottom }]}>
+        <View
+          style={[
+            styles.commentComposer,
+            { paddingBottom: 8 + insets.bottom, bottom: keyboardHeight },
+          ]}
+        >
           <TextInput
             style={styles.commentInput}
             placeholder="Write a comment..."
@@ -554,6 +628,8 @@ const styles = StyleSheet.create({
   },
   voteBtnText: { color: "#fafafa", fontWeight: "700" },
   reactionsRow: { flexDirection: "row", gap: 18, marginTop: 12 },
+  reactionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  reactionCount: { color: "#9ca3af", fontSize: 12 },
   metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
   metaText: { color: "#9ca3af", fontSize: 12 },

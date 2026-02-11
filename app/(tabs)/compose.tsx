@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -34,6 +35,7 @@ export default function ComposeScreen() {
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<string[]>([]);
   const [league, setLeague] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -59,6 +61,21 @@ export default function ComposeScreen() {
       }
     };
     loadLeagues();
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -149,7 +166,7 @@ export default function ComposeScreen() {
       >
         <View style={styles.container}>
           <View style={styles.header}>
-            <Pressable onPress={() => router.back()}>
+            <Pressable onPress={() => router.back()} hitSlop={10}>
               <FontAwesome name="close" size={20} color="#fff" />
             </Pressable>
             <Text style={styles.title}>Create</Text>
@@ -165,9 +182,10 @@ export default function ComposeScreen() {
           <ScrollView
             contentContainerStyle={[
               styles.content,
-              { paddingBottom: 24 + insets.bottom },
+              { paddingBottom: 24 + insets.bottom + keyboardHeight },
             ]}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
           >
           <View style={styles.modePill}>
             <Pressable
@@ -307,6 +325,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
+    zIndex: 2,
+    position: "relative",
   },
   title: { color: "#fff", fontWeight: "700", fontSize: 16 },
   postBtn: {
