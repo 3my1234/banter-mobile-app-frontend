@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  Share,
   StyleSheet,
   View,
 } from "react-native";
@@ -219,6 +220,15 @@ export default function HomeFeed() {
 
   const visiblePosts = useMemo(() => posts, [posts]);
 
+  const handleShare = async (item: Post) => {
+    try {
+      const message = item.text?.trim() || "Banter post";
+      await Share.share({ message });
+    } catch {
+      // ignore
+    }
+  };
+
   const renderItem = ({ item }: { item: Post }) => {
     const isRoast = item.type === "roast";
     return (
@@ -308,11 +318,24 @@ export default function HomeFeed() {
               </View>
             )}
             <View style={styles.actions}>
-              <FontAwesome name="comment-o" size={14} color="#777" />
-              <FontAwesome name="retweet" size={14} color="#777" />
-              <FontAwesome name="heart-o" size={14} color="#777" />
-              <FontAwesome name="smile-o" size={14} color="#777" />
-              <FontAwesome name="share-alt" size={14} color="#777" />
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => router.push(`/post/${item.id}`)}
+              >
+                <FontAwesome name="comment-o" size={14} color="#9ca3af" />
+                <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
+              </Pressable>
+              <View style={styles.actionItem}>
+                <FontAwesome name="heart" size={14} color="#9ca3af" />
+                <Text style={styles.actionText}>{item.reactionCount ?? 0}</Text>
+              </View>
+              <Pressable
+                style={styles.actionItem}
+                onPress={() => handleShare(item)}
+              >
+                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <Text style={styles.actionText}>Share</Text>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -438,7 +461,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   tagText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
-  actions: { flexDirection: "row", gap: 18, marginTop: 10 },
+  actions: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
+  actionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  actionText: { color: "#9ca3af", fontSize: 12 },
   separator: { height: 1, backgroundColor: "#1d1d1d" },
   mediaWrapper: {
     marginTop: 8,

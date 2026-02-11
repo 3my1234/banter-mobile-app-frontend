@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
@@ -15,11 +17,13 @@ import { Video, ResizeMode } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
+import { useFocusEffect } from "@react-navigation/native";
 
 const ROAST_PREFIX = "[ROAST]";
 
 export default function ComposeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<"banter" | "roast">("banter");
   const [text, setText] = useState("");
   const [media, setMedia] = useState<PickedMedia | null>(null);
@@ -30,6 +34,19 @@ export default function ComposeScreen() {
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<string[]>([]);
   const [league, setLeague] = useState<string | null>(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setText("");
+      setMedia(null);
+      setTags([]);
+      setQuery("");
+      setLeague(null);
+      setError(null);
+      setLoading(false);
+      return () => {};
+    }, [])
+  );
 
   useEffect(() => {
     const loadLeagues = async () => {
@@ -124,23 +141,34 @@ export default function ComposeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()}>
-            <FontAwesome name="close" size={20} color="#fff" />
-          </Pressable>
-          <Text style={styles.title}>Create</Text>
-          <Pressable style={styles.postBtn} onPress={handleSubmit} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#0d0d0d" />
-            ) : (
-              <Text style={styles.postText}>Post</Text>
-            )}
-          </Pressable>
-        </View>
+    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+      >
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <Pressable onPress={() => router.back()}>
+              <FontAwesome name="close" size={20} color="#fff" />
+            </Pressable>
+            <Text style={styles.title}>Create</Text>
+            <Pressable style={styles.postBtn} onPress={handleSubmit} disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#0d0d0d" />
+              ) : (
+                <Text style={styles.postText}>Post</Text>
+              )}
+            </Pressable>
+          </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView
+            contentContainerStyle={[
+              styles.content,
+              { paddingBottom: 24 + insets.bottom },
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
           <View style={styles.modePill}>
             <Pressable
               onPress={() => setMode("banter")}
@@ -261,8 +289,9 @@ export default function ComposeScreen() {
           </View>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
-        </ScrollView>
-      </View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

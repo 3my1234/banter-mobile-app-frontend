@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  Share,
   StyleSheet,
   TextInput,
   View,
@@ -200,8 +201,7 @@ export default function PostDetail() {
       (width, height) => {
         if (width && height) {
           const aspect = width / height;
-          const clamped = Math.min(Math.max(aspect, 0.75), 1.91);
-          setDetailAspect(clamped);
+          setDetailAspect(aspect);
         }
       },
       () => setDetailAspect(16 / 9)
@@ -317,7 +317,7 @@ export default function PostDetail() {
                   <ExpoImage
                     source={{ uri: mediaUrl }}
                     style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
-                    contentFit="contain"
+                    contentFit="cover"
                     contentPosition="center"
                     transition={180}
                     cachePolicy="memory-disk"
@@ -344,6 +344,27 @@ export default function PostDetail() {
                   <FontAwesome name={r.icon as any} size={16} color="#9ca3af" />
                 </Pressable>
               ))}
+            </View>
+            <View style={styles.metaRow}>
+              <View style={styles.metaItem}>
+                <FontAwesome name="comment-o" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <FontAwesome name="heart" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>{post.reactionCount ?? 0}</Text>
+              </View>
+              <Pressable
+                style={styles.metaItem}
+                onPress={() =>
+                  Share.share({
+                    message: `${stripRoastPrefix(post.content || "")}`,
+                  })
+                }
+              >
+                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <Text style={styles.metaText}>Share</Text>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -396,7 +417,7 @@ export default function PostDetail() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 64 : 0}
       >
         <FlatList
           data={comments}
@@ -533,6 +554,9 @@ const styles = StyleSheet.create({
   },
   voteBtnText: { color: "#fafafa", fontWeight: "700" },
   reactionsRow: { flexDirection: "row", gap: 18, marginTop: 12 },
+  metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
+  metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  metaText: { color: "#9ca3af", fontSize: 12 },
   commentRow: {
     flexDirection: "row",
     gap: 12,
