@@ -109,7 +109,8 @@ export default function HomeFeed() {
   const [banterCommentText, setBanterCommentText] = useState("");
   const [banterCommentLoading, setBanterCommentLoading] = useState(false);
   const [banterCommentSubmitting, setBanterCommentSubmitting] = useState(false);
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 });
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 95 });
+  const videoRefs = useRef<Map<string, Video>>(new Map());
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: Post; isViewable: boolean }> }) => {
       if (mainTab !== "banter") return;
@@ -193,6 +194,20 @@ export default function HomeFeed() {
     }
     loadMe();
   }, [loadPosts, loadMe, mainTab, postTab, banterTab]);
+
+  React.useEffect(() => {
+    videoRefs.current.forEach((ref, id) => {
+      if (mainTab !== "banter") {
+        ref.pauseAsync().catch(() => {});
+        return;
+      }
+      if (activeBanterId && id === activeBanterId) {
+        ref.playAsync().catch(() => {});
+      } else {
+        ref.pauseAsync().catch(() => {});
+      }
+    });
+  }, [activeBanterId, mainTab]);
 
   useFocusEffect(
     useCallback(() => {
@@ -755,6 +770,8 @@ export default function HomeFeed() {
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
     const banterHeight = Math.max(360, windowHeight);
+    const stayDropBottom = 24 + insets.bottom + 56;
+    const sideActionsBottom = 140 + insets.bottom;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -776,6 +793,13 @@ export default function HomeFeed() {
                 useNativeControls={false}
                 isMuted={false}
                 volume={1.0}
+                ref={(ref) => {
+                  if (ref) {
+                    videoRefs.current.set(item.id, ref);
+                  } else {
+                    videoRefs.current.delete(item.id);
+                  }
+                }}
               />
             ) : (
               <ExpoImage
@@ -804,7 +828,7 @@ export default function HomeFeed() {
               </Text>
             ) : null}
           </View>
-          <View style={styles.banterSideActions}>
+          <View style={[styles.banterSideActions, { bottom: sideActionsBottom }]}>
             <Pressable
               style={styles.banterAction}
               onPress={() => openBanterComments(item)}
@@ -835,7 +859,7 @@ export default function HomeFeed() {
               <Text style={styles.banterActionText}>{item.shareCount ?? 0}</Text>
             </Pressable>
           </View>
-          <View style={styles.banterStayDropWrap}>
+          <View style={[styles.banterStayDropWrap, { bottom: stayDropBottom }]}>
             <View style={styles.banterGauge}>
               <VoteGauge stayVotes={item.stayVotes} dropVotes={item.dropVotes} />
             </View>
@@ -1015,15 +1039,23 @@ export default function HomeFeed() {
             onRefresh={handleRefresh}
             viewabilityConfig={viewabilityConfig.current}
             onViewableItemsChanged={onViewableItemsChanged}
+            onMomentumScrollEnd={(event) => {
+              const offsetY = event.nativeEvent.contentOffset.y || 0;
+              const index = Math.round(offsetY / windowHeight);
+              const next = banters[index];
+              if (next?.id) setActiveBanterId(next.id);
+            }}
           />
         )}
 
-        <Pressable
-          style={styles.fab}
-          onPress={() => router.push("/(tabs)/compose")}
-        >
-          <FontAwesome name="plus" size={20} color="#0d0d0d" />
-        </Pressable>
+        {mainTab === "posts" ? (
+          <Pressable
+            style={styles.fab}
+            onPress={() => router.push("/(tabs)/compose")}
+          >
+            <FontAwesome name="plus" size={20} color="#0d0d0d" />
+          </Pressable>
+        ) : null}
 
         {showRepostModal && repostTarget ? (
           <Modal transparent animationType="fade" visible>
@@ -1452,6 +1484,7 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
     borderWidth: 1,
     padding: 16,
+    zIndex: 60,
   },
   commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 8 },
   commentLoading: { paddingVertical: 16, alignItems: "center" },
