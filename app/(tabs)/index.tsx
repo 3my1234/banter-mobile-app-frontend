@@ -770,9 +770,9 @@ export default function HomeFeed() {
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
     const banterHeight = Math.max(360, windowHeight);
-    const stayDropBottom = 24 + insets.bottom + 56;
-    const sideActionsBottom = stayDropBottom + 96;
-    const metaBottom = stayDropBottom + 120;
+    const stayDropBottom = 12 + insets.bottom + 36;
+    const sideActionsBottom = stayDropBottom + 120;
+    const metaBottom = stayDropBottom + 150;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -1107,74 +1107,75 @@ export default function HomeFeed() {
         ) : null}
         {banterCommentTarget ? (
           <Modal transparent animationType="fade" visible>
-            <Pressable
-              style={styles.commentBackdrop}
-              onPress={closeBanterComments}
-            />
-            <KeyboardAvoidingView
-              style={styles.commentAvoid}
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              keyboardVerticalOffset={insets.top + 24}
-            >
-              <View
-                style={[styles.commentSheet, { paddingBottom: 12 + insets.bottom }]}
+            <View style={styles.commentModal}>
+              <Pressable
+                style={styles.commentBackdrop}
+                onPress={closeBanterComments}
+              />
+              <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={insets.top + 24}
               >
-                <Text style={styles.commentTitle}>Comments</Text>
-                {banterCommentLoading ? (
-                  <View style={styles.commentLoading}>
-                    <ActivityIndicator />
-                  </View>
-                ) : (
-                  <FlatList
-                    data={banterComments}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
-                      <View style={styles.commentRow}>
-                        {item.user?.avatarUrl ? (
-                          <ExpoImage
-                            source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
-                            style={styles.commentAvatar}
-                            contentFit="cover"
-                            transition={120}
-                            cachePolicy="memory-disk"
-                          />
-                        ) : (
-                          <View style={styles.commentAvatar} />
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.commentName}>
-                            {item.user?.displayName || item.user?.username || "User"}
-                          </Text>
-                          <Text style={styles.commentText}>{item.content}</Text>
+                <View
+                  style={[styles.commentSheet, { paddingBottom: 12 + insets.bottom }]}
+                >
+                  <Text style={styles.commentTitle}>Comments</Text>
+                  {banterCommentLoading ? (
+                    <View style={styles.commentLoading}>
+                      <ActivityIndicator />
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={banterComments}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => (
+                        <View style={styles.commentRow}>
+                          {item.user?.avatarUrl ? (
+                            <ExpoImage
+                              source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
+                              style={styles.commentAvatar}
+                              contentFit="cover"
+                              transition={120}
+                              cachePolicy="memory-disk"
+                            />
+                          ) : (
+                            <View style={styles.commentAvatar} />
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.commentName}>
+                              {item.user?.displayName || item.user?.username || "User"}
+                            </Text>
+                            <Text style={styles.commentText}>{item.content}</Text>
+                          </View>
                         </View>
-                      </View>
-                    )}
-                    contentContainerStyle={{ paddingBottom: 120 }}
-                    keyboardShouldPersistTaps="handled"
-                  />
-                )}
-                <View style={styles.commentComposer}>
-                  <TextInput
-                    style={styles.commentInput}
-                    placeholder="Write a comment..."
-                    placeholderTextColor="#777"
-                    value={banterCommentText}
-                    onChangeText={setBanterCommentText}
-                  />
-                  <Pressable
-                    style={styles.commentSend}
-                    onPress={submitBanterComment}
-                    disabled={banterCommentSubmitting}
-                  >
-                    {banterCommentSubmitting ? (
-                      <ActivityIndicator color="#0d0d0d" />
-                    ) : (
-                      <Text style={styles.commentSendText}>Send</Text>
-                    )}
-                  </Pressable>
+                      )}
+                      contentContainerStyle={{ paddingBottom: 120 }}
+                      keyboardShouldPersistTaps="handled"
+                    />
+                  )}
+                  <View style={styles.commentComposer}>
+                    <TextInput
+                      style={styles.commentInput}
+                      placeholder="Write a comment..."
+                      placeholderTextColor="#777"
+                      value={banterCommentText}
+                      onChangeText={setBanterCommentText}
+                    />
+                    <Pressable
+                      style={styles.commentSend}
+                      onPress={submitBanterComment}
+                      disabled={banterCommentSubmitting}
+                    >
+                      {banterCommentSubmitting ? (
+                        <ActivityIndicator color="#0d0d0d" />
+                      ) : (
+                        <Text style={styles.commentSendText}>Send</Text>
+                      )}
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            </KeyboardAvoidingView>
+              </KeyboardAvoidingView>
+            </View>
           </Modal>
         ) : null}
       </View>
@@ -1463,23 +1464,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   repostBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
+  commentModal: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
   commentBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  commentAvoid: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   commentSheet: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    minHeight: 280,
+    minHeight: 320,
     maxHeight: "75%",
     backgroundColor: "#0d0d0d",
     borderTopLeftRadius: 18,
