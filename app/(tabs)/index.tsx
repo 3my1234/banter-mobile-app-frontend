@@ -95,6 +95,11 @@ export default function HomeFeed() {
   const [repostTarget, setRepostTarget] = useState<Post | null>(null);
   const [quoteText, setQuoteText] = useState<string>("");
   const [showRepostModal, setShowRepostModal] = useState(false);
+  const [banterCommentTarget, setBanterCommentTarget] = useState<Post | null>(null);
+  const [banterComments, setBanterComments] = useState<any[]>([]);
+  const [banterCommentText, setBanterCommentText] = useState("");
+  const [banterCommentLoading, setBanterCommentLoading] = useState(false);
+  const [banterCommentSubmitting, setBanterCommentSubmitting] = useState(false);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 });
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: Post; isViewable: boolean }> }) => {
@@ -171,6 +176,7 @@ export default function HomeFeed() {
 
   React.useEffect(() => {
     if (mainTab === "posts") {
+      setActiveBanterId(null);
       loadPosts("posts", postTab);
     } else {
       loadPosts("banter", banterTab);
@@ -496,6 +502,61 @@ export default function HomeFeed() {
     setShowRepostModal(true);
   };
 
+  const openBanterComments = async (item: Post) => {
+    setBanterCommentTarget(item);
+    setBanterCommentText("");
+    setBanterCommentLoading(true);
+    setActiveBanterId(null);
+    try {
+      const data = await apiFetch(`/comments/${item.id}?page=1&limit=50`);
+      setBanterComments(data.comments || []);
+    } catch {
+      setBanterComments([]);
+    } finally {
+      setBanterCommentLoading(false);
+    }
+  };
+
+  const closeBanterComments = () => {
+    if (banterCommentTarget?.id) {
+      setActiveBanterId(banterCommentTarget.id);
+    }
+    setBanterCommentTarget(null);
+    setBanterComments([]);
+    setBanterCommentText("");
+  };
+
+  const submitBanterComment = async () => {
+    if (!banterCommentTarget || !banterCommentText.trim()) return;
+    setBanterCommentSubmitting(true);
+    try {
+      const data = await apiFetch("/comments", {
+        method: "POST",
+        body: JSON.stringify({
+          postId: banterCommentTarget.id,
+          content: banterCommentText.trim(),
+        }),
+      });
+      const created = data.comment || data;
+      setBanterComments((prev) => {
+        const exists = prev.some((c) => c.id === created.id);
+        return exists ? prev : [...prev, created];
+      });
+      if (typeof data?.commentCount === "number") {
+        setBanters((prev) =>
+          prev.map((p) =>
+            p.id === banterCommentTarget.id ? { ...p, commentCount: data.commentCount } : p
+          )
+        );
+      }
+      setBanterCommentText("");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBanterCommentSubmitting(false);
+    }
+  };
+
   const renderMedia = (
     media: { type: "image" | "video"; uri: string; ratio?: number },
     allowDownload: boolean
@@ -682,10 +743,7 @@ export default function HomeFeed() {
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const banterHeight = Math.max(
-      360,
-      windowHeight - insets.top - tabBarHeight
-    );
+    const banterHeight = Math.max(360, windowHeight - tabBarHeight);
 
     const captionParts = [
       item.text?.trim() || "",
@@ -695,10 +753,7 @@ export default function HomeFeed() {
 
     return (
       <View style={[styles.banterCard, { height: banterHeight }]}>
-        <Pressable
-          style={styles.banterMedia}
-          onPress={() => router.push(`/post/${item.id}`)}
-        >
+        <View style={styles.banterMedia}>
           {media ? (
             isVideo ? (
               <Video
@@ -707,6 +762,7 @@ export default function HomeFeed() {
                 resizeMode={ResizeMode.COVER}
                 shouldPlay={activeBanterId === item.id}
                 isLooping
+                useNativeControls={false}
               />
             ) : (
               <ExpoImage
@@ -720,7 +776,7 @@ export default function HomeFeed() {
           ) : (
             <View style={styles.banterPlaceholder} />
           )}
-        </Pressable>
+        </View>
         <View style={styles.banterOverlay}>
           <View style={styles.banterMeta}>
             {isRepost ? (
@@ -738,7 +794,7 @@ export default function HomeFeed() {
           <View style={styles.banterSideActions}>
             <Pressable
               style={styles.banterAction}
-              onPress={() => router.push(`/post/${item.id}`)}
+              onPress={() => openBanterComments(item)}
             >
               <FontAwesome name="comment-o" size={20} color="#fff" />
               <Text style={styles.banterActionText}>{item.commentCount ?? 0}</Text>
@@ -767,6 +823,9 @@ export default function HomeFeed() {
             </Pressable>
           </View>
           <View style={styles.banterStayDropRow}>
+            <View style={styles.banterGauge}>
+              <VoteGauge stayVotes={item.stayVotes} dropVotes={item.dropVotes} />
+            </View>
             <Pressable
               style={styles.banterStayBtn}
               onPress={() => handleVote(item.id, "STAY")}
@@ -814,38 +873,36 @@ export default function HomeFeed() {
                 <View style={styles.avatarSmall} />
               )}
             </Pressable>
-          <View style={styles.brandSpacer} />
+            <View
+              style={[
+                styles.mainTabs,
+                mainTab === "banter" && styles.tabsOverlay,
+              ]}
+            >
+              <Pressable onPress={() => setMainTab("posts")}>
+                <Text
+                  style={[
+                    styles.mainTab,
+                    mainTab === "posts" && styles.mainTabActive,
+                    mainTab === "banter" && styles.tabOverlayText,
+                  ]}
+                >
+                  Posts
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => setMainTab("banter")}>
+                <Text
+                  style={[
+                    styles.mainTab,
+                    mainTab === "banter" && styles.mainTabActive,
+                    mainTab === "banter" && styles.tabOverlayText,
+                  ]}
+                >
+                  Banter
+                </Text>
+              </Pressable>
+            </View>
             <FontAwesome name="cog" size={18} color="#fff" />
-          </View>
-
-          <View
-            style={[
-              styles.mainTabs,
-              mainTab === "banter" && styles.tabsOverlay,
-            ]}
-          >
-            <Pressable onPress={() => setMainTab("posts")}>
-              <Text
-                style={[
-                  styles.mainTab,
-                  mainTab === "posts" && styles.mainTabActive,
-                  mainTab === "banter" && styles.tabOverlayText,
-                ]}
-              >
-                Posts
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setMainTab("banter")}>
-              <Text
-                style={[
-                  styles.mainTab,
-                  mainTab === "banter" && styles.mainTabActive,
-                  mainTab === "banter" && styles.tabOverlayText,
-                ]}
-              >
-                Banter
-              </Text>
-            </Pressable>
           </View>
 
           <View
@@ -856,53 +913,51 @@ export default function HomeFeed() {
           >
             {mainTab === "posts" ? (
               <>
-              <Pressable onPress={() => setPostTab("forYou")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    postTab === "forYou" && styles.tabActive,
-                    mainTab === "banter" && styles.tabOverlayText,
-                  ]}
-                >
-                  For you
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setPostTab("following")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    postTab === "following" && styles.tabActive,
-                    mainTab === "banter" && styles.tabOverlayText,
-                  ]}
-                >
-                  Following
-                </Text>
-              </Pressable>
+                <Pressable onPress={() => setPostTab("forYou")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      postTab === "forYou" && styles.tabActive,
+                    ]}
+                  >
+                    For you
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => setPostTab("following")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      postTab === "following" && styles.tabActive,
+                    ]}
+                  >
+                    Following
+                  </Text>
+                </Pressable>
               </>
             ) : (
               <>
-              <Pressable onPress={() => setBanterTab("hot")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    banterTab === "hot" && styles.tabActive,
-                    styles.tabOverlayText,
-                  ]}
-                >
-                  Trending
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setBanterTab("following")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    banterTab === "following" && styles.tabActive,
-                    styles.tabOverlayText,
-                  ]}
-                >
-                  Following
-                </Text>
-              </Pressable>
+                <Pressable onPress={() => setBanterTab("hot")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      banterTab === "hot" && styles.tabActive,
+                      styles.tabOverlayText,
+                    ]}
+                  >
+                    Trending
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => setBanterTab("following")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      banterTab === "following" && styles.tabActive,
+                      styles.tabOverlayText,
+                    ]}
+                  >
+                    Following
+                  </Text>
+                </Pressable>
               </>
             )}
           </View>
@@ -939,6 +994,8 @@ export default function HomeFeed() {
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 0 }}
+            snapToInterval={windowHeight - tabBarHeight}
+            snapToAlignment="start"
             refreshing={refreshing}
             onRefresh={handleRefresh}
             viewabilityConfig={viewabilityConfig.current}
@@ -1000,6 +1057,56 @@ export default function HomeFeed() {
             </View>
           </Modal>
         ) : null}
+        {banterCommentTarget ? (
+          <Modal transparent animationType="fade" visible>
+            <Pressable
+              style={styles.commentBackdrop}
+              onPress={closeBanterComments}
+            />
+            <View style={styles.commentSheet}>
+              <Text style={styles.commentTitle}>Comments</Text>
+              {banterCommentLoading ? (
+                <View style={styles.commentLoading}>
+                  <ActivityIndicator />
+                </View>
+              ) : (
+                <FlatList
+                  data={banterComments}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <View style={styles.commentRow}>
+                      <Text style={styles.commentName}>
+                        {item.user?.displayName || item.user?.username || "User"}
+                      </Text>
+                      <Text style={styles.commentText}>{item.content}</Text>
+                    </View>
+                  )}
+                  contentContainerStyle={{ paddingBottom: 80 }}
+                />
+              )}
+              <View style={styles.commentComposer}>
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder="Write a comment..."
+                  placeholderTextColor="#777"
+                  value={banterCommentText}
+                  onChangeText={setBanterCommentText}
+                />
+                <Pressable
+                  style={styles.commentSend}
+                  onPress={submitBanterComment}
+                  disabled={banterCommentSubmitting}
+                >
+                  {banterCommentSubmitting ? (
+                    <ActivityIndicator color="#0d0d0d" />
+                  ) : (
+                    <Text style={styles.commentSendText}>Send</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </Modal>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -1036,6 +1143,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     justifyContent: "center",
+    flex: 1,
   },
   headerStack: {
     zIndex: 20,
@@ -1210,6 +1318,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
+  banterGauge: {
+    alignSelf: "center",
+    marginBottom: 10,
+    width: "70%",
+  },
   banterAction: { alignItems: "center", gap: 4 },
   banterActionText: { color: "#fff", fontSize: 12 },
   banterStayDropRow: {
@@ -1277,4 +1390,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   repostBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
+  commentBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  commentSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: "70%",
+    backgroundColor: "#0d0d0d",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+    padding: 16,
+  },
+  commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 8 },
+  commentLoading: { paddingVertical: 16, alignItems: "center" },
+  commentRow: {
+    paddingVertical: 10,
+    borderBottomColor: "#1f1f1f",
+    borderBottomWidth: 1,
+  },
+  commentName: { color: "#fff", fontWeight: "700" },
+  commentText: { color: "#cbd5f5", marginTop: 2 },
+  commentComposer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingTop: 10,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: "#151515",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    color: "#fff",
+  },
+  commentSend: {
+    backgroundColor: "#ff6b35",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  commentSendText: { color: "#0d0d0d", fontWeight: "700" },
 });

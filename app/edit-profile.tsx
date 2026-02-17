@@ -128,7 +128,7 @@ export default function EditProfile() {
         <Pressable onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={18} color="#fff" />
         </Pressable>
-        <Text style={styles.headerTitle}>Edit profile</Text>
+        <View style={styles.headerSpacer} />
         <Pressable style={styles.saveBtn} onPress={handleSave} disabled={saving}>
           {saving ? (
             <ActivityIndicator color="#0d0d0d" />
@@ -341,3 +341,4 @@ const styles = StyleSheet.create({
   muted: { color: "#999", marginTop: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
+
