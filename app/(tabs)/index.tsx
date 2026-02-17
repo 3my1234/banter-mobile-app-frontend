@@ -771,7 +771,8 @@ export default function HomeFeed() {
     const isRepost = !!item.repostOf;
     const banterHeight = Math.max(360, windowHeight);
     const stayDropBottom = 24 + insets.bottom + 56;
-    const sideActionsBottom = 140 + insets.bottom;
+    const sideActionsBottom = stayDropBottom + 96;
+    const metaBottom = stayDropBottom + 120;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -815,7 +816,7 @@ export default function HomeFeed() {
           )}
         </View>
         <View style={styles.banterOverlay}>
-          <View style={styles.banterMeta}>
+          <View style={[styles.banterMeta, { paddingBottom: metaBottom }]}>
             {isRepost ? (
               <Text style={styles.banterRepostLabel}>
                 {item.repostOf?.isRoast ? "Rebantered" : "Reposted"} by {item.handle}
@@ -1465,6 +1466,7 @@ const styles = StyleSheet.create({
   commentBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
   },
   commentAvoid: {
     position: "absolute",
@@ -1477,7 +1479,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: "70%",
+    minHeight: 280,
+    maxHeight: "75%",
     backgroundColor: "#0d0d0d",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
