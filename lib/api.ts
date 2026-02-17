@@ -36,8 +36,25 @@ export async function apiFetch(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Request failed (${res.status}) ${text}`);
+    const contentType = res.headers.get("content-type") || "";
+    const raw = await res.text().catch(() => "");
+    let message = raw;
+    if (contentType.includes("application/json")) {
+      try {
+        const data = JSON.parse(raw);
+        message = data?.message || data?.error || raw;
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        const data = JSON.parse(raw);
+        message = data?.message || data?.error || raw;
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(message || `Request failed (${res.status})`);
   }
 
   return res.json();

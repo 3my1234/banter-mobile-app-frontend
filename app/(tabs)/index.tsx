@@ -684,8 +684,14 @@ export default function HomeFeed() {
     const isRepost = !!item.repostOf;
     const banterHeight = Math.max(
       360,
-      windowHeight - insets.top - insets.bottom - tabBarHeight
+      windowHeight - insets.top - tabBarHeight
     );
+
+    const captionParts = [
+      item.text?.trim() || "",
+      ...(item.tags || []).map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
+    ].filter(Boolean);
+    const caption = captionParts.join(" ");
 
     return (
       <View style={[styles.banterCard, { height: banterHeight }]}>
@@ -722,19 +728,11 @@ export default function HomeFeed() {
                 {item.repostOf?.isRoast ? "Rebantered" : "Reposted"} by {item.handle}
               </Text>
             ) : null}
-            <Text style={styles.banterUser}>{item.name}</Text>
-            <Text style={styles.banterHandle}>{item.handle}</Text>
-            {item.text?.trim() ? (
-              <Text style={styles.banterText}>{item.text}</Text>
-            ) : null}
-            {item.tags?.length ? (
-              <View style={styles.banterTags}>
-                {item.tags.map((tag) => (
-                  <Text key={tag} style={styles.banterTagText}>
-                    {tag.startsWith("#") ? tag : `#${tag}`}
-                  </Text>
-                ))}
-              </View>
+            <Text style={styles.banterUser}>{item.handle}</Text>
+            {caption ? (
+              <Text style={styles.banterCaption} numberOfLines={2}>
+                {caption}
+              </Text>
             ) : null}
           </View>
           <View style={styles.banterSideActions}>
@@ -816,7 +814,7 @@ export default function HomeFeed() {
                 <View style={styles.avatarSmall} />
               )}
             </Pressable>
-            <Text style={styles.brand}>Banter</Text>
+          <View style={styles.brandSpacer} />
             <FontAwesome name="cog" size={18} color="#fff" />
           </View>
 
@@ -831,6 +829,7 @@ export default function HomeFeed() {
                 style={[
                   styles.mainTab,
                   mainTab === "posts" && styles.mainTabActive,
+                  mainTab === "banter" && styles.tabOverlayText,
                 ]}
               >
                 Posts
@@ -841,6 +840,7 @@ export default function HomeFeed() {
                 style={[
                   styles.mainTab,
                   mainTab === "banter" && styles.mainTabActive,
+                  mainTab === "banter" && styles.tabOverlayText,
                 ]}
               >
                 Banter
@@ -856,46 +856,53 @@ export default function HomeFeed() {
           >
             {mainTab === "posts" ? (
               <>
-                <Pressable onPress={() => setPostTab("forYou")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      postTab === "forYou" && styles.tabActive,
-                    ]}
-                  >
-                    For you
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => setPostTab("following")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      postTab === "following" && styles.tabActive,
-                    ]}
-                  >
-                    Following
-                  </Text>
-                </Pressable>
+              <Pressable onPress={() => setPostTab("forYou")}>
+                <Text
+                  style={[
+                    styles.tab,
+                    postTab === "forYou" && styles.tabActive,
+                    mainTab === "banter" && styles.tabOverlayText,
+                  ]}
+                >
+                  For you
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => setPostTab("following")}>
+                <Text
+                  style={[
+                    styles.tab,
+                    postTab === "following" && styles.tabActive,
+                    mainTab === "banter" && styles.tabOverlayText,
+                  ]}
+                >
+                  Following
+                </Text>
+              </Pressable>
               </>
             ) : (
               <>
-                <Pressable onPress={() => setBanterTab("hot")}>
-                  <Text
-                    style={[styles.tab, banterTab === "hot" && styles.tabActive]}
-                  >
-                    Trending
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => setBanterTab("following")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      banterTab === "following" && styles.tabActive,
-                    ]}
-                  >
-                    Following
-                  </Text>
-                </Pressable>
+              <Pressable onPress={() => setBanterTab("hot")}>
+                <Text
+                  style={[
+                    styles.tab,
+                    banterTab === "hot" && styles.tabActive,
+                    styles.tabOverlayText,
+                  ]}
+                >
+                  Trending
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => setBanterTab("following")}>
+                <Text
+                  style={[
+                    styles.tab,
+                    banterTab === "following" && styles.tabActive,
+                    styles.tabOverlayText,
+                  ]}
+                >
+                  Following
+                </Text>
+              </Pressable>
               </>
             )}
           </View>
@@ -931,7 +938,7 @@ export default function HomeFeed() {
             pagingEnabled
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + tabBarHeight }}
+            contentContainerStyle={{ paddingBottom: 0 }}
             refreshing={refreshing}
             onRefresh={handleRefresh}
             viewabilityConfig={viewabilityConfig.current}
@@ -1016,6 +1023,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   brand: { color: "#fff", fontWeight: "700", fontSize: 18 },
+  brandSpacer: { width: 60 },
   avatarSmall: {
     width: 28,
     height: 28,
@@ -1027,6 +1035,7 @@ const styles = StyleSheet.create({
     gap: 18,
     paddingHorizontal: 16,
     paddingTop: 10,
+    justifyContent: "center",
   },
   headerStack: {
     zIndex: 20,
@@ -1046,10 +1055,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
+    justifyContent: "center",
   },
   tabsOverlay: {
     backgroundColor: "transparent",
     borderBottomWidth: 0,
+  },
+  tabOverlayText: {
+    color: "rgba(255,255,255,0.85)",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    fontWeight: "600",
   },
   tab: { color: "#999", fontWeight: "600" },
   tabActive: { color: "#ff6b35" },
@@ -1170,11 +1187,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 90,
   },
-  banterUser: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  banterHandle: { color: "#cbd5f5", marginBottom: 6 },
-  banterText: { color: "#fff", lineHeight: 20 },
-  banterTags: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
-  banterTagText: { color: "#ff6b35", fontWeight: "700" },
+  banterUser: {
+    color: "rgba(255,255,255,0.95)",
+    fontSize: 16,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  banterCaption: {
+    color: "rgba(255,255,255,0.85)",
+    marginTop: 6,
+    lineHeight: 18,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   banterSideActions: {
     position: "absolute",
     right: 12,

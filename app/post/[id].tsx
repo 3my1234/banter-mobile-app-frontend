@@ -694,7 +694,7 @@ socket.off("comment-deleted");
         <Pressable onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={18} color="#fff" />
         </Pressable>
-        <Text style={styles.headerTitle}>Post</Text>
+        <View style={styles.headerSpacer} />
         {post?.user?.id && post.user.id === meId ? (
           <Pressable
             onPress={() => {
@@ -1245,6 +1245,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
+
 
 
 
