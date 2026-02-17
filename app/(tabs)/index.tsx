@@ -24,6 +24,7 @@ import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
 import { useFocusEffect } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
@@ -91,6 +92,7 @@ export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const tabBarHeight = useBottomTabBarHeight();
   const [posts, setPosts] = useState<Post[]>([]);
   const [banters, setBanters] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1117,7 +1119,10 @@ export default function HomeFeed() {
                 keyboardVerticalOffset={insets.top + 24}
               >
                 <View
-                  style={[styles.commentSheet, { paddingBottom: 12 + insets.bottom }]}
+                  style={[
+                    styles.commentSheet,
+                    { paddingBottom: 12 + insets.bottom, bottom: tabBarHeight },
+                  ]}
                 >
                   <Text style={styles.commentTitle}>Comments</Text>
                   {banterCommentLoading ? (
@@ -1476,7 +1481,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 0,
     minHeight: 320,
     maxHeight: "75%",
     backgroundColor: "#0d0d0d",
