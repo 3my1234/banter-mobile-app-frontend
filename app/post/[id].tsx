@@ -142,6 +142,20 @@ export default function PostDetail() {
     loadComments();
   }, [loadPost, loadComments]);
 
+
+  const loadMe = useCallback(async () => {
+    try {
+      const data = await apiFetch("/auth/me", undefined, true);
+      const user = data.user || data;
+      setMeId(user?.id || null);
+    } catch {
+      setMeId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMe();
+  }, [loadMe]);
   const handleVote = async (voteType: "STAY" | "DROP") => {
     if (!post) return;
     try {
@@ -232,6 +246,71 @@ export default function PostDetail() {
       setSubmitting(false);
     }
   };
+  const handleEditPost = async () => {
+    if (!post) return;
+    const nextContent = editPostText.trim();
+    if (!nextContent) return;
+    try {
+      const data = await apiFetch(`/posts/${post.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ content: nextContent }),
+      });
+      if (data?.post) {
+        setPost(data.post);
+        setEditPostText("");
+        setShowEditPost(false);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!post) return;
+    try {
+      await apiFetch(`/posts/${post.id}`, { method: "DELETE" });
+      router.back();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleEditComment = async () => {
+    if (!selectedComment) return;
+    const nextContent = editCommentText.trim();
+    if (!nextContent) return;
+    try {
+      const data = await apiFetch(`/comments/${selectedComment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ content: nextContent }),
+      });
+      const updated = data?.comment;
+      if (updated?.id) {
+        setComments((prev) =>
+          prev.map((c) => (c.id === updated.id ? { ...c, content: updated.content } : c))
+        );
+        setShowEditComment(false);
+        setSelectedComment(null);
+        setEditCommentText("");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleDeleteComment = async (comment: Comment) => {
+    try {
+      const data = await apiFetch(`/comments/${comment.id}`, { method: "DELETE" });
+      setComments((prev) => prev.filter((c) => c.id !== comment.id));
+      if (typeof data?.commentCount === "number") {
+        setPost((prev) => (prev ? { ...prev, commentCount: data.commentCount } : prev));
+      }
+      setShowCommentActions(false);
+      setSelectedComment(null);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
 
   const mediaUrl = normalizeMediaUrl(post?.mediaUrl);
   const avatarUrl = normalizeMediaUrl(post?.user?.avatarUrl);
@@ -319,6 +398,23 @@ export default function PostDetail() {
         }
       };
 
+      const onCommentUpdated = (payload: any) => {
+        const { postId, comment } = payload || {};
+        if (!postId || postId !== id || !comment?.id) return;
+        setComments((prev) =>
+          prev.map((c) => (c.id === comment.id ? { ...c, content: comment.content } : c))
+        );
+      };
+
+      const onCommentDeleted = (payload: any) => {
+        const { postId, commentId, commentCount } = payload || {};
+        if (!postId || postId !== id || !commentId) return;
+        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        if (typeof commentCount === "number") {
+          setPost((prev) => (prev ? { ...prev, commentCount } : prev));
+        }
+      };
+
       const onReactionUpdate = (payload: any) => {
         const { postId, reactionCount, reactionBreakdown } = payload || {};
         if (!postId || postId !== id) return;
@@ -356,7 +452,7 @@ export default function PostDetail() {
 
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
-      socket.on("comment-created", onCommentCreated);
+      socket.on("comment-created", onCommentCreated);\r\n      socket.on("comment-updated", onCommentUpdated);\r\n      socket.on("comment-deleted", onCommentDeleted);
       socket.on("reaction-update", onReactionUpdate);
       socket.on("share-update", onShareUpdate);
       socket.on("repost-update", onRepostUpdate);
@@ -372,7 +468,7 @@ export default function PostDetail() {
         if (id) socket.emit("leave-post", id);
         socket.off("vote-update");
         socket.off("post-hidden");
-        socket.off("comment-created");
+        socket.off("comment-created");\r\n        socket.off("comment-updated");\r\n        socket.off("comment-deleted");
         socket.off("reaction-update");
         socket.off("share-update");
         socket.off("repost-update");
@@ -587,7 +683,18 @@ export default function PostDetail() {
           <FontAwesome name="arrow-left" size={18} color="#fff" />
         </Pressable>
         <Text style={styles.headerTitle}>Post</Text>
-        <View style={{ width: 18 }} />
+        {post?.user?.id && post.user.id === meId ? (
+          <Pressable
+            onPress={() => {
+              setEditPostText(stripRoastPrefix(post?.content || ""));
+              setShowPostActions(true);
+            }}
+          >
+            <FontAwesome name="ellipsis-h" size={18} color="#fff" />
+          </Pressable>
+        ) : (
+          <View style={{ width: 18 }} />
+        )}
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -614,6 +721,26 @@ export default function PostDetail() {
               ) : (
                 <View style={styles.commentAvatar} />
               )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.commentName}>
+                  {item.user?.displayName || item.user?.username || "User"}
+                </Text>
+                <Text style={styles.commentText}>{item.content}</Text>
+              </View>
+              {item.user?.id && item.user.id === meId ? (
+                <Pressable
+                  style={styles.commentMenu}
+                  onPress={() => {
+                    setSelectedComment(item);
+                    setEditCommentText(item.content);
+                    setShowCommentActions(true);
+                  }}
+                >
+                  <FontAwesome name="ellipsis-h" size={14} color="#9ca3af" />
+                </Pressable>
+              ) : null}
+            </View>
+          )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.commentName}>
                   {item.user?.displayName || item.user?.username || "User"}
@@ -732,6 +859,139 @@ export default function PostDetail() {
           </View>
         </Modal>
       ) : null}
+
+      {showPostActions ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable
+            style={styles.actionBackdrop}
+            onPress={() => setShowPostActions(false)}
+          />
+          <View style={styles.actionSheet}>
+            <Pressable
+              style={styles.actionItem}
+              onPress={() => {
+                setShowPostActions(false);
+                setShowEditPost(true);
+              }}
+            >
+              <Text style={styles.actionText}>Edit Post</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionItem}
+              onPress={() => {
+                setShowPostActions(false);
+                Alert.alert("Delete post?", "This cannot be undone.", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: handleDeletePost },
+                ]);
+              }}
+            >
+              <Text style={styles.actionDelete}>Delete Post</Text>
+            </Pressable>
+          </View>
+        </Modal>
+      ) : null}
+
+      {showEditPost ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable
+            style={styles.actionBackdrop}
+            onPress={() => setShowEditPost(false)}
+          />
+          <View style={styles.editSheet}>
+            <Text style={styles.editTitle}>Edit Post</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editPostText}
+              onChangeText={setEditPostText}
+              placeholder="Update your post"
+              placeholderTextColor="#777"
+              multiline
+            />
+            <View style={styles.editActions}>
+              <Pressable
+                style={styles.editBtn}
+                onPress={() => setShowEditPost(false)}
+              >
+                <Text style={styles.editBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.editBtnPrimary}
+                onPress={handleEditPost}
+              >
+                <Text style={styles.editBtnPrimaryText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      {showCommentActions && selectedComment ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable
+            style={styles.actionBackdrop}
+            onPress={() => setShowCommentActions(false)}
+          />
+          <View style={styles.actionSheet}>
+            <Pressable
+              style={styles.actionItem}
+              onPress={() => {
+                setShowCommentActions(false);
+                setShowEditComment(true);
+              }}
+            >
+              <Text style={styles.actionText}>Edit Comment</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionItem}
+              onPress={() => {
+                setShowCommentActions(false);
+                Alert.alert("Delete comment?", "This cannot be undone.", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: () => handleDeleteComment(selectedComment) },
+                ]);
+              }}
+            >
+              <Text style={styles.actionDelete}>Delete Comment</Text>
+            </Pressable>
+          </View>
+        </Modal>
+      ) : null}
+
+      {showEditComment ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable
+            style={styles.actionBackdrop}
+            onPress={() => setShowEditComment(false)}
+          />
+          <View style={styles.editSheet}>
+            <Text style={styles.editTitle}>Edit Comment</Text>
+            <TextInput
+              style={styles.editInput}
+              value={editCommentText}
+              onChangeText={setEditCommentText}
+              placeholder="Update your comment"
+              placeholderTextColor="#777"
+              multiline
+            />
+            <View style={styles.editActions}>
+              <Pressable
+                style={styles.editBtn}
+                onPress={() => setShowEditComment(false)}
+              >
+                <Text style={styles.editBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.editBtnPrimary}
+                onPress={handleEditComment}
+              >
+                <Text style={styles.editBtnPrimaryText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
     </SafeAreaView>
   );
 }
@@ -917,8 +1177,69 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   repostBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
+
+  actionBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  actionSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "30%",
+    backgroundColor: "#151515",
+    borderRadius: 16,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+    paddingVertical: 8,
+  },
+  actionItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  actionText: { color: "#fff", fontWeight: "700" },
+  actionDelete: { color: "#f97316", fontWeight: "700" },
+  editSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "25%",
+    backgroundColor: "#151515",
+    padding: 16,
+    borderRadius: 16,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+  },
+  editTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  editInput: {
+    marginTop: 12,
+    minHeight: 80,
+    borderRadius: 12,
+    backgroundColor: "#0d0d0d",
+    color: "#fff",
+    padding: 12,
+  },
+  editActions: { flexDirection: "row", gap: 10, marginTop: 14 },
+  editBtn: {
+    flex: 1,
+    backgroundColor: "#1f1f1f",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  editBtnText: { color: "#fff", fontWeight: "700" },
+  editBtnPrimary: {
+    flex: 1,
+    backgroundColor: "#ff6b35",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  editBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
+  commentMenu: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
 });
-
-
 
 

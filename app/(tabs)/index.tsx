@@ -81,6 +81,7 @@ export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const tabBarHeight = 64;
   const [posts, setPosts] = useState<Post[]>([]);
   const [banters, setBanters] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +96,13 @@ export default function HomeFeed() {
   const [quoteText, setQuoteText] = useState<string>("");
   const [showRepostModal, setShowRepostModal] = useState(false);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 });
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: Post; isViewable: boolean }> }) => {
+      if (mainTab !== "banter") return;
+      const next = viewableItems.find((v) => v.isViewable);
+      if (next?.item?.id) setActiveBanterId(next.item.id);
+    }
+  ).current;
 
   const mapPost = (post: any): Post => {
     const isRoast =
@@ -318,6 +326,22 @@ export default function HomeFeed() {
         );
       };
 
+      const onCommentDeleted = (payload: any) => {
+        const { postId, commentCount } = payload || {};
+        if (!postId) return;
+        if (typeof commentCount !== "number") return;
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, commentCount } : p
+          )
+        );
+        setBanters((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, commentCount } : p
+          )
+        );
+      };
+
       const onReactionUpdate = (payload: any) => {
         const { postId, reactionCount, reactionBreakdown } = payload || {};
         if (!postId) return;
@@ -386,6 +410,7 @@ export default function HomeFeed() {
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
       socket.on("comment-created", onCommentCreated);
+      socket.on("comment-deleted", onCommentDeleted);
       socket.on("reaction-update", onReactionUpdate);
       socket.on("share-update", onShareUpdate);
       socket.on("repost-update", onRepostUpdate);
@@ -401,6 +426,7 @@ export default function HomeFeed() {
         socket.off("vote-update");
         socket.off("post-hidden");
         socket.off("comment-created");
+        socket.off("comment-deleted");
         socket.off("reaction-update");
         socket.off("share-update");
         socket.off("repost-update");
@@ -656,7 +682,10 @@ export default function HomeFeed() {
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const banterHeight = Math.max(360, windowHeight - insets.top - 110);
+    const banterHeight = Math.max(
+      360,
+      windowHeight - insets.top - insets.bottom - tabBarHeight
+    );
 
     return (
       <View style={[styles.banterCard, { height: banterHeight }]}>
@@ -761,92 +790,115 @@ export default function HomeFeed() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
-        <View style={styles.topBar}>
-          <Pressable onPress={() => router.push("/(tabs)/profile")}>
-            {meAvatar ? (
-              <ExpoImage
-                source={{ uri: meAvatar }}
-                style={styles.avatarSmall}
-                contentFit="cover"
-                transition={180}
-                cachePolicy="memory-disk"
-              />
+        <View
+          style={[
+            styles.headerStack,
+            mainTab === "banter" && styles.headerStackOverlay,
+          ]}
+          pointerEvents="box-none"
+        >
+          <View
+            style={[
+              styles.topBar,
+              mainTab === "banter" && styles.topBarOverlay,
+            ]}
+          >
+            <Pressable onPress={() => router.push("/(tabs)/profile")}>
+              {meAvatar ? (
+                <ExpoImage
+                  source={{ uri: meAvatar }}
+                  style={styles.avatarSmall}
+                  contentFit="cover"
+                  transition={180}
+                  cachePolicy="memory-disk"
+                />
+              ) : (
+                <View style={styles.avatarSmall} />
+              )}
+            </Pressable>
+            <Text style={styles.brand}>Banter</Text>
+            <FontAwesome name="cog" size={18} color="#fff" />
+          </View>
+
+          <View
+            style={[
+              styles.mainTabs,
+              mainTab === "banter" && styles.tabsOverlay,
+            ]}
+          >
+            <Pressable onPress={() => setMainTab("posts")}>
+              <Text
+                style={[
+                  styles.mainTab,
+                  mainTab === "posts" && styles.mainTabActive,
+                ]}
+              >
+                Posts
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setMainTab("banter")}>
+              <Text
+                style={[
+                  styles.mainTab,
+                  mainTab === "banter" && styles.mainTabActive,
+                ]}
+              >
+                Banter
+              </Text>
+            </Pressable>
+          </View>
+
+          <View
+            style={[
+              styles.subTabs,
+              mainTab === "banter" && styles.tabsOverlay,
+            ]}
+          >
+            {mainTab === "posts" ? (
+              <>
+                <Pressable onPress={() => setPostTab("forYou")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      postTab === "forYou" && styles.tabActive,
+                    ]}
+                  >
+                    For you
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => setPostTab("following")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      postTab === "following" && styles.tabActive,
+                    ]}
+                  >
+                    Following
+                  </Text>
+                </Pressable>
+              </>
             ) : (
-              <View style={styles.avatarSmall} />
+              <>
+                <Pressable onPress={() => setBanterTab("hot")}>
+                  <Text
+                    style={[styles.tab, banterTab === "hot" && styles.tabActive]}
+                  >
+                    Trending
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => setBanterTab("following")}>
+                  <Text
+                    style={[
+                      styles.tab,
+                      banterTab === "following" && styles.tabActive,
+                    ]}
+                  >
+                    Following
+                  </Text>
+                </Pressable>
+              </>
             )}
-          </Pressable>
-          <Text style={styles.brand}>Banter</Text>
-          <FontAwesome name="cog" size={18} color="#fff" />
-        </View>
-
-        <View style={styles.mainTabs}>
-          <Pressable onPress={() => setMainTab("posts")}>
-            <Text
-              style={[
-                styles.mainTab,
-                mainTab === "posts" && styles.mainTabActive,
-              ]}
-            >
-              Posts
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setMainTab("banter")}>
-            <Text
-              style={[
-                styles.mainTab,
-                mainTab === "banter" && styles.mainTabActive,
-              ]}
-            >
-              Banter
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.subTabs}>
-          {mainTab === "posts" ? (
-            <>
-              <Pressable onPress={() => setPostTab("forYou")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    postTab === "forYou" && styles.tabActive,
-                  ]}
-                >
-                  For you
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setPostTab("following")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    postTab === "following" && styles.tabActive,
-                  ]}
-                >
-                  Following
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Pressable onPress={() => setBanterTab("hot")}>
-                <Text
-                  style={[styles.tab, banterTab === "hot" && styles.tabActive]}
-                >
-                  Trending
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setBanterTab("following")}>
-                <Text
-                  style={[
-                    styles.tab,
-                    banterTab === "following" && styles.tabActive,
-                  ]}
-                >
-                  Following
-                </Text>
-              </Pressable>
-            </>
-          )}
+          </View>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -868,6 +920,8 @@ export default function HomeFeed() {
             contentContainerStyle={{ paddingBottom: 100 }}
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            viewabilityConfig={viewabilityConfig.current}
+            onViewableItemsChanged={onViewableItemsChanged}
           />
         ) : (
           <FlatList
@@ -877,14 +931,11 @@ export default function HomeFeed() {
             pagingEnabled
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20 }}
+            contentContainerStyle={{ paddingBottom: insets.bottom + tabBarHeight }}
             refreshing={refreshing}
             onRefresh={handleRefresh}
             viewabilityConfig={viewabilityConfig.current}
-            onViewableItemsChanged={({ viewableItems }) => {
-              const next = viewableItems.find((v) => v.isViewable);
-              if (next?.item?.id) setActiveBanterId(next.item.id);
-            }}
+            onViewableItemsChanged={onViewableItemsChanged}
           />
         )}
 
@@ -960,6 +1011,10 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
   },
+  topBarOverlay: {
+    backgroundColor: "transparent",
+    borderBottomWidth: 0,
+  },
   brand: { color: "#fff", fontWeight: "700", fontSize: 18 },
   avatarSmall: {
     width: 28,
@@ -973,6 +1028,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
   },
+  headerStack: {
+    zIndex: 20,
+  },
+  headerStackOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+  },
   mainTab: { color: "#777", fontWeight: "700", fontSize: 16 },
   mainTabActive: { color: "#ff6b35" },
   subTabs: {
@@ -982,6 +1046,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
+  },
+  tabsOverlay: {
+    backgroundColor: "transparent",
+    borderBottomWidth: 0,
   },
   tab: { color: "#999", fontWeight: "600" },
   tabActive: { color: "#ff6b35" },
