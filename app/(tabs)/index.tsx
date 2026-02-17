@@ -102,6 +102,7 @@ export default function HomeFeed() {
   const [postTab, setPostTab] = useState<"forYou" | "following">("forYou");
   const [banterTab, setBanterTab] = useState<"hot" | "following">("hot");
   const [meAvatar, setMeAvatar] = useState<string | null>(null);
+  const [meId, setMeId] = useState<string | null>(null);
   const [activeBanterId, setActiveBanterId] = useState<string | null>(null);
   const [repostTarget, setRepostTarget] = useState<Post | null>(null);
   const [quoteText, setQuoteText] = useState<string>("");
@@ -115,6 +116,12 @@ export default function HomeFeed() {
     {}
   );
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
+  const [commentActionTargetId, setCommentActionTargetId] = useState<string | null>(
+    null
+  );
+  const [commentEditingId, setCommentEditingId] = useState<string | null>(null);
+  const [commentEditText, setCommentEditText] = useState<string>("");
+  const lastTapRef = useRef<Record<string, number>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 95 });
@@ -188,8 +195,10 @@ export default function HomeFeed() {
       const data = await apiFetch("/auth/me", undefined, true);
       const user = data.user || data;
       setMeAvatar(normalizeMediaUrl(user?.avatarUrl) ?? null);
+      setMeId(user?.id || null);
     } catch {
       setMeAvatar(null);
+      setMeId(null);
     }
   }, []);
 
@@ -538,6 +547,8 @@ export default function HomeFeed() {
   const openBanterComments = async (item: Post) => {
     setBanterCommentTarget(item);
     setBanterCommentText("");
+    setCommentEditingId(null);
+    setCommentEditText("");
     setBanterCommentLoading(true);
     setActiveBanterId(null);
     try {
@@ -557,10 +568,36 @@ export default function HomeFeed() {
     setBanterCommentTarget(null);
     setBanterComments([]);
     setBanterCommentText("");
+    setCommentEditingId(null);
+    setCommentEditText("");
+    setCommentActionTargetId(null);
+    setReactionTargetId(null);
   };
 
   const submitBanterComment = async () => {
-    if (!banterCommentTarget || !banterCommentText.trim()) return;
+    if (!banterCommentTarget) return;
+    if (commentEditingId) {
+      if (!commentEditText.trim()) return;
+      setBanterCommentSubmitting(true);
+      try {
+        const data = await apiFetch(`/comments/${commentEditingId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ content: commentEditText.trim() }),
+        });
+        const updated = data.comment || data;
+        setBanterComments((prev) =>
+          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+        );
+        setCommentEditingId(null);
+        setCommentEditText("");
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setBanterCommentSubmitting(false);
+      }
+      return;
+    }
+    if (!banterCommentText.trim()) return;
     setBanterCommentSubmitting(true);
     try {
       const data = await apiFetch("/comments", {
@@ -593,6 +630,29 @@ export default function HomeFeed() {
   const handleCommentEmoji = (commentId: string, emoji: string) => {
     setCommentReactions((prev) => ({ ...prev, [commentId]: emoji }));
     setReactionTargetId(null);
+  };
+
+  const handleCommentPress = (commentId: string) => {
+    const now = Date.now();
+    const lastTap = lastTapRef.current[commentId] || 0;
+    if (now - lastTap < 320) {
+      setCommentReactions((prev) => {
+        const next = { ...prev };
+        delete next[commentId];
+        return next;
+      });
+    }
+    lastTapRef.current[commentId] = now;
+  };
+
+  const deleteComment = async (commentId: string) => {
+    try {
+      await apiFetch(`/comments/${commentId}`, { method: "DELETE" });
+      setBanterComments((prev) => prev.filter((c) => c.id !== commentId));
+      setCommentActionTargetId(null);
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
   const renderMedia = (
@@ -1134,7 +1194,7 @@ export default function HomeFeed() {
               />
               <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={insets.top + 24}
+                keyboardVerticalOffset={tabBarHeight + insets.top + 12}
               >
                 <View
                   style={[
@@ -1151,19 +1211,28 @@ export default function HomeFeed() {
                       <ActivityIndicator />
                     </View>
                   ) : (
-                    <FlatList
-                      data={banterComments}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => (
-                        <Pressable
-                          style={styles.commentRow}
-                          onLongPress={() => setReactionTargetId(item.id)}
-                        >
-                          {reactionTargetId === item.id ? (
-                            <View style={styles.commentReactionBar}>
-                              {commentEmojiOptions.map((emoji) => (
-                                <Pressable
-                                  key={`${item.id}-react-${emoji}`}
+                  <FlatList
+                    data={banterComments}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        style={styles.commentRow}
+                        onPress={() => handleCommentPress(item.id)}
+                        onLongPress={() => {
+                          if (item.user?.id && item.user.id === meId) {
+                            setCommentActionTargetId(item.id);
+                            setReactionTargetId(null);
+                          } else {
+                            setReactionTargetId(item.id);
+                            setCommentActionTargetId(null);
+                          }
+                        }}
+                      >
+                        {reactionTargetId === item.id ? (
+                          <View style={styles.commentReactionBar}>
+                            {commentEmojiOptions.map((emoji) => (
+                              <Pressable
+                                key={`${item.id}-react-${emoji}`}
                                   style={styles.commentReactionEmoji}
                                   onPress={() => handleCommentEmoji(item.id, emoji)}
                                 >
@@ -1171,15 +1240,35 @@ export default function HomeFeed() {
                                     {emoji}
                                   </Text>
                                 </Pressable>
-                              ))}
-                            </View>
-                          ) : null}
-                          {item.user?.avatarUrl ? (
-                            <ExpoImage
-                              source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
-                              style={styles.commentAvatar}
-                              contentFit="cover"
-                              transition={120}
+                          ))}
+                        </View>
+                        ) : null}
+                        {commentActionTargetId === item.id ? (
+                          <View style={styles.commentActionBar}>
+                            <Pressable
+                              style={styles.commentActionBtn}
+                              onPress={() => {
+                                setCommentEditingId(item.id);
+                                setCommentEditText(item.content || "");
+                                setCommentActionTargetId(null);
+                              }}
+                            >
+                              <Text style={styles.commentActionText}>Edit</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.commentActionBtn, styles.commentDeleteBtn]}
+                              onPress={() => deleteComment(item.id)}
+                            >
+                              <Text style={styles.commentActionText}>Delete</Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                        {item.user?.avatarUrl ? (
+                          <ExpoImage
+                            source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
+                            style={styles.commentAvatar}
+                            contentFit="cover"
+                            transition={120}
                               cachePolicy="memory-disk"
                             />
                           ) : (
@@ -1207,10 +1296,14 @@ export default function HomeFeed() {
                   <View style={styles.commentComposer}>
                     <TextInput
                       style={styles.commentInput}
-                      placeholder="Write a comment..."
+                      placeholder={
+                        commentEditingId ? "Edit your comment..." : "Write a comment..."
+                      }
                       placeholderTextColor="#777"
-                      value={banterCommentText}
-                      onChangeText={setBanterCommentText}
+                      value={commentEditingId ? commentEditText : banterCommentText}
+                      onChangeText={
+                        commentEditingId ? setCommentEditText : setBanterCommentText
+                      }
                     />
                     <Pressable
                       style={styles.commentSend}
@@ -1220,10 +1313,23 @@ export default function HomeFeed() {
                       {banterCommentSubmitting ? (
                         <ActivityIndicator color="#0d0d0d" />
                       ) : (
-                        <Text style={styles.commentSendText}>Send</Text>
+                        <Text style={styles.commentSendText}>
+                          {commentEditingId ? "Update" : "Send"}
+                        </Text>
                       )}
                     </Pressable>
                   </View>
+                  {commentEditingId ? (
+                    <Pressable
+                      style={styles.commentCancel}
+                      onPress={() => {
+                        setCommentEditingId(null);
+                        setCommentEditText("");
+                      }}
+                    >
+                      <Text style={styles.commentCancelText}>Cancel edit</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </KeyboardAvoidingView>
             </View>
@@ -1608,4 +1714,33 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   commentReactionBadgeText: { color: "#fff", fontSize: 12 },
+  commentActionBar: {
+    position: "absolute",
+    right: 10,
+    top: -36,
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "#111",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+    zIndex: 10,
+  },
+  commentActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#151515",
+  },
+  commentDeleteBtn: {
+    backgroundColor: "#3f1d1d",
+  },
+  commentActionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  commentCancel: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  commentCancelText: { color: "#9ca3af", fontSize: 12 },
 });
