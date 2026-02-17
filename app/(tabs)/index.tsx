@@ -1493,9 +1493,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   commentSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
     minHeight: 320,
     maxHeight: "75%",
     backgroundColor: "#0d0d0d",
@@ -1504,7 +1501,6 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
     borderWidth: 1,
     padding: 16,
-    zIndex: 60,
   },
   commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 8 },
   commentLoading: { paddingVertical: 16, alignItems: "center" },
