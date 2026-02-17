@@ -10,6 +10,7 @@ import {
   Pressable,
   Share,
   StyleSheet,
+  ScrollView,
   TextInput,
   View,
 } from "react-native";
@@ -30,6 +31,30 @@ import { getSocket } from "@/lib/socket";
 
 const ROAST_PREFIX = "[ROAST]";
 
+const detectMediaType = (uri?: string | null) => {
+  if (!uri) return undefined;
+  const lower = uri.toLowerCase();
+  if (lower.match(/\.(mp4|mov|m4v|webm)$/)) return "video";
+  return "image";
+};
+
+type RepostOf = {
+  id: string;
+  content: string;
+  mediaUrl?: string | null;
+  mediaType?: "image" | "video" | null;
+  isRoast?: boolean;
+  tags?: string[];
+  league?: string | null;
+  createdAt?: string;
+  user?: {
+    id: string;
+    displayName?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  };
+};
+
 type Post = {
   id: string;
   content: string;
@@ -45,6 +70,7 @@ type Post = {
   shareCount?: number;
   reactionBreakdown?: Record<string, number>;
   repostCount?: number;
+  repostOf?: RepostOf | null;
   createdAt: string;
   user?: {
     id: string;
@@ -84,6 +110,8 @@ export default function PostDetail() {
   const [savingMedia, setSavingMedia] = useState(false);
   const [detailAspect, setDetailAspect] = useState<number | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showRepostModal, setShowRepostModal] = useState(false);
+  const [quoteText, setQuoteText] = useState("");
 
   const loadPost = useCallback(async () => {
     if (!id) return;
@@ -156,18 +184,27 @@ export default function PostDetail() {
     }
   };
 
-  const handleRepost = async () => {
+  const handleRepost = async (comment?: string) => {
     if (!post) return;
     try {
-      const data = await apiFetch(`/posts/${post.id}/repost`, { method: "POST" });
+      const data = await apiFetch(`/posts/${post.id}/repost`, {
+        method: "POST",
+        body: JSON.stringify({ comment: comment || "" }),
+      });
       if (typeof data?.repostCount === "number") {
         setPost((prev) =>
           prev ? { ...prev, repostCount: data.repostCount } : prev
         );
       }
+      await loadPost();
     } catch (e: any) {
       setError(e.message);
     }
+  };
+
+  const openRepostModal = () => {
+    setQuoteText("");
+    setShowRepostModal(true);
   };
 
   const handleSubmitComment = async () => {
@@ -202,13 +239,14 @@ export default function PostDetail() {
   const handle = post?.user?.username ? `@${post.user.username}` : "@banter";
   const createdAt = post?.createdAt ? formatRelativeTime(post.createdAt) : "";
   const isRoast = !!post?.isRoast || (post?.content || "").startsWith(ROAST_PREFIX);
+  const mediaType = post?.mediaType || detectMediaType(mediaUrl);
 
   useEffect(() => {
     if (!mediaUrl) {
       setDetailAspect(null);
       return;
     }
-    if (post?.mediaType === "video") {
+    if (mediaType === "video") {
       setDetailAspect(16 / 9);
       return;
     }
@@ -222,7 +260,7 @@ export default function PostDetail() {
       },
       () => setDetailAspect(16 / 9)
     );
-  }, [mediaUrl, post?.mediaType]);
+  }, [mediaUrl, mediaType]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -345,6 +383,11 @@ export default function PostDetail() {
 
   const header = useMemo(() => {
     if (!post) return null;
+    const isRepost = !!post.repostOf;
+    const original = post.repostOf;
+    const originalMediaUrl = normalizeMediaUrl(original?.mediaUrl);
+    const originalMediaType =
+      original?.mediaType || detectMediaType(originalMediaUrl);
     return (
       <View style={styles.postCard}>
         <View style={styles.row}>
@@ -360,20 +403,38 @@ export default function PostDetail() {
             <View style={styles.avatar} />
           )}
           <View style={{ flex: 1 }}>
+            {isRepost ? (
+              <Text style={styles.repostLabel}>
+                {original?.isRoast ? "Rebantered" : "Reposted"} by {handle}
+              </Text>
+            ) : null}
             <Text style={styles.name}>
-              {displayName} <Text style={styles.handle}>{handle} · {createdAt}</Text>
+              {displayName} <Text style={styles.handle}>{handle} � {createdAt}</Text>
             </Text>
-            <Text style={styles.body}>{stripRoastPrefix(post.content || "")}</Text>
+            {post.content?.trim() ? (
+              <Text style={styles.body}>{stripRoastPrefix(post.content || "")}</Text>
+            ) : null}
             {mediaUrl ? (
-              <Pressable style={styles.mediaWrapper} onPress={() => setShowMedia(true)}>
-                {post.mediaType === "video" ? (
+              mediaType === "video" ? (
+                <View style={styles.mediaWrapper}>
                   <Video
                     source={{ uri: mediaUrl }}
                     style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
                     resizeMode={ResizeMode.COVER}
                     useNativeControls
                   />
-                ) : (
+                  <Pressable
+                    style={styles.mediaDownload}
+                    onPress={saveMedia}
+                  >
+                    <FontAwesome name="download" size={14} color="#fff" />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.mediaWrapper}
+                  onPress={() => setShowMedia(true)}
+                >
                   <ExpoImage
                     source={{ uri: mediaUrl }}
                     style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
@@ -382,18 +443,56 @@ export default function PostDetail() {
                     transition={180}
                     cachePolicy="memory-disk"
                   />
-                )}
-              </Pressable>
+                </Pressable>
+              )
+            ) : null}
+            {isRepost && original ? (
+              <View style={styles.repostCard}>
+                <Text style={styles.repostAuthor}>
+                  {original.user?.displayName ||
+                    original.user?.username ||
+                    "Banter"}{" "}
+                  <Text style={styles.handle}>
+                    {original.user?.username
+                      ? `@${original.user.username}`
+                      : "@banter"}
+                  </Text>
+                </Text>
+                <Text style={styles.repostBody}>
+                  {stripRoastPrefix(original.content || "")}
+                </Text>
+                {originalMediaUrl ? (
+                  <View style={styles.mediaWrapper}>
+                    {originalMediaType === "video" ? (
+                      <Video
+                        source={{ uri: originalMediaUrl }}
+                        style={[styles.media, { aspectRatio: 16 / 9 }]}
+                        resizeMode={ResizeMode.COVER}
+                        useNativeControls
+                      />
+                    ) : (
+                      <ExpoImage
+                        source={{ uri: originalMediaUrl }}
+                        style={[styles.media, { aspectRatio: 16 / 9 }]}
+                        contentFit="cover"
+                        contentPosition="center"
+                        transition={180}
+                        cachePolicy="memory-disk"
+                      />
+                    )}
+                  </View>
+                ) : null}
+              </View>
             ) : null}
             {isRoast && (
               <View style={{ marginTop: 10 }}>
                 <VoteGauge stayVotes={post.stayVotes} dropVotes={post.dropVotes} />
                 <View style={styles.voteActions}>
                   <Pressable style={styles.stayBtn} onPress={() => handleVote("STAY")}>
-                    <Text style={styles.voteBtnText}>🔥 Stay</Text>
+                    <Text style={styles.voteBtnText}>Stay</Text>
                   </Pressable>
                   <Pressable style={styles.dropBtn} onPress={() => handleVote("DROP")}>
-                    <Text style={styles.voteBtnText}>❄️ Drop</Text>
+                    <Text style={styles.voteBtnText}>Drop</Text>
                   </Pressable>
                 </View>
               </View>
@@ -403,7 +502,7 @@ export default function PostDetail() {
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
-              <Pressable style={styles.metaItem} onPress={handleRepost}>
+              <Pressable style={styles.metaItem} onPress={openRepostModal}>
                 <FontAwesome name="retweet" size={14} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.repostCount ?? 0}</Text>
               </Pressable>
@@ -420,7 +519,10 @@ export default function PostDetail() {
                 onPress={async () => {
                   try {
                     await Share.share({
-                      message: `${stripRoastPrefix(post.content || "")}`,
+                      message:
+                        stripRoastPrefix(post.content || "") ||
+                        stripRoastPrefix(post.repostOf?.content || "") ||
+                        "Banter post",
                     });
                   } finally {
                     try {
@@ -446,7 +548,7 @@ export default function PostDetail() {
         </View>
       </View>
     );
-  }, [post, avatarUrl, displayName, handle, createdAt, isRoast, mediaUrl]);
+  }, [post, avatarUrl, displayName, handle, createdAt, isRoast, mediaUrl, mediaType, detailAspect, comments.length]);
 
   const saveMedia = async () => {
     if (!mediaUrl) return;
@@ -555,17 +657,14 @@ export default function PostDetail() {
         </View>
       </KeyboardAvoidingView>
 
-      {mediaUrl ? (
+      {mediaUrl && mediaType !== "video" ? (
         <Modal transparent visible={showMedia} animationType="fade">
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowMedia(false)}>
-            {post?.mediaType === "video" ? (
-              <Video
-                source={{ uri: mediaUrl }}
-                style={styles.modalMedia}
-                resizeMode={ResizeMode.CONTAIN}
-                useNativeControls
-              />
-            ) : (
+          <View style={styles.modalBackdrop}>
+            <ScrollView
+              maximumZoomScale={3}
+              minimumZoomScale={1}
+              contentContainerStyle={styles.modalScroll}
+            >
               <ExpoImage
                 source={{ uri: mediaUrl }}
                 style={styles.modalMedia}
@@ -573,8 +672,8 @@ export default function PostDetail() {
                 contentPosition="center"
                 cachePolicy="memory-disk"
               />
-            )}
-          </Pressable>
+            </ScrollView>
+          </View>
           <View style={[styles.modalActions, { paddingBottom: 12 + insets.bottom }]}>
             <Pressable style={styles.modalBtn} onPress={() => setShowMedia(false)}>
               <Text style={styles.modalBtnText}>Close</Text>
@@ -586,6 +685,50 @@ export default function PostDetail() {
                 <Text style={styles.modalBtnPrimaryText}>Save</Text>
               )}
             </Pressable>
+          </View>
+        </Modal>
+      ) : null}
+
+      {showRepostModal ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable
+            style={styles.repostBackdrop}
+            onPress={() => setShowRepostModal(false)}
+          />
+          <View style={styles.repostSheet}>
+            <Text style={styles.repostTitle}>
+              {post?.repostOf?.isRoast || post?.isRoast ? "Rebanter" : "Repost"}
+            </Text>
+            <TextInput
+              style={styles.repostInput}
+              placeholder="Add a comment (optional)"
+              placeholderTextColor="#777"
+              value={quoteText}
+              onChangeText={setQuoteText}
+              multiline
+            />
+            <View style={styles.repostActions}>
+              <Pressable
+                style={styles.repostBtn}
+                onPress={() => {
+                  setShowRepostModal(false);
+                  handleRepost();
+                }}
+              >
+                <Text style={styles.repostBtnText}>
+                  {post?.repostOf?.isRoast || post?.isRoast ? "Rebanter" : "Repost"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.repostBtnPrimary}
+                onPress={() => {
+                  setShowRepostModal(false);
+                  handleRepost(quoteText.trim());
+                }}
+              >
+                <Text style={styles.repostBtnPrimaryText}>Quote</Text>
+              </Pressable>
+            </View>
           </View>
         </Modal>
       ) : null}
@@ -620,6 +763,14 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
   },
   media: { width: "100%" },
+  mediaDownload: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    padding: 6,
+    borderRadius: 999,
+  },
   voteActions: { flexDirection: "row", gap: 10, marginTop: 8 },
   stayBtn: {
     flex: 1,
@@ -639,6 +790,17 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
   metaText: { color: "#9ca3af", fontSize: 12 },
+  repostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
+  repostCard: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "#151515",
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+  },
+  repostAuthor: { color: "#fafafa", fontWeight: "700" },
+  repostBody: { color: "#d1d5db", marginTop: 4 },
   commentRow: {
     flexDirection: "row",
     gap: 12,
@@ -687,6 +849,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  modalScroll: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
   modalMedia: { width: "96%", height: "80%" },
   modalActions: {
     position: "absolute",
@@ -713,4 +876,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
+  repostBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  repostSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "25%",
+    backgroundColor: "#151515",
+    padding: 16,
+    borderRadius: 16,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+  },
+  repostTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  repostInput: {
+    marginTop: 12,
+    minHeight: 80,
+    borderRadius: 12,
+    backgroundColor: "#0d0d0d",
+    color: "#fff",
+    padding: 12,
+  },
+  repostActions: { flexDirection: "row", gap: 10, marginTop: 14 },
+  repostBtn: {
+    flex: 1,
+    backgroundColor: "#1f1f1f",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  repostBtnText: { color: "#fff", fontWeight: "700" },
+  repostBtnPrimary: {
+    flex: 1,
+    backgroundColor: "#ff6b35",
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  repostBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
 });
+
+
+
+
