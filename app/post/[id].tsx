@@ -452,7 +452,9 @@ export default function PostDetail() {
 
       socket.on("vote-update", onVoteUpdate);
       socket.on("post-hidden", onPostHidden);
-      socket.on("comment-created", onCommentCreated);\r\n      socket.on("comment-updated", onCommentUpdated);\r\n      socket.on("comment-deleted", onCommentDeleted);
+      socket.on("comment-created", onCommentCreated);
+socket.on("comment-updated", onCommentUpdated);
+socket.on("comment-deleted", onCommentDeleted);
       socket.on("reaction-update", onReactionUpdate);
       socket.on("share-update", onShareUpdate);
       socket.on("repost-update", onRepostUpdate);
@@ -468,7 +470,9 @@ export default function PostDetail() {
         if (id) socket.emit("leave-post", id);
         socket.off("vote-update");
         socket.off("post-hidden");
-        socket.off("comment-created");\r\n        socket.off("comment-updated");\r\n        socket.off("comment-deleted");
+        socket.off("comment-created");
+socket.off("comment-updated");
+socket.off("comment-deleted");
         socket.off("reaction-update");
         socket.off("share-update");
         socket.off("repost-update");
@@ -739,14 +743,6 @@ export default function PostDetail() {
                   <FontAwesome name="ellipsis-h" size={14} color="#9ca3af" />
                 </Pressable>
               ) : null}
-            </View>
-          )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.commentName}>
-                  {item.user?.displayName || item.user?.username || "User"}
-                </Text>
-                <Text style={styles.commentText}>{item.content}</Text>
-              </View>
             </View>
           )}
           refreshing={refreshing}
@@ -1241,5 +1237,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
+
 
 
