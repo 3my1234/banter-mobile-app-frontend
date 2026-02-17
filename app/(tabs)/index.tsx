@@ -111,12 +111,12 @@ export default function HomeFeed() {
   const [banterCommentText, setBanterCommentText] = useState("");
   const [banterCommentLoading, setBanterCommentLoading] = useState(false);
   const [banterCommentSubmitting, setBanterCommentSubmitting] = useState(false);
-  const [showCommentEmojis, setShowCommentEmojis] = useState(false);
-  const [commentReactions, setCommentReactions] = useState<
-    Record<string, Record<string, number>>
-  >({});
+  const [commentReactions, setCommentReactions] = useState<Record<string, string>>(
+    {}
+  );
+  const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
 
-  const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮"];
+  const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 95 });
   const videoRefs = useRef<Map<string, Video>>(new Map());
   const onViewableItemsChanged = useRef(
@@ -591,14 +591,8 @@ export default function HomeFeed() {
   };
 
   const handleCommentEmoji = (commentId: string, emoji: string) => {
-    setCommentReactions((prev) => {
-      const next = { ...prev };
-      const current = { ...(next[commentId] || {}) };
-      const currentCount = current[emoji] || 0;
-      current[emoji] = currentCount + 1;
-      next[commentId] = current;
-      return next;
-    });
+    setCommentReactions((prev) => ({ ...prev, [commentId]: emoji }));
+    setReactionTargetId(null);
   };
 
   const renderMedia = (
@@ -1161,7 +1155,25 @@ export default function HomeFeed() {
                       data={banterComments}
                       keyExtractor={(item) => item.id}
                       renderItem={({ item }) => (
-                        <View style={styles.commentRow}>
+                        <Pressable
+                          style={styles.commentRow}
+                          onLongPress={() => setReactionTargetId(item.id)}
+                        >
+                          {reactionTargetId === item.id ? (
+                            <View style={styles.commentReactionBar}>
+                              {commentEmojiOptions.map((emoji) => (
+                                <Pressable
+                                  key={`${item.id}-react-${emoji}`}
+                                  style={styles.commentReactionEmoji}
+                                  onPress={() => handleCommentEmoji(item.id, emoji)}
+                                >
+                                  <Text style={styles.commentReactionEmojiText}>
+                                    {emoji}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          ) : null}
                           {item.user?.avatarUrl ? (
                             <ExpoImage
                               source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
@@ -1178,30 +1190,15 @@ export default function HomeFeed() {
                               {item.user?.displayName || item.user?.username || "User"}
                             </Text>
                             <Text style={styles.commentText}>{item.content}</Text>
-                            <View style={styles.commentEmojiRow}>
-                              {commentEmojiOptions.map((emoji) => {
-                                const count =
-                                  commentReactions[item.id]?.[emoji] || 0;
-                                return (
-                                  <Pressable
-                                    key={`${item.id}-${emoji}`}
-                                    style={styles.commentEmoji}
-                                    onPress={() => handleCommentEmoji(item.id, emoji)}
-                                  >
-                                    <Text style={styles.commentEmojiText}>
-                                      {emoji}
-                                    </Text>
-                                    {count > 0 ? (
-                                      <Text style={styles.commentEmojiCount}>
-                                        {count}
-                                      </Text>
-                                    ) : null}
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
+                            {commentReactions[item.id] ? (
+                              <View style={styles.commentReactionBadge}>
+                                <Text style={styles.commentReactionBadgeText}>
+                                  {commentReactions[item.id]}
+                                </Text>
+                              </View>
+                            ) : null}
                           </View>
-                        </View>
+                        </Pressable>
                       )}
                       contentContainerStyle={{ paddingBottom: 120 }}
                       keyboardShouldPersistTaps="handled"
@@ -1216,12 +1213,6 @@ export default function HomeFeed() {
                       onChangeText={setBanterCommentText}
                     />
                     <Pressable
-                      style={styles.commentEmojiToggle}
-                      onPress={() => setShowCommentEmojis((prev) => !prev)}
-                    >
-                      <Text style={styles.commentEmojiToggleText}>😄</Text>
-                    </Pressable>
-                    <Pressable
                       style={styles.commentSend}
                       onPress={submitBanterComment}
                       disabled={banterCommentSubmitting}
@@ -1233,23 +1224,6 @@ export default function HomeFeed() {
                       )}
                     </Pressable>
                   </View>
-                  {showCommentEmojis ? (
-                    <View style={styles.commentEmojiPicker}>
-                      {commentEmojiOptions.map((emoji) => (
-                        <Pressable
-                          key={`picker-${emoji}`}
-                          style={styles.commentEmojiPickerItem}
-                          onPress={() =>
-                            setBanterCommentText((prev) => `${prev}${emoji}`)
-                          }
-                        >
-                          <Text style={styles.commentEmojiPickerText}>
-                            {emoji}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ) : null}
                 </View>
               </KeyboardAvoidingView>
             </View>
@@ -1581,23 +1555,6 @@ const styles = StyleSheet.create({
   },
   commentName: { color: "#fff", fontWeight: "700" },
   commentText: { color: "#cbd5f5", marginTop: 2 },
-  commentEmojiRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-    flexWrap: "wrap",
-  },
-  commentEmoji: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#151515",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  commentEmojiText: { color: "#fff", fontSize: 14 },
-  commentEmojiCount: { color: "#cbd5f5", fontSize: 12 },
   commentComposer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1612,15 +1569,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     color: "#fff",
   },
-  commentEmojiToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#151515",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  commentEmojiToggleText: { color: "#fff", fontSize: 16 },
   commentSend: {
     backgroundColor: "#ff6b35",
     paddingHorizontal: 14,
@@ -1628,19 +1576,36 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   commentSendText: { color: "#0d0d0d", fontWeight: "700" },
-  commentEmojiPicker: {
+  commentReactionBar: {
+    position: "absolute",
+    right: 10,
+    top: -36,
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 10,
+    gap: 8,
+    backgroundColor: "#111",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+    zIndex: 10,
   },
-  commentEmojiPickerItem: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  commentReactionEmoji: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: "#151515",
     alignItems: "center",
     justifyContent: "center",
   },
-  commentEmojiPickerText: { color: "#fff", fontSize: 18 },
+  commentReactionEmojiText: { color: "#fff", fontSize: 14 },
+  commentReactionBadge: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    backgroundColor: "#151515",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  commentReactionBadgeText: { color: "#fff", fontSize: 12 },
 });
