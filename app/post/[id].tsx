@@ -113,6 +113,14 @@ export default function PostDetail() {
   const [showRepostModal, setShowRepostModal] = useState(false);
   const [quoteText, setQuoteText] = useState("");
 
+  const [meId, setMeId] = useState<string | null>(null);
+  const [showPostActions, setShowPostActions] = useState(false);
+  const [showEditPost, setShowEditPost] = useState(false);
+  const [editPostText, setEditPostText] = useState("");
+  const [selectedComment, setSelectedComment] = useState<Comment | null>(null);
+  const [showCommentActions, setShowCommentActions] = useState(false);
+  const [showEditComment, setShowEditComment] = useState(false);
+  const [editCommentText, setEditCommentText] = useState("");
   const loadPost = useCallback(async () => {
     if (!id) return;
     try {
