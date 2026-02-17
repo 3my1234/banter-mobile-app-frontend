@@ -775,6 +775,7 @@ export default function HomeFeed() {
     const stayDropBottom = 12 + insets.bottom + 36;
     const sideActionsBottom = stayDropBottom + 120;
     const metaBottom = stayDropBottom + 150;
+    const isSheetOpen = !!banterCommentTarget;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -783,7 +784,13 @@ export default function HomeFeed() {
     const caption = captionParts.join(" ");
 
     return (
-      <View style={[styles.banterCard, { height: banterHeight }]}>
+      <View
+        style={[
+          styles.banterCard,
+          { height: banterHeight },
+          isSheetOpen && activeBanterId === item.id && styles.banterCardShrunk,
+        ]}
+      >
         <View style={styles.banterMedia}>
           {media ? (
             isVideo ? (
@@ -1121,7 +1128,10 @@ export default function HomeFeed() {
                 <View
                   style={[
                     styles.commentSheet,
-                    { paddingBottom: 12 + insets.bottom, bottom: tabBarHeight },
+                    {
+                      paddingBottom: 12 + insets.bottom,
+                      marginBottom: tabBarHeight,
+                    },
                   ]}
                 >
                   <Text style={styles.commentTitle}>Comments</Text>
@@ -1355,6 +1365,11 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     overflow: "hidden",
     backgroundColor: "#111",
+  },
+  banterCardShrunk: {
+    transform: [{ scale: 0.92 }, { translateY: -8 }],
+    borderRadius: 16,
+    overflow: "hidden",
   },
   banterMedia: { flex: 1 },
   banterMediaFill: { width: "100%", height: "100%" },
