@@ -1194,14 +1194,14 @@ export default function HomeFeed() {
               />
               <KeyboardAvoidingView
                 style={styles.commentKeyboard}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                behavior="padding"
                 keyboardVerticalOffset={tabBarHeight + 60}
               >
                 <View
                   style={[
                     styles.commentSheet,
                     {
-                      paddingBottom: 12 + insets.bottom,
+                      paddingBottom: 12 + insets.bottom + tabBarHeight,
                       marginBottom: tabBarHeight,
                     },
                   ]}
@@ -1216,9 +1216,14 @@ export default function HomeFeed() {
                     data={banterComments}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
+                      (() => {
+                        const ownerId = item.user?.id || item.userId;
+                        const isMine = !!meId && ownerId === meId;
+                        return (
                       <Pressable
                         style={styles.commentRow}
                         onPress={() => handleCommentPress(item.id)}
+                        delayLongPress={200}
                         onLongPress={() => {
                           setReactionTargetId(item.id);
                           setCommentActionTargetId(null);
@@ -1277,7 +1282,7 @@ export default function HomeFeed() {
                                   item.user?.username ||
                                   "User"}
                               </Text>
-                              {item.user?.id && item.user.id === meId ? (
+                              {isMine ? (
                                 <Pressable
                                   style={styles.commentActionToggle}
                                   onPress={() =>
@@ -1304,6 +1309,8 @@ export default function HomeFeed() {
                             ) : null}
                           </View>
                         </Pressable>
+                        );
+                      })()
                       )}
                       contentContainerStyle={{ paddingBottom: 120 }}
                       keyboardShouldPersistTaps="handled"
@@ -1667,6 +1674,7 @@ const styles = StyleSheet.create({
   commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 8 },
   commentLoading: { paddingVertical: 16, alignItems: "center" },
   commentRow: {
+    position: "relative",
     flexDirection: "row",
     gap: 10,
     paddingVertical: 10,
