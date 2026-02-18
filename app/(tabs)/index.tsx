@@ -2,9 +2,11 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Keyboard,
+  PanResponder,
   Modal,
   Platform,
   Pressable,
@@ -124,6 +126,13 @@ export default function HomeFeed() {
   const [commentEditText, setCommentEditText] = useState<string>("");
   const [commentComposerHeight, setCommentComposerHeight] = useState(56);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [replyTarget, setReplyTarget] = useState<any | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [repliesByComment, setRepliesByComment] = useState<Record<string, any[]>>(
+    {}
+  );
+  const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -563,13 +572,14 @@ export default function HomeFeed() {
 
   const openBanterComments = async (item: Post) => {
     setBanterCommentTarget(item);
-    setBanterCommentText("");
+    setBanterCommentText(commentDrafts[item.id] || "");
     setCommentEditingId(null);
     setCommentEditText("");
+    setReplyTarget(null);
     setBanterCommentLoading(true);
     setActiveBanterId(null);
     try {
-      const data = await apiFetch(`/comments/${item.id}?page=1&limit=50`);
+      const data = await apiFetch(`/comments/${item.id}?page=1&limit=50&includeReplies=1`);
       setBanterComments(data.comments || []);
     } catch {
       setBanterComments([]);
@@ -581,14 +591,19 @@ export default function HomeFeed() {
   const closeBanterComments = () => {
     if (banterCommentTarget?.id) {
       setActiveBanterId(banterCommentTarget.id);
+      setCommentDrafts((prev) => ({
+        ...prev,
+        [banterCommentTarget.id]: banterCommentText,
+      }));
     }
     setBanterCommentTarget(null);
     setBanterComments([]);
-    setBanterCommentText("");
     setCommentEditingId(null);
     setCommentEditText("");
     setCommentActionTargetId(null);
     setReactionTargetId(null);
+    setReplyTarget(null);
+    commentSheetY.setValue(0);
   };
 
   const submitBanterComment = async () => {
@@ -622,6 +637,7 @@ export default function HomeFeed() {
         body: JSON.stringify({
           postId: banterCommentTarget.id,
           content: banterCommentText.trim(),
+          parentId: replyTarget?.id ?? null,
         }),
       });
       const created = data.comment || data;
@@ -637,10 +653,23 @@ export default function HomeFeed() {
         );
       }
       setBanterCommentText("");
+      setReplyTarget(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBanterCommentSubmitting(false);
+    }
+  };
+
+  const loadReplies = async (commentId: string) => {
+    try {
+      const data = await apiFetch(`/comments/replies/${commentId}?page=1&limit=20`);
+      setRepliesByComment((prev) => ({
+        ...prev,
+        [commentId]: data.replies || [],
+      }));
+    } catch (e: any) {
+      setError(e.message);
     }
   };
 
@@ -1217,16 +1246,38 @@ export default function HomeFeed() {
                 keyboardVerticalOffset={tabBarHeight + insets.bottom}
                 pointerEvents="box-none"
               >
-                <View
+                <Animated.View
                   style={[
                     styles.commentSheet,
                     {
                       paddingBottom: 12 + insets.bottom,
                       marginBottom: tabBarHeight,
+                      transform: [{ translateY: commentSheetY }],
                     },
                   ]}
                 >
-                  <View style={styles.commentHeaderRow}>
+                  <View
+                    style={styles.commentHeaderRow}
+                    {...PanResponder.create({
+                      onMoveShouldSetPanResponder: (_, gesture) =>
+                        Math.abs(gesture.dy) > 6,
+                      onPanResponderMove: (_, gesture) => {
+                        if (gesture.dy > 0) {
+                          commentSheetY.setValue(gesture.dy);
+                        }
+                      },
+                      onPanResponderRelease: (_, gesture) => {
+                        if (gesture.dy > 120 || gesture.vy > 1.2) {
+                          closeBanterComments();
+                        } else {
+                          Animated.spring(commentSheetY, {
+                            toValue: 0,
+                            useNativeDriver: true,
+                          }).start();
+                        }
+                      },
+                    }).panHandlers}
+                  >
                     <Text style={styles.commentTitle}>Comments</Text>
                     <Text style={styles.commentCountText}>
                       {banterComments.length}
@@ -1340,6 +1391,74 @@ export default function HomeFeed() {
                               <Text style={styles.commentText}>
                                 {item.content}
                               </Text>
+                              <View style={styles.commentMetaRow}>
+                                <Text style={styles.commentMetaText}>
+                                  {formatRelativeTime(item.createdAt)}
+                                </Text>
+                                <Pressable
+                                  onPress={() => setReplyTarget(item)}
+                                  style={styles.commentReplyBtn}
+                                >
+                                  <Text style={styles.commentReplyText}>Reply</Text>
+                                </Pressable>
+                              </View>
+                              {item.replyCount > 0 ? (
+                                <Pressable
+                                  style={styles.commentRepliesToggle}
+                                  onPress={() => {
+                                    const expanded = !!expandedReplies[item.id];
+                                    setExpandedReplies((prev) => ({
+                                      ...prev,
+                                      [item.id]: !expanded,
+                                    }));
+                                    if (!expanded && !repliesByComment[item.id]) {
+                                      loadReplies(item.id);
+                                    }
+                                  }}
+                                >
+                                  <Text style={styles.commentRepliesText}>
+                                    {expandedReplies[item.id]
+                                      ? "Hide replies"
+                                      : `View ${item.replyCount} replies`}
+                                  </Text>
+                                </Pressable>
+                              ) : null}
+                              {expandedReplies[item.id] &&
+                              (repliesByComment[item.id] || item.replies) ? (
+                                <View style={styles.commentRepliesWrap}>
+                                  {(repliesByComment[item.id] ||
+                                    item.replies ||
+                                    []).map((reply: any) => (
+                                    <View key={reply.id} style={styles.replyRow}>
+                                      {reply.user?.avatarUrl ? (
+                                        <ExpoImage
+                                          source={{
+                                            uri: normalizeMediaUrl(
+                                              reply.user.avatarUrl
+                                            ),
+                                          }}
+                                          style={styles.replyAvatar}
+                                          contentFit="cover"
+                                          transition={120}
+                                          cachePolicy="memory-disk"
+                                        />
+                                      ) : (
+                                        <View style={styles.replyAvatar} />
+                                      )}
+                                      <View style={{ flex: 1 }}>
+                                        <Text style={styles.replyName}>
+                                          {reply.user?.displayName ||
+                                            reply.user?.username ||
+                                            "User"}
+                                        </Text>
+                                        <Text style={styles.replyText}>
+                                          {reply.content}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </View>
+                              ) : null}
                               {commentReactions[item.id] ? (
                                 <View style={styles.commentReactionBadge}>
                                   <Text style={styles.commentReactionBadgeText}>
@@ -1381,7 +1500,15 @@ export default function HomeFeed() {
                     <TextInput
                       style={styles.commentInput}
                       placeholder={
-                        commentEditingId ? "Edit your comment..." : "Write a comment..."
+                        commentEditingId
+                          ? "Edit your comment..."
+                          : replyTarget
+                          ? `Reply to @${
+                              replyTarget.user?.username ||
+                              replyTarget.user?.displayName ||
+                              "user"
+                            }...`
+                          : "Write a comment..."
                       }
                       placeholderTextColor="#777"
                       value={commentEditingId ? commentEditText : banterCommentText}
@@ -1403,6 +1530,16 @@ export default function HomeFeed() {
                       )}
                     </Pressable>
                   </View>
+                  {replyTarget ? (
+                    <Pressable
+                      style={styles.commentCancel}
+                      onPress={() => setReplyTarget(null)}
+                    >
+                      <Text style={styles.commentCancelText}>
+                        Cancel reply
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   {commentEditingId ? (
                     <Pressable
                       style={styles.commentCancel}
@@ -1760,6 +1897,38 @@ const styles = StyleSheet.create({
   },
   commentName: { color: "#fff", fontWeight: "700" },
   commentText: { color: "#cbd5f5", marginTop: 2 },
+  commentMetaRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 6,
+    alignItems: "center",
+  },
+  commentMetaText: { color: "#9ca3af", fontSize: 12 },
+  commentReplyBtn: { paddingVertical: 2 },
+  commentReplyText: { color: "#9ca3af", fontSize: 12, fontWeight: "600" },
+  commentRepliesToggle: {
+    marginTop: 6,
+  },
+  commentRepliesText: { color: "#ff6b35", fontSize: 12, fontWeight: "600" },
+  commentRepliesWrap: {
+    marginTop: 8,
+    paddingLeft: 8,
+    borderLeftColor: "#1f1f1f",
+    borderLeftWidth: 1,
+    gap: 8,
+  },
+  replyRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  replyAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#1f1f1f",
+  },
+  replyName: { color: "#e5e7eb", fontWeight: "600", fontSize: 12 },
+  replyText: { color: "#cbd5f5", marginTop: 2, fontSize: 12 },
   commentComposer: {
     flexDirection: "row",
     alignItems: "center",
