@@ -1196,7 +1196,7 @@ export default function HomeFeed() {
               <KeyboardAvoidingView
                 style={styles.commentKeyboard}
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={tabBarHeight}
+                keyboardVerticalOffset={tabBarHeight + insets.bottom}
               >
                 <View
                   style={[
@@ -1682,8 +1682,7 @@ const styles = StyleSheet.create({
   },
   commentSheet: {
     position: "relative",
-    minHeight: "72%",
-    maxHeight: "85%",
+    height: "80%",
     backgroundColor: "#0d0d0d",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
