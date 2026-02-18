@@ -1551,7 +1551,7 @@ export default function HomeFeed() {
                       <Text style={styles.commentCancelText}>Cancel edit</Text>
                     </Pressable>
                   ) : null}
-                </View>
+                </Animated.View>
               </KeyboardAvoidingView>
             </View>
           </Modal>
