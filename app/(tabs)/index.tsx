@@ -121,6 +121,7 @@ export default function HomeFeed() {
   );
   const [commentEditingId, setCommentEditingId] = useState<string | null>(null);
   const [commentEditText, setCommentEditText] = useState<string>("");
+  const [commentComposerHeight, setCommentComposerHeight] = useState(56);
   const lastTapRef = useRef<Record<string, number>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -1194,14 +1195,14 @@ export default function HomeFeed() {
               />
               <KeyboardAvoidingView
                 style={styles.commentKeyboard}
-                behavior="padding"
-                keyboardVerticalOffset={tabBarHeight + 60}
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={tabBarHeight}
               >
                 <View
                   style={[
                     styles.commentSheet,
                     {
-                      paddingBottom: 12 + insets.bottom + tabBarHeight,
+                      paddingBottom: 0,
                       marginBottom: tabBarHeight,
                     },
                   ]}
@@ -1220,103 +1221,119 @@ export default function HomeFeed() {
                         const ownerId = item.user?.id || item.userId;
                         const isMine = !!meId && ownerId === meId;
                         return (
-                      <Pressable
-                        style={styles.commentRow}
-                        onPress={() => handleCommentPress(item.id)}
-                        delayLongPress={200}
-                        onLongPress={() => {
-                          setReactionTargetId(item.id);
-                          setCommentActionTargetId(null);
-                        }}
-                      >
-                        {reactionTargetId === item.id ? (
-                          <View style={styles.commentReactionBar}>
-                            {commentEmojiOptions.map((emoji) => (
-                              <Pressable
-                                key={`${item.id}-react-${emoji}`}
-                                  style={styles.commentReactionEmoji}
-                                  onPress={() => handleCommentEmoji(item.id, emoji)}
-                                >
-                                  <Text style={styles.commentReactionEmojiText}>
-                                    {emoji}
-                                  </Text>
-                                </Pressable>
-                          ))}
-                        </View>
-                        ) : null}
-                        {commentActionTargetId === item.id ? (
-                          <View style={styles.commentActionBar}>
-                            <Pressable
-                              style={styles.commentActionBtn}
-                              onPress={() => {
-                                setCommentEditingId(item.id);
-                                setCommentEditText(item.content || "");
-                                setCommentActionTargetId(null);
-                              }}
-                            >
-                              <Text style={styles.commentActionText}>Edit</Text>
-                            </Pressable>
-                            <Pressable
-                              style={[styles.commentActionBtn, styles.commentDeleteBtn]}
-                              onPress={() => deleteComment(item.id)}
-                            >
-                              <Text style={styles.commentActionText}>Delete</Text>
-                            </Pressable>
-                          </View>
-                        ) : null}
-                        {item.user?.avatarUrl ? (
-                          <ExpoImage
-                            source={{ uri: normalizeMediaUrl(item.user.avatarUrl) }}
-                            style={styles.commentAvatar}
-                            contentFit="cover"
-                            transition={120}
-                              cachePolicy="memory-disk"
-                            />
-                          ) : (
-                            <View style={styles.commentAvatar} />
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <View style={styles.commentHeader}>
-                              <Text style={styles.commentName}>
-                                {item.user?.displayName ||
-                                  item.user?.username ||
-                                  "User"}
-                              </Text>
-                              {isMine ? (
-                                <Pressable
-                                  style={styles.commentActionToggle}
-                                  onPress={() =>
-                                    setCommentActionTargetId((prev) =>
-                                      prev === item.id ? null : item.id
-                                    )
-                                  }
-                                >
-                                  <FontAwesome
-                                    name="ellipsis-h"
-                                    size={14}
-                                    color="#9ca3af"
-                                  />
-                                </Pressable>
-                              ) : null}
-                            </View>
-                            <Text style={styles.commentText}>{item.content}</Text>
-                            {commentReactions[item.id] ? (
-                              <View style={styles.commentReactionBadge}>
-                                <Text style={styles.commentReactionBadgeText}>
-                                  {commentReactions[item.id]}
-                                </Text>
+                          <Pressable
+                            style={styles.commentRow}
+                            onPress={() => handleCommentPress(item.id)}
+                            delayLongPress={200}
+                            onLongPress={() => {
+                              setReactionTargetId(item.id);
+                              setCommentActionTargetId(null);
+                            }}
+                          >
+                            {reactionTargetId === item.id ? (
+                              <View style={styles.commentReactionBar}>
+                                {commentEmojiOptions.map((emoji) => (
+                                  <Pressable
+                                    key={`${item.id}-react-${emoji}`}
+                                    style={styles.commentReactionEmoji}
+                                    onPress={() => handleCommentEmoji(item.id, emoji)}
+                                  >
+                                    <Text style={styles.commentReactionEmojiText}>
+                                      {emoji}
+                                    </Text>
+                                  </Pressable>
+                                ))}
                               </View>
                             ) : null}
-                          </View>
-                        </Pressable>
+                            {commentActionTargetId === item.id ? (
+                              <View style={styles.commentActionBar}>
+                                <Pressable
+                                  style={styles.commentActionBtn}
+                                  onPress={() => {
+                                    setCommentEditingId(item.id);
+                                    setCommentEditText(item.content || "");
+                                    setCommentActionTargetId(null);
+                                  }}
+                                >
+                                  <Text style={styles.commentActionText}>Edit</Text>
+                                </Pressable>
+                                <Pressable
+                                  style={[
+                                    styles.commentActionBtn,
+                                    styles.commentDeleteBtn,
+                                  ]}
+                                  onPress={() => deleteComment(item.id)}
+                                >
+                                  <Text style={styles.commentActionText}>
+                                    Delete
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            ) : null}
+                            {item.user?.avatarUrl ? (
+                              <ExpoImage
+                                source={{
+                                  uri: normalizeMediaUrl(item.user.avatarUrl),
+                                }}
+                                style={styles.commentAvatar}
+                                contentFit="cover"
+                                transition={120}
+                                cachePolicy="memory-disk"
+                              />
+                            ) : (
+                              <View style={styles.commentAvatar} />
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <View style={styles.commentHeader}>
+                                <Text style={styles.commentName}>
+                                  {item.user?.displayName ||
+                                    item.user?.username ||
+                                    "User"}
+                                </Text>
+                                {isMine ? (
+                                  <Pressable
+                                    style={styles.commentActionToggle}
+                                    onPress={() =>
+                                      setCommentActionTargetId((prev) =>
+                                        prev === item.id ? null : item.id
+                                      )
+                                    }
+                                  >
+                                    <FontAwesome
+                                      name="ellipsis-h"
+                                      size={14}
+                                      color="#9ca3af"
+                                    />
+                                  </Pressable>
+                                ) : null}
+                              </View>
+                              <Text style={styles.commentText}>
+                                {item.content}
+                              </Text>
+                              {commentReactions[item.id] ? (
+                                <View style={styles.commentReactionBadge}>
+                                  <Text style={styles.commentReactionBadgeText}>
+                                    {commentReactions[item.id]}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          </Pressable>
                         );
                       })()
-                      )}
-                      contentContainerStyle={{ paddingBottom: 120 }}
-                      keyboardShouldPersistTaps="handled"
-                    />
+                    )}
+                    contentContainerStyle={{
+                      paddingBottom: commentComposerHeight + 28,
+                    }}
+                    keyboardShouldPersistTaps="handled"
+                  />
                   )}
-                  <View style={styles.commentComposer}>
+                  <View
+                    style={styles.commentComposer}
+                    onLayout={(event) =>
+                      setCommentComposerHeight(event.nativeEvent.layout.height)
+                    }
+                  >
                     <TextInput
                       style={styles.commentInput}
                       placeholder={
@@ -1662,6 +1679,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   commentSheet: {
+    position: "relative",
     minHeight: 320,
     maxHeight: "75%",
     backgroundColor: "#0d0d0d",
@@ -1690,6 +1708,10 @@ const styles = StyleSheet.create({
   commentName: { color: "#fff", fontWeight: "700" },
   commentText: { color: "#cbd5f5", marginTop: 2 },
   commentComposer: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 12 + 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
