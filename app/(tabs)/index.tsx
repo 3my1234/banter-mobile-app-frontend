@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -122,6 +123,7 @@ export default function HomeFeed() {
   const [commentEditingId, setCommentEditingId] = useState<string | null>(null);
   const [commentEditText, setCommentEditText] = useState<string>("");
   const [commentComposerHeight, setCommentComposerHeight] = useState(56);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const lastTapRef = useRef<Record<string, number>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -212,6 +214,19 @@ export default function HomeFeed() {
     }
     loadMe();
   }, [loadPosts, loadMe, mainTab, postTab, banterTab]);
+
+  React.useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+    });
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   React.useEffect(() => {
     videoRefs.current.forEach((ref, id) => {
@@ -1323,13 +1338,24 @@ export default function HomeFeed() {
                       })()
                     )}
                     contentContainerStyle={{
-                      paddingBottom: commentComposerHeight + 28,
+                      paddingBottom:
+                        commentComposerHeight +
+                        28 +
+                        Math.max(0, keyboardHeight - tabBarHeight),
                     }}
                     keyboardShouldPersistTaps="handled"
                   />
                   )}
                   <View
-                    style={styles.commentComposer}
+                    style={[
+                      styles.commentComposer,
+                      {
+                        bottom:
+                          12 +
+                          Math.max(0, keyboardHeight - tabBarHeight) +
+                          insets.bottom,
+                      },
+                    ]}
                     onLayout={(event) =>
                       setCommentComposerHeight(event.nativeEvent.layout.height)
                     }
@@ -1711,7 +1737,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 12 + 12,
+    bottom: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
