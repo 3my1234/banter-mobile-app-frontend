@@ -1193,8 +1193,9 @@ export default function HomeFeed() {
                 onPress={closeBanterComments}
               />
               <KeyboardAvoidingView
+                style={styles.commentKeyboard}
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={tabBarHeight + insets.top + 12}
+                keyboardVerticalOffset={tabBarHeight + 60}
               >
                 <View
                   style={[
@@ -1219,13 +1220,8 @@ export default function HomeFeed() {
                         style={styles.commentRow}
                         onPress={() => handleCommentPress(item.id)}
                         onLongPress={() => {
-                          if (item.user?.id && item.user.id === meId) {
-                            setCommentActionTargetId(item.id);
-                            setReactionTargetId(null);
-                          } else {
-                            setReactionTargetId(item.id);
-                            setCommentActionTargetId(null);
-                          }
+                          setReactionTargetId(item.id);
+                          setCommentActionTargetId(null);
                         }}
                       >
                         {reactionTargetId === item.id ? (
@@ -1275,9 +1271,29 @@ export default function HomeFeed() {
                             <View style={styles.commentAvatar} />
                           )}
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.commentName}>
-                              {item.user?.displayName || item.user?.username || "User"}
-                            </Text>
+                            <View style={styles.commentHeader}>
+                              <Text style={styles.commentName}>
+                                {item.user?.displayName ||
+                                  item.user?.username ||
+                                  "User"}
+                              </Text>
+                              {item.user?.id && item.user.id === meId ? (
+                                <Pressable
+                                  style={styles.commentActionToggle}
+                                  onPress={() =>
+                                    setCommentActionTargetId((prev) =>
+                                      prev === item.id ? null : item.id
+                                    )
+                                  }
+                                >
+                                  <FontAwesome
+                                    name="ellipsis-h"
+                                    size={14}
+                                    color="#9ca3af"
+                                  />
+                                </Pressable>
+                              ) : null}
+                            </View>
                             <Text style={styles.commentText}>{item.content}</Text>
                             {commentReactions[item.id] ? (
                               <View style={styles.commentReactionBadge}>
@@ -1631,6 +1647,10 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.6)",
   },
+  commentKeyboard: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   commentBackdrop: {
     flex: 1,
   },
@@ -1666,6 +1686,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     paddingTop: 10,
+  },
+  commentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  commentActionToggle: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   commentInput: {
     flex: 1,
