@@ -1231,10 +1231,14 @@ export default function HomeFeed() {
                   <FlatList
                     data={banterComments}
                     keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
+                    renderItem={({ item, index }) => (
                       (() => {
                         const ownerId = item.user?.id || item.userId;
                         const isMine = !!meId && ownerId === meId;
+                        const reactionBarStyle =
+                          index < 2
+                            ? styles.commentReactionBarBelow
+                            : styles.commentReactionBarAbove;
                         return (
                           <Pressable
                             style={styles.commentRow}
@@ -1246,7 +1250,7 @@ export default function HomeFeed() {
                             }}
                           >
                             {reactionTargetId === item.id ? (
-                              <View style={styles.commentReactionBar}>
+                              <View style={[styles.commentReactionBar, reactionBarStyle]}>
                                 {commentEmojiOptions.map((emoji) => (
                                   <Pressable
                                     key={`${item.id}-react-${emoji}`}
@@ -1706,8 +1710,8 @@ const styles = StyleSheet.create({
   },
   commentSheet: {
     position: "relative",
-    minHeight: 320,
-    maxHeight: "75%",
+    minHeight: "65%",
+    maxHeight: "80%",
     backgroundColor: "#0d0d0d",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
@@ -1771,7 +1775,6 @@ const styles = StyleSheet.create({
   commentReactionBar: {
     position: "absolute",
     right: 10,
-    top: -36,
     flexDirection: "row",
     gap: 8,
     backgroundColor: "#111",
@@ -1780,7 +1783,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderColor: "#1f1f1f",
     borderWidth: 1,
-    zIndex: 10,
+    zIndex: 20,
+    elevation: 20,
+  },
+  commentReactionBarAbove: {
+    top: -40,
+  },
+  commentReactionBarBelow: {
+    top: 44,
   },
   commentReactionEmoji: {
     width: 28,
