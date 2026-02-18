@@ -1222,7 +1222,12 @@ export default function HomeFeed() {
                     },
                   ]}
                 >
-                  <Text style={styles.commentTitle}>Comments</Text>
+                  <View style={styles.commentHeaderRow}>
+                    <Text style={styles.commentTitle}>Comments</Text>
+                    <Text style={styles.commentCountText}>
+                      {banterComments.length}
+                    </Text>
+                  </View>
                   {banterCommentLoading ? (
                     <View style={styles.commentLoading}>
                       <ActivityIndicator />
@@ -1710,8 +1715,8 @@ const styles = StyleSheet.create({
   },
   commentSheet: {
     position: "relative",
-    minHeight: "65%",
-    maxHeight: "80%",
+    minHeight: "70%",
+    maxHeight: "85%",
     backgroundColor: "#0d0d0d",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
@@ -1719,7 +1724,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
   },
-  commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16, marginBottom: 8 },
+  commentHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  commentCountText: { color: "#9ca3af", fontSize: 12 },
+  commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
   commentLoading: { paddingVertical: 16, alignItems: "center" },
   commentRow: {
     position: "relative",
