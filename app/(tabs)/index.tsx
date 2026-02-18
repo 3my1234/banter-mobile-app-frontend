@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -121,6 +122,8 @@ export default function HomeFeed() {
   );
   const [commentEditingId, setCommentEditingId] = useState<string | null>(null);
   const [commentEditText, setCommentEditText] = useState<string>("");
+  const [commentComposerHeight, setCommentComposerHeight] = useState(56);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const lastTapRef = useRef<Record<string, number>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -211,6 +214,19 @@ export default function HomeFeed() {
     }
     loadMe();
   }, [loadPosts, loadMe, mainTab, postTab, banterTab]);
+
+  React.useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+    });
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
 
   React.useEffect(() => {
@@ -1197,6 +1213,7 @@ export default function HomeFeed() {
                 style={styles.commentKeyboard}
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 keyboardVerticalOffset={tabBarHeight + insets.bottom}
+                pointerEvents="box-none"
               >
                 <View
                   style={[
@@ -1331,11 +1348,32 @@ export default function HomeFeed() {
                         );
                       })()
                     )}
-                    contentContainerStyle={styles.commentListContent}
+                    contentContainerStyle={[
+                      styles.commentListContent,
+                      {
+                        paddingBottom:
+                          commentComposerHeight +
+                          16 +
+                          Math.max(0, keyboardHeight - tabBarHeight),
+                      },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                   />
                   )}
-                  <View style={styles.commentComposer}>
+                  <View
+                    style={[
+                      styles.commentComposer,
+                      {
+                        bottom:
+                          12 +
+                          Math.max(0, keyboardHeight - tabBarHeight) +
+                          insets.bottom,
+                      },
+                    ]}
+                    onLayout={(event) =>
+                      setCommentComposerHeight(event.nativeEvent.layout.height)
+                    }
+                  >
                     <TextInput
                       style={styles.commentInput}
                       placeholder={
@@ -1673,12 +1711,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.45)",
   },
+  commentBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
   commentKeyboard: {
     flex: 1,
     justifyContent: "flex-end",
-  },
-  commentBackdrop: {
-    flex: 1,
   },
   commentSheet: {
     position: "relative",
@@ -1727,6 +1765,13 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderTopColor: "#1f1f1f",
     borderTopWidth: 1,
+    position: "absolute",
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(13,13,13,0.92)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    zIndex: 30,
   },
   commentHeader: {
     flexDirection: "row",
