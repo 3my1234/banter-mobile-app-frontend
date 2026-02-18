@@ -650,6 +650,8 @@ export default function HomeFeed() {
   };
 
   const handleCommentPress = (commentId: string) => {
+    setReactionTargetId(null);
+    setCommentActionTargetId(null);
     const now = Date.now();
     const lastTap = lastTapRef.current[commentId] || 0;
     if (now - lastTap < 320) {
@@ -1271,31 +1273,6 @@ export default function HomeFeed() {
                                 ))}
                               </View>
                             ) : null}
-                            {commentActionTargetId === item.id ? (
-                              <View style={styles.commentActionBar}>
-                                <Pressable
-                                  style={styles.commentActionBtn}
-                                  onPress={() => {
-                                    setCommentEditingId(item.id);
-                                    setCommentEditText(item.content || "");
-                                    setCommentActionTargetId(null);
-                                  }}
-                                >
-                                  <Text style={styles.commentActionText}>Edit</Text>
-                                </Pressable>
-                                <Pressable
-                                  style={[
-                                    styles.commentActionBtn,
-                                    styles.commentDeleteBtn,
-                                  ]}
-                                  onPress={() => deleteComment(item.id)}
-                                >
-                                  <Text style={styles.commentActionText}>
-                                    Delete
-                                  </Text>
-                                </Pressable>
-                              </View>
-                            ) : null}
                             {item.user?.avatarUrl ? (
                               <ExpoImage
                                 source={{
@@ -1331,6 +1308,33 @@ export default function HomeFeed() {
                                       color="#9ca3af"
                                     />
                                   </Pressable>
+                                ) : null}
+                                {commentActionTargetId === item.id ? (
+                                  <View style={styles.commentActionInline}>
+                                    <Pressable
+                                      style={styles.commentActionBtn}
+                                      onPress={() => {
+                                        setCommentEditingId(item.id);
+                                        setCommentEditText(item.content || "");
+                                        setCommentActionTargetId(null);
+                                      }}
+                                    >
+                                      <Text style={styles.commentActionText}>
+                                        Edit
+                                      </Text>
+                                    </Pressable>
+                                    <Pressable
+                                      style={[
+                                        styles.commentActionBtn,
+                                        styles.commentDeleteBtn,
+                                      ]}
+                                      onPress={() => deleteComment(item.id)}
+                                    >
+                                      <Text style={styles.commentActionText}>
+                                        Delete
+                                      </Text>
+                                    </Pressable>
+                                  </View>
                                 ) : null}
                               </View>
                               <Text style={styles.commentText}>
@@ -1836,20 +1840,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   commentReactionBadgeText: { color: "#fff", fontSize: 12 },
-  commentActionBar: {
-    position: "absolute",
-    right: 10,
-    top: -36,
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: "#111",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderColor: "#1f1f1f",
-    borderWidth: 1,
-    zIndex: 10,
-  },
   commentActionBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -1860,6 +1850,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#3f1d1d",
   },
   commentActionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  commentActionInline: {
+    flexDirection: "row",
+    gap: 6,
+    marginLeft: 8,
+  },
   commentCancel: {
     marginTop: 8,
     alignSelf: "flex-start",
