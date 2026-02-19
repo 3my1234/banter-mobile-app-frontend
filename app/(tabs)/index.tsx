@@ -751,6 +751,8 @@ export default function HomeFeed() {
 
   const renderPostItem = ({ item }: { item: Post }) => {
     const isRoast = item.type === "roast";
+    const ownerId = item.raw?.user?.id;
+    const isMine = !!meId && ownerId === meId;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
     const isRepost = !!item.repostOf;
@@ -769,7 +771,18 @@ export default function HomeFeed() {
     return (
       <Pressable style={styles.card} onPress={() => router.push(`/post/${item.id}`)}>
         <View style={styles.row}>
-          <View style={styles.avatarWrap}>
+          <Pressable
+            style={styles.avatarWrap}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              if (!ownerId) return;
+              if (isMine) {
+                router.push("/(tabs)/profile");
+              } else {
+                router.push(`/user/${ownerId}`);
+              }
+            }}
+          >
             {item.avatarUrl ? (
               <ExpoImage
                 source={{ uri: item.avatarUrl }}
@@ -781,19 +794,29 @@ export default function HomeFeed() {
             ) : (
               <View style={styles.avatar} />
             )}
-          </View>
+          </Pressable>
           <View style={{ flex: 1 }}>
             {isRepost ? (
               <Text style={styles.repostLabel}>
                 {original?.isRoast ? "Rebantered" : "Reposted"} by {item.handle}
               </Text>
             ) : null}
-            <Text style={styles.name}>
-              {item.name}{" "}
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation?.();
+                if (!ownerId) return;
+                if (isMine) {
+                  router.push("/(tabs)/profile");
+                } else {
+                  router.push(`/user/${ownerId}`);
+                }
+              }}
+            >
+              <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.handle}>
                 {item.handle} - {item.time}
               </Text>
-            </Text>
+            </Pressable>
             {item.text?.trim() ? <Text style={styles.body}>{item.text}</Text> : null}
             {(item as any).tags?.length ? (
               <View style={styles.tagsRow}>

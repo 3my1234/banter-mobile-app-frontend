@@ -19,6 +19,7 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Clipboard from "expo-clipboard";
+import * as WebBrowser from "expo-web-browser";
 
 type Session = { token: string; email?: string };
 
@@ -38,6 +39,16 @@ export default function ProfileScreen() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [syncingWallets, setSyncingWallets] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
+  const movementExplorerBase =
+    process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
+    "https://explorer.movementlabs.xyz/tx/";
+  const detectMediaType = (uri?: string | null, fallback?: string | null) => {
+    if (fallback) return fallback;
+    if (!uri) return undefined;
+    const lower = uri.toLowerCase();
+    if (lower.match(/\.(mp4|mov|m4v|webm)$/)) return "video";
+    return "image";
+  };
 
   useEffect(() => {
     const loadSession = async () => {
@@ -198,6 +209,16 @@ export default function ProfileScreen() {
     return `${value.slice(0, 6)}...${value.slice(-4)}`;
   };
 
+  const openExplorer = async (txHash?: string | null) => {
+    if (!txHash) return;
+    const url = `${movementExplorerBase}${txHash}`;
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      showToast("Unable to open explorer");
+    }
+  };
+
   const handleCopy = async (label: string, value?: string) => {
     if (!value) return;
     await Clipboard.setStringAsync(value);
@@ -332,7 +353,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
           {syncingWallets ? (
-            <Text style={styles.muted}>Syncing wallets…</Text>
+            <Text style={styles.muted}>Syncing wallets...</Text>
           ) : null}
         </View>
 
@@ -343,6 +364,8 @@ export default function ProfileScreen() {
           ) : (
             transactions.map((tx) => {
               const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
+              const chain = (tx.blockchain || tx.chain || "").toString().toUpperCase();
+              const isMovement = chain.includes("MOVE");
               const isDeposit =
                 rawType.includes("DEPOSIT") ||
                 rawType.includes("CREDIT") ||
@@ -360,12 +383,23 @@ export default function ProfileScreen() {
                       {isDeposit ? "Deposit" : "Payment"}
                     </Text>
                     <Text style={styles.txMeta} numberOfLines={1}>
-                      {tx.txHash ? tx.txHash.slice(0, 12) + "…" : "On-chain"}
+                      {tx.txHash ? tx.txHash.slice(0, 12) + "..." : "On-chain"}
                     </Text>
                   </View>
-                  <Text style={styles.txAmount}>
-                    {isDeposit ? "+" : "-"} {amount} {symbol}
-                  </Text>
+                  <RNView style={styles.txRight}>
+                    <Text style={styles.txAmount}>
+                      {isDeposit ? "+" : "-"} {amount} {symbol}
+                    </Text>
+                    {tx.txHash && isMovement ? (
+                      <Pressable
+                        onPress={() => openExplorer(tx.txHash)}
+                        style={styles.txLink}
+                        hitSlop={8}
+                      >
+                        <FontAwesome name="external-link" size={12} color="#9ca3af" />
+                      </Pressable>
+                    ) : null}
+                  </RNView>
                 </View>
               );
             })
@@ -377,13 +411,43 @@ export default function ProfileScreen() {
           {userPosts.length === 0 ? (
             <Text style={styles.muted}>Posts will appear here.</Text>
           ) : (
-            userPosts.map((post) => (
-              <View key={post.id} style={styles.postRow}>
-                <Text style={styles.postText} numberOfLines={2}>
-                  {post.content}
-                </Text>
-              </View>
-            ))
+            userPosts.map((post) => {
+              const mediaUrl = normalizeMediaUrl(post.mediaUrl);
+              const mediaType = detectMediaType(mediaUrl, post.mediaType);
+              return (
+                <Pressable
+                  key={post.id}
+                  style={styles.postRow}
+                  onPress={() => router.push(`/post/${post.id}`)}
+                >
+                  {mediaUrl ? (
+                    <RNView style={styles.postMediaWrap}>
+                      <ExpoImage
+                        source={{ uri: mediaUrl }}
+                        style={styles.postMedia}
+                        contentFit="cover"
+                        transition={120}
+                        cachePolicy="memory-disk"
+                      />
+                      {mediaType === "video" ? (
+                        <RNView style={styles.postMediaBadge}>
+                          <FontAwesome name="play" size={10} color="#fff" />
+                        </RNView>
+                      ) : null}
+                    </RNView>
+                  ) : (
+                    <RNView style={styles.postMediaPlaceholder}>
+                      <FontAwesome name="file-text-o" size={14} color="#6b7280" />
+                    </RNView>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.postText} numberOfLines={2}>
+                      {post.content || "No text"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })
           )}
         </View>
 
@@ -461,8 +525,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoutText: { color: "#ff6b35", fontWeight: "700" },
-  postRow: { paddingVertical: 8, borderBottomColor: "#1f1f1f", borderBottomWidth: 1 },
+  postRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomColor: "#1f1f1f",
+    borderBottomWidth: 1,
+  },
   postText: { color: "#fafafa", fontSize: 12 },
+  postMediaWrap: { width: 48, height: 48, borderRadius: 10, overflow: "hidden" },
+  postMedia: { width: "100%", height: "100%" },
+  postMediaPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: "#1f1f1f",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  postMediaBadge: {
+    position: "absolute",
+    right: 4,
+    bottom: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
   bannerWrap: { borderRadius: 16, overflow: "hidden" },
   banner: { width: "100%", height: 140 },
   bannerPlaceholder: { width: "100%", height: 140, backgroundColor: "#1f1f1f" },
@@ -523,6 +613,8 @@ const styles = StyleSheet.create({
   txTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
   txMeta: { color: "#9ca3af", fontSize: 10, marginTop: 2 },
   txAmount: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  txRight: { alignItems: "flex-end", gap: 4 },
+  txLink: { paddingLeft: 6, paddingVertical: 2 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
