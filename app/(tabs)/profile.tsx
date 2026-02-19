@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View as RNView,
 } from "react-native";
+import { Platform, ToastAndroid, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Text, View } from "@/components/Themed";
@@ -59,6 +60,14 @@ export default function ProfileScreen() {
     }
   }, [sessionLoaded, session?.token, router]);
 
+  const showToast = (message: string) => {
+    if (Platform.OS === "android") {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      Alert.alert("Notice", message);
+    }
+  };
+
   const fetchMe = async () => {
     if (!session?.token) {
       setLoading(false);
@@ -69,7 +78,7 @@ export default function ProfileScreen() {
       const data = await apiFetch("/auth/me", undefined, true);
       setMe(data.user || data);
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || "Failed to load profile");
     } finally {
       setLoading(false);
     }
@@ -108,7 +117,7 @@ export default function ProfileScreen() {
         setSyncingWallets(false);
       }
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || "Failed to sync wallet");
     } finally {
       setSyncingWallets(false);
     }
