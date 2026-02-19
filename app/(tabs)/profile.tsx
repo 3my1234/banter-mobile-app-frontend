@@ -88,7 +88,7 @@ export default function ProfileScreen() {
       const data = await apiFetch("/wallet/balances");
       setBalances(data?.balances || null);
 
-      const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
+      const tx = await apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1");
       setTransactions(tx?.transactions || []);
 
       if (!walletsSynced && data?.wallets?.length) {
