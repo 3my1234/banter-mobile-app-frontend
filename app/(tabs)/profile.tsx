@@ -80,7 +80,11 @@ export default function ProfileScreen() {
     const dec = typeof decimals === "number" ? decimals : 6;
     const num = Number(amount);
     if (!Number.isFinite(num)) return "-";
-    return (num / Math.pow(10, dec)).toFixed(dec > 6 ? 6 : 2);
+    const value = num / Math.pow(10, dec);
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: dec >= 6 ? 2 : 0,
+      maximumFractionDigits: dec >= 6 ? 6 : 2,
+    });
   };
 
   const fetchWalletData = async () => {
@@ -294,30 +298,30 @@ export default function ProfileScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Balances</Text>
-          <Row
-            label="SOL"
-            value={
-              solBalance
+          <View style={styles.balanceRow}>
+            <Text style={styles.balanceLabel}>SOL</Text>
+            <Text style={styles.balanceValue}>
+              {solBalance
                 ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
-                : "-"
-            }
-          />
-          <Row
-            label="USDC"
-            value={
-              usdcBalance
+                : "0.00"}
+            </Text>
+          </View>
+          <View style={styles.balanceRow}>
+            <Text style={styles.balanceLabel}>USDC</Text>
+            <Text style={styles.balanceValue}>
+              {usdcBalance
                 ? `${formatTokenAmount(usdcBalance.balance, usdcBalance.decimals)}`
-                : "-"
-            }
-          />
-          <Row
-            label="ROL"
-            value={
-              rolBalance
+                : "0.00"}
+            </Text>
+          </View>
+          <View style={styles.balanceRow}>
+            <Text style={styles.balanceLabel}>ROL</Text>
+            <Text style={styles.balanceValue}>
+              {rolBalance
                 ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
-                : "-"
-            }
-          />
+                : "0.00"}
+            </Text>
+          </View>
           {syncingWallets ? (
             <Text style={styles.muted}>Syncing wallets…</Text>
           ) : null}
@@ -328,14 +332,34 @@ export default function ProfileScreen() {
           {transactions.length === 0 ? (
             <Text style={styles.muted}>No transactions yet.</Text>
           ) : (
-            transactions.map((tx) => (
-              <View key={tx.id} style={styles.postRow}>
-                <Text style={styles.postText} numberOfLines={2}>
-                  {tx.txType || "TRANSACTION"} · {tx.tokenSymbol || "TOKEN"} ·{" "}
-                  {formatTokenAmount(tx.amount, tx.metadata?.decimals || 6)}
-                </Text>
-              </View>
-            ))
+            transactions.map((tx) => {
+              const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
+              const isDeposit =
+                rawType.includes("DEPOSIT") ||
+                rawType.includes("CREDIT") ||
+                rawType.includes("RECEIVE");
+              const icon = isDeposit ? "arrow-down" : "arrow-up";
+              const amount = formatTokenAmount(tx.amount, tx.metadata?.decimals || 6);
+              const symbol = tx.tokenSymbol || "TOKEN";
+              return (
+                <View key={tx.id} style={styles.txRow}>
+                  <RNView style={[styles.txIconWrap, isDeposit ? styles.txIn : styles.txOut]}>
+                    <FontAwesome name={icon} size={12} color="#0d0d0d" />
+                  </RNView>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.txTitle}>
+                      {isDeposit ? "Deposit" : "Payment"}
+                    </Text>
+                    <Text style={styles.txMeta} numberOfLines={1}>
+                      {tx.txHash ? tx.txHash.slice(0, 12) + "…" : "On-chain"}
+                    </Text>
+                  </View>
+                  <Text style={styles.txAmount}>
+                    {isDeposit ? "+" : "-"} {amount} {symbol}
+                  </Text>
+                </View>
+              );
+            })
           )}
         </View>
 
@@ -395,8 +419,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0d0d0d" },
   content: { padding: 16, gap: 12 },
   title: { fontSize: 22, fontWeight: "700", color: "#fff" },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#fff", marginBottom: 8 },
-  card: { backgroundColor: "#111", borderRadius: 12, padding: 14 },
+  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#fff", marginBottom: 8 },
+  card: { backgroundColor: "#111", borderRadius: 12, padding: 12 },
   walletHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -405,8 +429,8 @@ const styles = StyleSheet.create({
   },
   copiedText: { color: "#10b981", fontSize: 12 },
   row: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
-  label: { color: "#999" },
-  value: { color: "#fff", textAlign: "right", flex: 1, marginLeft: 12 },
+  label: { color: "#999", fontSize: 12 },
+  value: { color: "#fff", textAlign: "right", flex: 1, marginLeft: 12, fontSize: 12 },
   walletRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -416,9 +440,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   walletInfo: { flex: 1, marginRight: 10 },
-  walletLabel: { color: "#9ca3af", fontSize: 12 },
-  walletValue: { color: "#e5e7eb", fontSize: 13, marginTop: 2 },
-  muted: { color: "#999", marginTop: 8 },
+  walletLabel: { color: "#9ca3af", fontSize: 11 },
+  walletValue: { color: "#e5e7eb", fontSize: 12, marginTop: 2 },
+  muted: { color: "#999", marginTop: 8, fontSize: 12 },
   error: { color: "#ff6b35" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   logoutBtn: {
@@ -429,7 +453,7 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: "#ff6b35", fontWeight: "700" },
   postRow: { paddingVertical: 8, borderBottomColor: "#1f1f1f", borderBottomWidth: 1 },
-  postText: { color: "#fafafa" },
+  postText: { color: "#fafafa", fontSize: 12 },
   bannerWrap: { borderRadius: 16, overflow: "hidden" },
   banner: { width: "100%", height: 140 },
   bannerPlaceholder: { width: "100%", height: 140, backgroundColor: "#1f1f1f" },
@@ -455,8 +479,41 @@ const styles = StyleSheet.create({
   },
   editBtnText: { color: "#ff6b35", fontWeight: "700" },
   displayName: { fontSize: 20, fontWeight: "700", color: "#fff" },
-  username: { color: "#9ca3af" },
-  bio: { color: "#e5e7eb", marginTop: 6, lineHeight: 20 },
+  username: { color: "#9ca3af", fontSize: 12 },
+  bio: { color: "#e5e7eb", marginTop: 6, lineHeight: 18, fontSize: 12 },
+  balanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomColor: "#1f1f1f",
+    borderBottomWidth: 1,
+  },
+  balanceLabel: { color: "#9ca3af", fontSize: 12 },
+  balanceValue: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  txRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomColor: "#1f1f1f",
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  txIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  txIn: {
+    backgroundColor: "#22c55e",
+  },
+  txOut: {
+    backgroundColor: "#f97316",
+  },
+  txTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  txMeta: { color: "#9ca3af", fontSize: 10, marginTop: 2 },
+  txAmount: { color: "#fff", fontSize: 12, fontWeight: "700" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
