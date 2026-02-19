@@ -19,6 +19,7 @@
     "@web3auth/openlogin-adapter": "^8.12.4",
     "@web3auth/react-native-sdk": "^8.1.0",
     "@web3auth/solana-provider": "^9.7.0",
+    "@shopify/flash-list": "^1.7.3",
     "buffer": "^6.0.3",
     "expo": "~54.0.33",
     "expo-av": "~16.0.8",

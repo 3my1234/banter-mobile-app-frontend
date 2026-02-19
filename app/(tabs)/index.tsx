@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  FlatList,
   KeyboardAvoidingView,
   Keyboard,
   PanResponder,
@@ -31,6 +30,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
+import { FlashList } from "@shopify/flash-list";
 
 type RepostOf = {
   id: string;
@@ -907,7 +907,7 @@ export default function HomeFeed() {
     );
   };
 
-  const renderBanterItem = ({ item }: { item: Post }) => {
+  const renderBanterItem = ({ item, index }: { item: Post; index: number }) => {
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
     const media = item.media;
@@ -918,6 +918,13 @@ export default function HomeFeed() {
     const sideActionsBottom = stayDropBottom + 120;
     const metaBottom = stayDropBottom + 150;
     const isSheetOpen = !!banterCommentTarget;
+    const activeIndex = banters.findIndex((banter) => banter.id === activeBanterId);
+    const preloadAhead = 3;
+    const preloadBehind = 1;
+    const withinWindow =
+      activeIndex === -1
+        ? index === 0
+        : index >= activeIndex - preloadBehind && index <= activeIndex + preloadAhead;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -936,23 +943,29 @@ export default function HomeFeed() {
         <View style={styles.banterMedia}>
           {media ? (
             isVideo ? (
-              <Video
-                source={{ uri: media.uri }}
-                style={styles.banterMediaFill}
-                resizeMode={ResizeMode.COVER}
-                shouldPlay={activeBanterId === item.id}
-                isLooping
-                useNativeControls={false}
-                isMuted={false}
-                volume={1.0}
-                ref={(ref) => {
-                  if (ref) {
-                    videoRefs.current.set(item.id, ref);
-                  } else {
-                    videoRefs.current.delete(item.id);
-                  }
-                }}
-              />
+              withinWindow ? (
+                <Video
+                  source={{ uri: media.uri }}
+                  style={styles.banterMediaFill}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={activeBanterId === item.id}
+                  isLooping
+                  useNativeControls={false}
+                  isMuted={false}
+                  volume={1.0}
+                  ref={(ref) => {
+                    if (ref) {
+                      videoRefs.current.set(item.id, ref);
+                    } else {
+                      videoRefs.current.delete(item.id);
+                    }
+                  }}
+                />
+              ) : (
+                <View style={styles.banterVideoPlaceholder}>
+                  <FontAwesome name="play" size={28} color="#fff" />
+                </View>
+              )
             ) : (
               <ExpoImage
                 source={{ uri: media.uri }}
@@ -1165,7 +1178,7 @@ export default function HomeFeed() {
         ) : null}
 
         {mainTab === "posts" ? (
-          <FlatList
+          <FlashList
             data={visiblePosts}
             keyExtractor={(item) => item.id}
             renderItem={renderPostItem}
@@ -1173,11 +1186,13 @@ export default function HomeFeed() {
             contentContainerStyle={{ paddingBottom: 100 }}
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            estimatedItemSize={520}
+            drawDistance={windowHeight * 2}
             viewabilityConfig={viewabilityConfig.current}
             onViewableItemsChanged={onViewableItemsChanged}
           />
         ) : (
-          <FlatList
+          <FlashList
             data={banters}
             keyExtractor={(item) => item.id}
             renderItem={renderBanterItem}
@@ -1189,6 +1204,8 @@ export default function HomeFeed() {
             snapToAlignment="start"
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            estimatedItemSize={windowHeight}
+            drawDistance={windowHeight * 2}
             viewabilityConfig={viewabilityConfig.current}
             onViewableItemsChanged={onViewableItemsChanged}
             onMomentumScrollEnd={(event) => {
@@ -1758,6 +1775,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   banterMedia: { flex: 1 },
+  banterVideoPlaceholder: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0d0d0d",
+  },
   banterMediaFill: { width: "100%", height: "100%" },
   banterPlaceholder: { flex: 1, backgroundColor: "#0f172a" },
   banterOverlay: {
