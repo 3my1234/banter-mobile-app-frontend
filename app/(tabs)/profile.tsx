@@ -46,7 +46,7 @@ export default function ProfileScreen() {
     if (fallback) return fallback;
     if (!uri) return undefined;
     const lower = uri.toLowerCase();
-    if (lower.match(/\.(mp4|mov|m4v|webm)$/)) return "video";
+    if (lower.match(/\.(mp4|mov|m4v|webm|m3u8)$/)) return "video";
     return "image";
   };
 

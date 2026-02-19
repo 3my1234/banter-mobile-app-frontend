@@ -76,7 +76,7 @@ const ROAST_PREFIX = "[ROAST]";
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
   const lower = uri.toLowerCase();
-  if (lower.match(/\.(mp4|mov|m4v|webm)$/)) return "video";
+  if (lower.match(/\.(mp4|mov|m4v|webm|m3u8)$/)) return "video";
   return "image";
 };
 
@@ -510,6 +510,10 @@ export default function HomeFeed() {
   }, []);
 
   const visiblePosts = useMemo(() => posts, [posts]);
+  const activeBanterIndex = useMemo(
+    () => banters.findIndex((banter) => banter.id === activeBanterId),
+    [banters, activeBanterId]
+  );
 
   const handleShare = async (item: Post) => {
     try {
@@ -918,13 +922,17 @@ export default function HomeFeed() {
     const sideActionsBottom = stayDropBottom + 120;
     const metaBottom = stayDropBottom + 150;
     const isSheetOpen = !!banterCommentTarget;
-    const activeIndex = banters.findIndex((banter) => banter.id === activeBanterId);
     const preloadAhead = 3;
     const preloadBehind = 1;
     const withinWindow =
-      activeIndex === -1
+      activeBanterIndex === -1
         ? index === 0
-        : index >= activeIndex - preloadBehind && index <= activeIndex + preloadAhead;
+        : index >= activeBanterIndex - preloadBehind &&
+          index <= activeBanterIndex + preloadAhead;
+    const withinPool =
+      activeBanterIndex === -1
+        ? index <= 1
+        : index >= activeBanterIndex - 1 && index <= activeBanterIndex + 1;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -943,7 +951,7 @@ export default function HomeFeed() {
         <View style={styles.banterMedia}>
           {media ? (
             isVideo ? (
-              withinWindow ? (
+              withinPool ? (
                 <Video
                   source={{ uri: media.uri }}
                   style={styles.banterMediaFill}
@@ -961,10 +969,12 @@ export default function HomeFeed() {
                     }
                   }}
                 />
-              ) : (
+              ) : withinWindow ? (
                 <View style={styles.banterVideoPlaceholder}>
                   <FontAwesome name="play" size={28} color="#fff" />
                 </View>
+              ) : (
+                <View style={styles.banterPlaceholder} />
               )
             ) : (
               <ExpoImage
