@@ -1,30 +1,99 @@
-import React from "react";
-import { StyleSheet, View, TouchableOpacity } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Alert, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
+import { apiFetch } from "@/lib/api";
+import { sendUsdcPayment } from "@/lib/solanaPayment";
 
-const bundles = [
-  { id: "b1", label: "10 votes", price: "$1.99" },
-  { id: "b2", label: "100 votes", price: "$14.99" },
-  { id: "b3", label: "1000 votes", price: "$99.99" },
-];
+type Bundle = {
+  id: string;
+  votes: number;
+  price: number;
+  currency: string;
+};
 
 export default function Votes() {
+  const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [balance, setBalance] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const bundleData = await apiFetch("/payments/votes/bundles", {}, false);
+        setBundles(bundleData?.bundles || []);
+
+        const me = await apiFetch("/auth/me");
+        setBalance(me?.user?.voteBalance ?? 0);
+      } catch (error) {
+        // Keep defaults
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
+
+  const handleBuy = async (bundleId: string) => {
+    try {
+      setProcessingId(bundleId);
+      const created = await apiFetch("/payments/solana/votes/create", {
+        method: "POST",
+        body: JSON.stringify({ bundleId }),
+      });
+
+      const txHash = await sendUsdcPayment({
+        toAddress: created.toAddress,
+        tokenMint: created.tokenMint,
+        amountRaw: created.amountRaw,
+        decimals: created.decimals ?? 6,
+      });
+
+      const verified = await apiFetch("/payments/solana/votes/verify", {
+        method: "POST",
+        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
+      });
+
+      if (verified?.payment?.status === "COMPLETED") {
+        const me = await apiFetch("/auth/me");
+        setBalance(me?.user?.voteBalance ?? 0);
+      }
+    } catch (error) {
+      Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
         <Text style={styles.title}>Votes</Text>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Your vote balance</Text>
-          <Text style={styles.balanceValue}>-</Text>
+          <Text style={styles.balanceValue}>
+            {loading ? "…" : balance}
+          </Text>
         </View>
 
         <Text style={styles.section}>Buy bundles</Text>
         {bundles.map((b) => (
           <View key={b.id} style={styles.bundle}>
-            <Text style={styles.bundleLabel}>{b.label}</Text>
-            <Text style={styles.bundlePrice}>{b.price}</Text>
-            <TouchableOpacity style={styles.buyBtn}>
+            <Text style={styles.bundleLabel}>{b.votes} votes</Text>
+            <Text style={styles.bundlePrice}>
+              ${b.price.toFixed(2)} {b.currency}
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.buyBtn,
+                processingId === b.id && styles.buyBtnDisabled,
+              ]}
+              disabled={processingId === b.id}
+              onPress={() => handleBuy(b.id)}
+            >
               <Text style={styles.buyText}>Buy</Text>
             </TouchableOpacity>
           </View>
@@ -65,6 +134,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
+  },
+  buyBtnDisabled: {
+    opacity: 0.6,
   },
   buyText: { color: "#0d0d0d", fontWeight: "700" },
 });

@@ -33,6 +33,10 @@ export default function ProfileScreen() {
   const [showAvatar, setShowAvatar] = useState(false);
   const [showBanner, setShowBanner] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null);
+  const [balances, setBalances] = useState<Record<string, any> | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [syncingWallets, setSyncingWallets] = useState(false);
+  const [walletsSynced, setWalletsSynced] = useState(false);
 
   useEffect(() => {
     const loadSession = async () => {
@@ -71,6 +75,41 @@ export default function ProfileScreen() {
     }
   };
 
+  const formatTokenAmount = (amount?: string, decimals?: number) => {
+    if (!amount) return "-";
+    const dec = typeof decimals === "number" ? decimals : 6;
+    const num = Number(amount);
+    if (!Number.isFinite(num)) return "-";
+    return (num / Math.pow(10, dec)).toFixed(dec > 6 ? 6 : 2);
+  };
+
+  const fetchWalletData = async () => {
+    try {
+      const data = await apiFetch("/wallet/balances");
+      setBalances(data?.balances || null);
+
+      const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
+      setTransactions(tx?.transactions || []);
+
+      if (!walletsSynced && data?.wallets?.length) {
+        setSyncingWallets(true);
+        await Promise.all(
+          data.wallets.map((wallet: any) =>
+            apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
+          )
+        );
+        const refreshed = await apiFetch("/wallet/balances");
+        setBalances(refreshed?.balances || null);
+        setWalletsSynced(true);
+        setSyncingWallets(false);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSyncingWallets(false);
+    }
+  };
+
   useEffect(() => {
     fetchMe();
   }, [session]);
@@ -79,6 +118,7 @@ export default function ProfileScreen() {
     React.useCallback(() => {
       if (sessionLoaded) {
         fetchMe();
+        fetchWalletData();
       }
     }, [sessionLoaded, session?.token])
   );
@@ -194,6 +234,9 @@ export default function ProfileScreen() {
   const displayName = me?.displayName || "User";
   const username = me?.username ? `@${me.username}` : "@user";
   const bio = me?.bio || "No bio yet.";
+  const solBalance = balances?.SOL;
+  const usdcBalance = balances?.USDC;
+  const rolBalance = balances?.ROL;
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -251,8 +294,49 @@ export default function ProfileScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Balances</Text>
-          <Row label="Solana" value="-" />
-          <Row label="Movement" value="-" />
+          <Row
+            label="SOL"
+            value={
+              solBalance
+                ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
+                : "-"
+            }
+          />
+          <Row
+            label="USDC"
+            value={
+              usdcBalance
+                ? `${formatTokenAmount(usdcBalance.balance, usdcBalance.decimals)}`
+                : "-"
+            }
+          />
+          <Row
+            label="ROL"
+            value={
+              rolBalance
+                ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
+                : "-"
+            }
+          />
+          {syncingWallets ? (
+            <Text style={styles.muted}>Syncing wallets…</Text>
+          ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Transactions</Text>
+          {transactions.length === 0 ? (
+            <Text style={styles.muted}>No transactions yet.</Text>
+          ) : (
+            transactions.map((tx) => (
+              <View key={tx.id} style={styles.postRow}>
+                <Text style={styles.postText} numberOfLines={2}>
+                  {tx.txType || "TRANSACTION"} · {tx.tokenSymbol || "TOKEN"} ·{" "}
+                  {formatTokenAmount(tx.amount, tx.metadata?.decimals || 6)}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={styles.card}>
