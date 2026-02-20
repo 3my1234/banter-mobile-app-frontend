@@ -11,6 +11,7 @@ import {
   Pressable,
   Share,
   StyleSheet,
+  ToastAndroid,
   TextInput,
   useWindowDimensions,
   View,
@@ -69,6 +70,14 @@ type Post = {
   repostCount?: number;
   repostOf?: RepostOf | null;
   raw?: any;
+};
+
+const showToast = (message: string) => {
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert("Notice", message);
+  }
 };
 
 const ROAST_PREFIX = "[ROAST]";
@@ -138,6 +147,11 @@ export default function HomeFeed() {
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 95 });
   const videoRefs = useRef<Map<string, Video>>(new Map());
+  const pauseAllVideos = useCallback(() => {
+    videoRefs.current.forEach((ref) => {
+      ref.pauseAsync().catch(() => {});
+    });
+  }, []);
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: Post; isViewable: boolean }> }) => {
       if (mainTab !== "banter") return;
@@ -260,7 +274,10 @@ export default function HomeFeed() {
         loadPosts("banter", banterTab);
       }
       loadMe();
-    }, [loadPosts, loadMe, mainTab, postTab, banterTab])
+      return () => {
+        pauseAllVideos();
+      };
+    }, [loadPosts, loadMe, mainTab, postTab, banterTab, pauseAllVideos])
   );
 
   const handleRefresh = () => {
@@ -799,6 +816,7 @@ export default function HomeFeed() {
             onPress={(e) => {
               e.stopPropagation?.();
               if (!ownerId) return;
+              pauseAllVideos();
               if (isMine) {
                 router.push("/(tabs)/profile");
               } else {
@@ -828,6 +846,7 @@ export default function HomeFeed() {
               onPress={(e) => {
                 e.stopPropagation?.();
                 if (!ownerId) return;
+                pauseAllVideos();
                 if (isMine) {
                   router.push("/(tabs)/profile");
                 } else {
