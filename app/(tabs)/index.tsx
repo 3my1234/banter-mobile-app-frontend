@@ -540,6 +540,25 @@ export default function HomeFeed() {
     }
   };
 
+  const deletePost = async (postId: string, type: "posts" | "banter") => {
+    try {
+      await apiFetch(`/posts/${postId}`, { method: "DELETE" });
+      if (type === "posts") {
+        setPosts((prev) => prev.filter((post) => post.id !== postId));
+      } else {
+        setBanters((prev) => prev.filter((post) => post.id !== postId));
+        setActiveBanterId((prev) => {
+          if (prev !== postId) return prev;
+          const remaining = banters.filter((post) => post.id !== postId);
+          return remaining[0]?.id || null;
+        });
+      }
+      showToast("Post deleted");
+    } catch (e: any) {
+      showToast(e.message || "Failed to delete post");
+    }
+  };
+
   const handleRepost = async (item: Post, comment?: string) => {
     try {
       const data = await apiFetch(`/posts/${item.id}/repost`, {
@@ -912,6 +931,8 @@ export default function HomeFeed() {
   };
 
   const renderBanterItem = ({ item, index }: { item: Post; index: number }) => {
+    const ownerId = item.raw?.user?.id;
+    const isMine = !!meId && ownerId === meId;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
     const media = item.media;
@@ -1004,6 +1025,15 @@ export default function HomeFeed() {
             ) : null}
           </View>
           <View style={[styles.banterSideActions, { bottom: sideActionsBottom }]}>
+            {isMine ? (
+              <Pressable
+                style={styles.banterAction}
+                onPress={() => deletePost(item.id, "banter")}
+              >
+                <FontAwesome name="trash" size={20} color="#fff" />
+                <Text style={styles.banterActionText}>Delete</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={styles.banterAction}
               onPress={() => openBanterComments(item)}
@@ -1177,7 +1207,11 @@ export default function HomeFeed() {
           </View>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <View style={styles.errorToast}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator />
@@ -1739,7 +1773,19 @@ const styles = StyleSheet.create({
   },
   voteBtnText: { color: "#fafafa", fontWeight: "700" },
   muted: { color: "#888", marginTop: 8 },
-  error: { color: "#ff6b35", paddingHorizontal: 16, paddingTop: 8 },
+  errorToast: {
+    position: "absolute",
+    top: "45%",
+    left: 24,
+    right: 24,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    zIndex: 50,
+  },
+  errorText: { color: "#ff6b35", fontSize: 12, textAlign: "center" },
   center: { padding: 16, alignItems: "center" },
   fab: {
     position: "absolute",
