@@ -774,7 +774,7 @@ export default function HomeFeed() {
 
   const renderPostItem = ({ item }: { item: Post }) => {
     const isRoast = item.type === "roast";
-    const ownerId = item.raw?.user?.id;
+    const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
@@ -931,7 +931,7 @@ export default function HomeFeed() {
   };
 
   const renderBanterItem = ({ item, index }: { item: Post; index: number }) => {
-    const ownerId = item.raw?.user?.id;
+    const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
