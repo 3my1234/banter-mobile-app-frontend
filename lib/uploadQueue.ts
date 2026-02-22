@@ -6,6 +6,7 @@ export type PendingPost = {
   createdAt: string;
   tags?: string[];
   league?: string | null;
+  progress?: number;
 };
 
 type Listener = (pending: PendingPost[]) => void;
@@ -29,8 +30,17 @@ export const addPendingPost = (post: PendingPost) => {
   emit();
 };
 
+export const updatePendingPost = (
+  id: string,
+  updates: Partial<PendingPost>
+) => {
+  pendingPosts = pendingPosts.map((post) =>
+    post.id === id ? { ...post, ...updates } : post
+  );
+  emit();
+};
+
 export const removePendingPost = (id: string) => {
   pendingPosts = pendingPosts.filter((post) => post.id !== id);
   emit();
 };
-

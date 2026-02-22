@@ -71,25 +71,38 @@ export async function presignUpload(
   return data as PresignResponse;
 }
 
-export async function uploadToS3(uploadUrl: string, uri: string, mimeType: string) {
+export async function uploadToS3(
+  uploadUrl: string,
+  uri: string,
+  mimeType: string,
+  onProgress?: (progress: number) => void
+) {
   const blob = await fetch(uri).then((r) => r.blob());
   const sizeMb = blob.size / (1024 * 1024);
   if (mimeType.startsWith("image/") && sizeMb > MAX_IMAGE_SIZE_MB) {
     throw new Error(`Image must be <= ${MAX_IMAGE_SIZE_MB}MB`);
   }
 
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": mimeType || "application/octet-stream",
-    },
-    body: blob,
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", mimeType || "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 100);
+      onProgress?.(percent);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(100);
+        resolve();
+      } else {
+        reject(new Error(`Upload failed (${xhr.status}) ${xhr.responseText || ""}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed (network error)"));
+    xhr.send(blob);
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Upload failed (${res.status}) ${text}`);
-  }
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");

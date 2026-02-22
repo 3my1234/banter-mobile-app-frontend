@@ -350,12 +350,42 @@ export default function HomeFeed() {
         );
       }
     } catch (e: any) {
-      setError(e.message);
+      showToast(e.message || "Failed to vote");
     }
   };
 
   const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
     try {
+      const prevPosts = posts;
+      const prevBanters = banters;
+      setPosts((current) =>
+        current.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                reactionCount: (p.reactionCount || 0) + 1,
+                reactionBreakdown: {
+                  ...p.reactionBreakdown,
+                  [type]: (p.reactionBreakdown?.[type] || 0) + 1,
+                },
+              }
+            : p
+        )
+      );
+      setBanters((current) =>
+        current.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                reactionCount: (p.reactionCount || 0) + 1,
+                reactionBreakdown: {
+                  ...p.reactionBreakdown,
+                  [type]: (p.reactionBreakdown?.[type] || 0) + 1,
+                },
+              }
+            : p
+        )
+      );
       const data = await apiFetch("/reactions", {
         method: "POST",
         body: JSON.stringify({ postId, type }),
@@ -387,7 +417,9 @@ export default function HomeFeed() {
         )
       );
     } catch (e: any) {
-      setError(e.message);
+      setPosts(prevPosts);
+      setBanters(prevBanters);
+      showToast(e.message || "Failed to react");
     }
   };
 
@@ -584,7 +616,7 @@ export default function HomeFeed() {
       reactionBreakdown: {},
       repostCount: 0,
       repostOf: null,
-      raw: { pending: true, isRoast: pending.isRoast },
+      raw: { pending: true, isRoast: pending.isRoast, progress: pending.progress },
     }));
   }, [pendingPosts, meAvatar]);
 
@@ -993,7 +1025,11 @@ export default function HomeFeed() {
               </Pressable>
               {item.raw?.pending ? (
                 <View style={styles.pendingPill}>
-                  <Text style={styles.pendingText}>Uploading…</Text>
+                  <Text style={styles.pendingText}>
+                    {typeof item.raw?.progress === "number"
+                      ? `Uploading ${item.raw.progress}%`
+                      : "Uploading…"}
+                  </Text>
                 </View>
               ) : null}
               <Pressable
@@ -1150,7 +1186,11 @@ export default function HomeFeed() {
             <Text style={styles.banterUser}>{item.handle}</Text>
             {item.raw?.pending ? (
               <View style={styles.pendingPillBanter}>
-                <Text style={styles.pendingText}>Uploading…</Text>
+                <Text style={styles.pendingText}>
+                  {typeof item.raw?.progress === "number"
+                    ? `Uploading ${item.raw.progress}%`
+                    : "Uploading…"}
+                </Text>
               </View>
             ) : null}
             {caption ? (
@@ -1462,7 +1502,7 @@ export default function HomeFeed() {
               <KeyboardAvoidingView
                 style={styles.commentKeyboard}
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={tabBarHeight + insets.bottom}
+                keyboardVerticalOffset={0}
                 pointerEvents="box-none"
               >
                 <Animated.View
@@ -1470,7 +1510,6 @@ export default function HomeFeed() {
                     styles.commentSheet,
                     {
                       paddingBottom: 12 + insets.bottom,
-                      marginBottom: tabBarHeight,
                       transform: [{ translateY: commentSheetY }],
                     },
                   ]}
@@ -1706,10 +1745,7 @@ export default function HomeFeed() {
                     style={[
                       styles.commentComposer,
                       {
-                        bottom:
-                          12 +
-                          Math.max(0, keyboardHeight - tabBarHeight) +
-                          insets.bottom,
+                        bottom: 12 + insets.bottom + keyboardHeight,
                       },
                     ]}
                     onLayout={(event) =>

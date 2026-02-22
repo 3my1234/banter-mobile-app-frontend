@@ -19,7 +19,7 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
 import { useFocusEffect } from "@react-navigation/native";
-import { addPendingPost, removePendingPost } from "@/lib/uploadQueue";
+import { addPendingPost, removePendingPost, updatePendingPost } from "@/lib/uploadQueue";
 
 const ROAST_PREFIX = "[ROAST]";
 
@@ -135,6 +135,7 @@ export default function ComposeScreen() {
       createdAt: new Date().toISOString(),
       tags,
       league,
+      progress: media ? 0 : 100,
       media: media
         ? {
             type: media.isVideo ? "video" : "image",
@@ -153,7 +154,9 @@ export default function ComposeScreen() {
           media.mimeType,
           "post"
         );
-        await uploadToS3(presign.uploadUrl, media.uri, media.mimeType);
+        await uploadToS3(presign.uploadUrl, media.uri, media.mimeType, (progress) => {
+          updatePendingPost(tempId, { progress });
+        });
         mediaUrl = presign.viewUrl;
         mediaType = media.isVideo ? "video" : "image";
       }
