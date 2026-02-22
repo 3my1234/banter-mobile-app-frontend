@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { sendUsdcPayment } from "@/lib/solanaPayment";
+import { sendMovementUsdcPayment } from "@/lib/movementPayment";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 
@@ -117,6 +118,36 @@ export default function Votes() {
     }
   };
 
+  const handleMovement = async (bundleId: string) => {
+    try {
+      setProcessingId(bundleId);
+      const created = await apiFetch("/payments/movement/votes/create", {
+        method: "POST",
+        body: JSON.stringify({ bundleId }),
+      });
+
+      const txHash = await sendMovementUsdcPayment({
+        toAddress: created.toAddress,
+        tokenAddress: created.tokenAddress,
+        amountRaw: created.amountRaw,
+      });
+
+      const verified = await apiFetch("/payments/movement/votes/verify", {
+        method: "POST",
+        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
+      });
+
+      if (verified?.payment?.status === "COMPLETED") {
+        const me = await apiFetch("/auth/me");
+        setBalance(me?.user?.voteBalance ?? 0);
+      }
+    } catch (error) {
+      Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
@@ -128,7 +159,7 @@ export default function Votes() {
           </Text>
         </View>
 
-        <Text style={styles.section}>Buy bundles</Text>
+        <Text style={styles.section}>Buy votes (1 vote = $1)</Text>
         {bundles.map((b) => (
           <View key={b.id} style={styles.bundle}>
             <Text style={styles.bundleLabel}>{b.votes} votes</Text>
@@ -144,7 +175,17 @@ export default function Votes() {
                 disabled={processingId === b.id}
                 onPress={() => handleBuy(b.id)}
               >
-                <Text style={styles.buyText}>USDC</Text>
+                <Text style={styles.buyText}>USDC (Solana)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.buyBtnAlt,
+                  processingId === b.id && styles.buyBtnDisabled,
+                ]}
+                disabled={processingId === b.id}
+                onPress={() => handleMovement(b.id)}
+              >
+                <Text style={styles.buyTextAlt}>USDC.e (Movement)</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -154,7 +195,7 @@ export default function Votes() {
                 disabled={processingId === b.id}
                 onPress={() => handleFlutterwave(b.id)}
               >
-                <Text style={styles.buyTextAlt}>Card</Text>
+                <Text style={styles.buyTextAlt}>Card (USD)</Text>
               </TouchableOpacity>
             </View>
           </View>
