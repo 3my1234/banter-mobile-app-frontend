@@ -116,6 +116,7 @@ export default function HomeFeed() {
   const [meAvatar, setMeAvatar] = useState<string | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
   const [activeBanterId, setActiveBanterId] = useState<string | null>(null);
+  const lastActiveBanterIdRef = useRef<string | null>(null);
   const [repostTarget, setRepostTarget] = useState<Post | null>(null);
   const [quoteText, setQuoteText] = useState<string>("");
   const [showRepostModal, setShowRepostModal] = useState(false);
@@ -143,9 +144,10 @@ export default function HomeFeed() {
   );
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({});
+  const heartbeatScale = useRef(new Animated.Value(1)).current;
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 95 });
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
   const videoRefs = useRef<Map<string, Video>>(new Map());
   const pauseAllVideos = useCallback(() => {
     videoRefs.current.forEach((ref) => {
@@ -251,8 +253,30 @@ export default function HomeFeed() {
     };
   }, []);
 
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(heartbeatScale, {
+          toValue: 1.12,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+        Animated.timing(heartbeatScale, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [heartbeatScale]);
+
 
   React.useEffect(() => {
+    if (activeBanterId) {
+      lastActiveBanterIdRef.current = activeBanterId;
+    }
     videoRefs.current.forEach((ref, id) => {
       if (mainTab !== "banter") {
         ref.pauseAsync().catch(() => {});
@@ -274,6 +298,9 @@ export default function HomeFeed() {
         loadPosts("banter", banterTab);
       }
       loadMe();
+      if (mainTab === "banter" && lastActiveBanterIdRef.current) {
+        setActiveBanterId(lastActiveBanterIdRef.current);
+      }
       return () => {
         pauseAllVideos();
       };
@@ -962,8 +989,10 @@ export default function HomeFeed() {
     const sideActionsBottom = stayDropBottom + 120;
     const metaBottom = stayDropBottom + 150;
     const isSheetOpen = !!banterCommentTarget;
-    const preloadAhead = 3;
+    const preloadAhead = 4;
     const preloadBehind = 1;
+    const poolAhead = 4;
+    const poolBehind = 1;
     const withinWindow =
       activeBanterIndex === -1
         ? index === 0
@@ -971,8 +1000,10 @@ export default function HomeFeed() {
           index <= activeBanterIndex + preloadAhead;
     const withinPool =
       activeBanterIndex === -1
-        ? index <= 1
-        : index >= activeBanterIndex - 1 && index <= activeBanterIndex + 1;
+        ? index <= poolAhead
+        : index >= activeBanterIndex - poolBehind &&
+          index <= activeBanterIndex + poolAhead;
+    const shouldPrewarm = withinWindow && !withinPool;
 
     const captionParts = [
       item.text?.trim() || "",
@@ -993,10 +1024,11 @@ export default function HomeFeed() {
             isVideo ? (
               withinPool ? (
                 <Video
+                  key={`${item.id}-${media.uri}`}
                   source={{ uri: media.uri }}
                   style={styles.banterMediaFill}
                   resizeMode={ResizeMode.COVER}
-                  shouldPlay={activeBanterId === item.id}
+                  shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
                   isLooping
                   useNativeControls={false}
                   isMuted={false}
@@ -1011,7 +1043,34 @@ export default function HomeFeed() {
                 />
               ) : withinWindow ? (
                 <View style={styles.banterVideoPlaceholder}>
-                  <FontAwesome name="play" size={28} color="#fff" />
+                  {shouldPrewarm ? (
+                    <View style={styles.banterPrewarm}>
+                      <Video
+                        source={{ uri: media.uri }}
+                        style={styles.banterPrewarmVideo}
+                        resizeMode={ResizeMode.COVER}
+                        shouldPlay={false}
+                        isLooping
+                        useNativeControls={false}
+                        isMuted
+                        volume={0.0}
+                      />
+                    </View>
+                  ) : null}
+                  <Animated.View
+                    style={[
+                      styles.banterLoadingIcon,
+                      { transform: [{ scale: heartbeatScale }] },
+                    ]}
+                  >
+                    <ExpoImage
+                      source={require("../../assets/images/banter-logo.jpg")}
+                      style={styles.banterLoadingImage}
+                      contentFit="cover"
+                      transition={120}
+                    />
+                  </Animated.View>
+                  <Text style={styles.banterLoadingText}>Loading…</Text>
                 </View>
               ) : (
                 <View style={styles.banterPlaceholder} />
@@ -1855,6 +1914,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#0d0d0d",
+    gap: 8,
+  },
+  banterLoadingIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,15,15,0.6)",
+    borderWidth: 2,
+    borderColor: "rgba(255,107,53,0.55)",
+  },
+  banterLoadingImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  banterLoadingText: {
+    color: "#ffb08a",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  banterPrewarm: {
+    position: "absolute",
+    inset: 0,
+    opacity: 0.01,
+  },
+  banterPrewarmVideo: {
+    width: "100%",
+    height: "100%",
   },
   banterMediaFill: { width: "100%", height: "100%" },
   banterPlaceholder: { flex: 1, backgroundColor: "#0f172a" },
