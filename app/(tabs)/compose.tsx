@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -19,6 +19,7 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
 import { useFocusEffect } from "@react-navigation/native";
+import { addPendingPost, removePendingPost } from "@/lib/uploadQueue";
 
 const ROAST_PREFIX = "[ROAST]";
 
@@ -36,9 +37,11 @@ export default function ComposeScreen() {
   const [leagues, setLeagues] = useState<string[]>([]);
   const [league, setLeague] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const mountedRef = useRef(true);
 
   useFocusEffect(
     React.useCallback(() => {
+      mountedRef.current = true;
       setText("");
       setMedia(null);
       setTags([]);
@@ -46,7 +49,9 @@ export default function ComposeScreen() {
       setLeague(null);
       setError(null);
       setLoading(false);
-      return () => {};
+      return () => {
+        mountedRef.current = false;
+      };
     }, [])
   );
 
@@ -120,6 +125,25 @@ export default function ComposeScreen() {
     }
     setLoading(true);
     setError(null);
+    const tempId = `pending-${Date.now()}`;
+    const content =
+      mode === "roast" ? `${ROAST_PREFIX} ${text.trim()}` : text.trim();
+    addPendingPost({
+      id: tempId,
+      content,
+      isRoast: mode === "roast",
+      createdAt: new Date().toISOString(),
+      tags,
+      league,
+      media: media
+        ? {
+            type: media.isVideo ? "video" : "image",
+            uri: media.uri,
+            ratio: 16 / 9,
+          }
+        : undefined,
+    });
+    router.back();
     try {
       let mediaUrl: string | undefined;
       let mediaType: "image" | "video" | undefined;
@@ -134,9 +158,6 @@ export default function ComposeScreen() {
         mediaType = media.isVideo ? "video" : "image";
       }
 
-      const content =
-        mode === "roast" ? `${ROAST_PREFIX} ${text.trim()}` : text.trim();
-
       await apiFetch("/posts", {
         method: "POST",
         body: JSON.stringify({
@@ -148,12 +169,16 @@ export default function ComposeScreen() {
           league,
         }),
       });
-
-      router.back();
+      removePendingPost(tempId);
     } catch (e: any) {
-      setError(e.message);
+      removePendingPost(tempId);
+      if (mountedRef.current) {
+        setError(e.message);
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  FlatList,
   KeyboardAvoidingView,
   Keyboard,
   PanResponder,
@@ -26,6 +27,7 @@ import VoteGauge from "@/components/VoteGauge";
 import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
+import { PendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
 import { useFocusEffect } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
@@ -142,6 +144,7 @@ export default function HomeFeed() {
   const [repliesByComment, setRepliesByComment] = useState<Record<string, any[]>>(
     {}
   );
+  const [pendingPosts, setPendingPosts] = useState<PendingPost[]>([]);
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({});
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -251,6 +254,13 @@ export default function HomeFeed() {
       show.remove();
       hide.remove();
     };
+  }, []);
+
+  React.useEffect(() => {
+    const unsubscribe = subscribePendingPosts((pending) => {
+      setPendingPosts(pending);
+    });
+    return unsubscribe;
   }, []);
 
   React.useEffect(() => {
@@ -553,7 +563,44 @@ export default function HomeFeed() {
     };
   }, []);
 
-  const visiblePosts = useMemo(() => posts, [posts]);
+  const pendingPostItems = useMemo(() => {
+    if (!pendingPosts.length) return [] as Post[];
+    return pendingPosts.map((pending) => ({
+      id: pending.id,
+      name: "You",
+      handle: "@you",
+      time: "Uploading…",
+      text: stripRoastPrefix(pending.content),
+      type: pending.isRoast ? "roast" : "banter",
+      media: pending.media,
+      stayVotes: 0,
+      dropVotes: 0,
+      avatarUrl: meAvatar,
+      tags: pending.tags || [],
+      league: pending.league || null,
+      commentCount: 0,
+      reactionCount: 0,
+      shareCount: 0,
+      reactionBreakdown: {},
+      repostCount: 0,
+      repostOf: null,
+      raw: { pending: true, isRoast: pending.isRoast },
+    }));
+  }, [pendingPosts, meAvatar]);
+
+  const visiblePosts = useMemo(() => {
+    const normalPending = pendingPostItems.filter(
+      (pending) => pending.media?.type !== "video"
+    );
+    return [...normalPending, ...posts];
+  }, [pendingPostItems, posts]);
+
+  const visibleBanters = useMemo(() => {
+    const videoPending = pendingPostItems.filter(
+      (pending) => pending.media?.type === "video"
+    );
+    return [...videoPending, ...banters];
+  }, [pendingPostItems, banters]);
   const activeBanterIndex = useMemo(
     () => banters.findIndex((banter) => banter.id === activeBanterId),
     [banters, activeBanterId]
@@ -939,11 +986,16 @@ export default function HomeFeed() {
             <View style={styles.actions}>
               <Pressable
                 style={styles.actionItem}
-                onPress={() => router.push(`/post/${item.id}`)}
+                onPress={() => openBanterComments(item)}
               >
                 <FontAwesome name="comment-o" size={14} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
               </Pressable>
+              {item.raw?.pending ? (
+                <View style={styles.pendingPill}>
+                  <Text style={styles.pendingText}>Uploading…</Text>
+                </View>
+              ) : null}
               <Pressable
                 style={styles.actionItem}
                 onPress={() => openRepostModal(item)}
@@ -1096,6 +1148,11 @@ export default function HomeFeed() {
               </Text>
             ) : null}
             <Text style={styles.banterUser}>{item.handle}</Text>
+            {item.raw?.pending ? (
+              <View style={styles.pendingPillBanter}>
+                <Text style={styles.pendingText}>Uploading…</Text>
+              </View>
+            ) : null}
             {caption ? (
               <Text style={styles.banterCaption} numberOfLines={2}>
                 {caption}
@@ -1315,7 +1372,7 @@ export default function HomeFeed() {
           />
         ) : (
           <FlashList
-            data={banters}
+            data={visibleBanters}
             keyExtractor={(item) => item.id}
             renderItem={renderBanterItem}
             pagingEnabled
@@ -1812,6 +1869,26 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   actionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
   actionText: { color: "#9ca3af", fontSize: 12 },
+  pendingPill: {
+    backgroundColor: "rgba(255,107,53,0.15)",
+    borderColor: "rgba(255,107,53,0.35)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "center",
+  },
+  pendingPillBanter: {
+    backgroundColor: "rgba(255,107,53,0.2)",
+    borderColor: "rgba(255,107,53,0.45)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
+    marginTop: 6,
+  },
+  pendingText: { color: "#ffb08a", fontSize: 11, fontWeight: "700" },
   separator: { height: 1, backgroundColor: "#1d1d1d" },
   mediaWrapper: {
     marginTop: 8,
