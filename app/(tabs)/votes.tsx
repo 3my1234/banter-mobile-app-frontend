@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { Alert, StyleSheet, View, TouchableOpacity } from "react-native";
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
@@ -15,11 +21,15 @@ type Bundle = {
   currency: string;
 };
 
+type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
+
 export default function Votes() {
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -30,7 +40,7 @@ export default function Votes() {
 
         const me = await apiFetch("/auth/me");
         setBalance(me?.user?.voteBalance ?? 0);
-      } catch (error) {
+      } catch {
         // Keep defaults
       } finally {
         setLoading(false);
@@ -40,7 +50,12 @@ export default function Votes() {
     load();
   }, []);
 
-  const handleBuy = async (bundleId: string) => {
+  const refreshBalance = async () => {
+    const me = await apiFetch("/auth/me");
+    setBalance(me?.user?.voteBalance ?? 0);
+  };
+
+  const handleBuySolana = async (bundleId: string) => {
     try {
       setProcessingId(bundleId);
       const created = await apiFetch("/payments/solana/votes/create", {
@@ -61,8 +76,36 @@ export default function Votes() {
       });
 
       if (verified?.payment?.status === "COMPLETED") {
-        const me = await apiFetch("/auth/me");
-        setBalance(me?.user?.voteBalance ?? 0);
+        await refreshBalance();
+      }
+    } catch (error) {
+      Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleMovement = async (bundleId: string) => {
+    try {
+      setProcessingId(bundleId);
+      const created = await apiFetch("/payments/movement/votes/create", {
+        method: "POST",
+        body: JSON.stringify({ bundleId }),
+      });
+
+      const txHash = await sendMovementUsdcPayment({
+        toAddress: created.toAddress,
+        tokenAddress: created.tokenAddress,
+        amountRaw: created.amountRaw,
+      });
+
+      const verified = await apiFetch("/payments/movement/votes/verify", {
+        method: "POST",
+        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
+      });
+
+      if (verified?.payment?.status === "COMPLETED") {
+        await refreshBalance();
       }
     } catch (error) {
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
@@ -108,8 +151,7 @@ export default function Votes() {
       });
 
       if (verified?.payment?.status === "COMPLETED") {
-        const me = await apiFetch("/auth/me");
-        setBalance(me?.user?.voteBalance ?? 0);
+        await refreshBalance();
       }
     } catch (error) {
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
@@ -118,96 +160,136 @@ export default function Votes() {
     }
   };
 
-  const handleMovement = async (bundleId: string) => {
-    try {
-      setProcessingId(bundleId);
-      const created = await apiFetch("/payments/movement/votes/create", {
-        method: "POST",
-        body: JSON.stringify({ bundleId }),
-      });
-
-      const txHash = await sendMovementUsdcPayment({
-        toAddress: created.toAddress,
-        tokenAddress: created.tokenAddress,
-        amountRaw: created.amountRaw,
-      });
-
-      const verified = await apiFetch("/payments/movement/votes/verify", {
-        method: "POST",
-        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
-      });
-
-      if (verified?.payment?.status === "COMPLETED") {
-        const me = await apiFetch("/auth/me");
-        setBalance(me?.user?.voteBalance ?? 0);
-      }
-    } catch (error) {
-      Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
-    } finally {
-      setProcessingId(null);
+  const handlePay = async () => {
+    if (!selectedBundleId) {
+      Alert.alert("Choose votes", "Please select a vote amount.");
+      return;
     }
+    if (!selectedMethod) {
+      Alert.alert("Choose method", "Please select a payment method.");
+      return;
+    }
+
+    if (selectedMethod === "SOLANA") {
+      await handleBuySolana(selectedBundleId);
+      return;
+    }
+
+    if (selectedMethod === "MOVEMENT") {
+      await handleMovement(selectedBundleId);
+      return;
+    }
+
+    await handleFlutterwave(selectedBundleId);
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Votes</Text>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Your vote balance</Text>
           <Text style={styles.balanceValue}>
-            {loading ? "…" : balance}
+            {loading ? "â€¦" : balance}
           </Text>
         </View>
 
         <Text style={styles.section}>Buy votes (1 vote = $1)</Text>
-        {bundles.map((b) => (
-          <View key={b.id} style={styles.bundle}>
-            <Text style={styles.bundleLabel}>{b.votes} votes</Text>
-            <Text style={styles.bundlePrice}>
-              ${b.price.toFixed(2)} {b.currency}
+        <Text style={styles.muted}>Select amount</Text>
+        <View style={styles.choiceRow}>
+          {bundles.map((b) => {
+            const isSelected = selectedBundleId === b.id;
+            return (
+              <TouchableOpacity
+                key={b.id}
+                style={[styles.choiceChip, isSelected && styles.choiceChipActive]}
+                onPress={() => setSelectedBundleId(b.id)}
+              >
+                <Text style={[styles.choiceText, isSelected && styles.choiceTextActive]}>
+                  {b.votes}
+                </Text>
+                <Text style={[styles.choiceSub, isSelected && styles.choiceTextActive]}>
+                  ${b.price.toFixed(0)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={styles.muted}>Payment method</Text>
+        <View style={styles.methodRow}>
+          <TouchableOpacity
+            style={[
+              styles.methodChip,
+              selectedMethod === "SOLANA" && styles.methodChipActive,
+            ]}
+            onPress={() => setSelectedMethod("SOLANA")}
+          >
+            <Text
+              style={[
+                styles.methodText,
+                selectedMethod === "SOLANA" && styles.methodTextActive,
+              ]}
+            >
+              USDC (Solana)
             </Text>
-            <View style={styles.bundleActions}>
-              <TouchableOpacity
-                style={[
-                  styles.buyBtn,
-                  processingId === b.id && styles.buyBtnDisabled,
-                ]}
-                disabled={processingId === b.id}
-                onPress={() => handleBuy(b.id)}
-              >
-                <Text style={styles.buyText}>USDC (Solana)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.buyBtnAlt,
-                  processingId === b.id && styles.buyBtnDisabled,
-                ]}
-                disabled={processingId === b.id}
-                onPress={() => handleMovement(b.id)}
-              >
-                <Text style={styles.buyTextAlt}>USDC.e (Movement)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.buyBtnAlt,
-                  processingId === b.id && styles.buyBtnDisabled,
-                ]}
-                disabled={processingId === b.id}
-                onPress={() => handleFlutterwave(b.id)}
-              >
-                <Text style={styles.buyTextAlt}>Card (USD)</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
-      </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.methodChip,
+              selectedMethod === "MOVEMENT" && styles.methodChipActive,
+            ]}
+            onPress={() => setSelectedMethod("MOVEMENT")}
+          >
+            <Text
+              style={[
+                styles.methodText,
+                selectedMethod === "MOVEMENT" && styles.methodTextActive,
+              ]}
+            >
+              USDC.e (Movement)
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.methodChip,
+              selectedMethod === "CARD" && styles.methodChipActive,
+            ]}
+            onPress={() => setSelectedMethod("CARD")}
+          >
+            <Text
+              style={[
+                styles.methodText,
+                selectedMethod === "CARD" && styles.methodTextActive,
+              ]}
+            >
+              Card (USD)
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.payBtn,
+            (processingId || !selectedBundleId || !selectedMethod) &&
+              styles.payBtnDisabled,
+          ]}
+          onPress={handlePay}
+          disabled={!!processingId || !selectedBundleId || !selectedMethod}
+        >
+          <Text style={styles.payText}>
+            {processingId ? "Processing..." : "Pay"}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d", padding: 16, gap: 12 },
+  container: { flex: 1, backgroundColor: "#0d0d0d" },
+  content: { padding: 16, gap: 12 },
   title: { color: "#fafafa", fontSize: 22, fontWeight: "700" },
   balanceCard: {
     backgroundColor: "#1a1a1a",
@@ -219,36 +301,55 @@ const styles = StyleSheet.create({
   balanceLabel: { color: "#888" },
   balanceValue: { color: "#fafafa", fontSize: 24, fontWeight: "700" },
   section: { color: "#fafafa", fontSize: 16, fontWeight: "700", marginTop: 8 },
-  bundle: {
+  muted: { color: "#888", fontSize: 12 },
+  choiceRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#1a1a1a",
-    borderColor: "#333",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  choiceChip: {
     borderWidth: 1,
+    borderColor: "#333",
     borderRadius: 12,
-    padding: 12,
-  },
-  bundleLabel: { color: "#fafafa", fontWeight: "700" },
-  bundlePrice: { color: "#888" },
-  bundleActions: { flexDirection: "row", gap: 8 },
-  buyBtn: {
-    backgroundColor: "#ff6b35",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  buyBtnAlt: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     backgroundColor: "#111",
+    minWidth: 72,
+    alignItems: "center",
+  },
+  choiceChipActive: {
+    borderColor: "#ff6b35",
+    backgroundColor: "rgba(255,107,53,0.12)",
+  },
+  choiceText: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
+  choiceSub: { color: "#9ca3af", fontSize: 12, marginTop: 2 },
+  choiceTextActive: { color: "#ff6b35" },
+  methodRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  methodChip: {
     borderWidth: 1,
     borderColor: "#333",
-    paddingHorizontal: 12,
+    borderRadius: 999,
     paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#111",
   },
-  buyBtnDisabled: {
-    opacity: 0.6,
+  methodChipActive: {
+    borderColor: "#ff6b35",
+    backgroundColor: "rgba(255,107,53,0.12)",
   },
-  buyText: { color: "#0d0d0d", fontWeight: "700" },
-  buyTextAlt: { color: "#fafafa", fontWeight: "700" },
+  methodText: { color: "#fafafa", fontWeight: "700", fontSize: 12 },
+  methodTextActive: { color: "#ff6b35" },
+  payBtn: {
+    backgroundColor: "#ff6b35",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  payBtnDisabled: { opacity: 0.6 },
+  payText: { color: "#0d0d0d", fontWeight: "700", fontSize: 16 },
 });

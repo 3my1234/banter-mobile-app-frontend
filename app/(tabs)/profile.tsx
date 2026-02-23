@@ -373,8 +373,14 @@ export default function ProfileScreen() {
               const icon = isDeposit ? "arrow-down" : "arrow-up";
               const amount = formatTokenAmount(tx.amount, tx.metadata?.decimals || 6);
               const symbol = tx.tokenSymbol || "TOKEN";
+              const canOpen = isMovement && tx.txHash;
               return (
-                <View key={tx.id} style={styles.txRow}>
+                <Pressable
+                  key={tx.id}
+                  style={styles.txRow}
+                  onPress={() => (canOpen ? openExplorer(tx.txHash) : undefined)}
+                  disabled={!canOpen}
+                >
                   <RNView style={[styles.txIconWrap, isDeposit ? styles.txIn : styles.txOut]}>
                     <FontAwesome name={icon} size={12} color="#0d0d0d" />
                   </RNView>
@@ -390,7 +396,7 @@ export default function ProfileScreen() {
                     <Text style={styles.txAmount}>
                       {isDeposit ? "+" : "-"} {amount} {symbol}
                     </Text>
-                    {tx.txHash && isMovement ? (
+                    {canOpen ? (
                       <Pressable
                         onPress={() => openExplorer(tx.txHash)}
                         style={styles.txLink}
@@ -400,7 +406,7 @@ export default function ProfileScreen() {
                       </Pressable>
                     ) : null}
                   </RNView>
-                </View>
+                </Pressable>
               );
             })
           )}
