@@ -3,7 +3,13 @@ import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } from "@web3auth/base";
 import { SolanaPrivateKeyProvider } from "@web3auth/solana-provider";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
-import { Aptos, AptosConfig, Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
+import {
+  Aptos,
+  AptosConfig,
+  Account,
+  Ed25519PrivateKey,
+  Network,
+} from "@aptos-labs/ts-sdk";
 import { Buffer } from "buffer";
 
 const WEB3AUTH_CLIENT_ID =
@@ -116,7 +122,10 @@ export async function sendMovementUsdcPayment({
   amountRaw: string;
 }): Promise<string> {
   const account = await getMovementAccount();
-  const config = new AptosConfig({ fullnode: MOVEMENT_RPC_URL });
+  const config = new AptosConfig({
+    network: Network.CUSTOM,
+    fullnode: MOVEMENT_RPC_URL,
+  });
   const aptos = new Aptos(config);
 
   const transaction = await aptos.transaction.build.simple({
