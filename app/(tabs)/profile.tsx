@@ -365,7 +365,6 @@ export default function ProfileScreen() {
             transactions.map((tx) => {
               const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
               const chain = (tx.blockchain || tx.chain || "").toString().toUpperCase();
-              const isMovement = chain.includes("MOVE");
               const isDeposit =
                 rawType.includes("DEPOSIT") ||
                 rawType.includes("CREDIT") ||
@@ -373,7 +372,7 @@ export default function ProfileScreen() {
               const icon = isDeposit ? "arrow-down" : "arrow-up";
               const amount = formatTokenAmount(tx.amount, tx.metadata?.decimals || 6);
               const symbol = tx.tokenSymbol || "TOKEN";
-              const canOpen = isMovement && tx.txHash;
+              const canOpen = !!tx.txHash;
               return (
                 <Pressable
                   key={tx.id}
