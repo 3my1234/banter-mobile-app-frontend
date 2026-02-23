@@ -122,9 +122,9 @@ export async function sendMovementUsdcPayment({
   const transaction = await aptos.transaction.build.simple({
     sender: account.accountAddress,
     data: {
-      function: "0x1::coin::transfer",
-      typeArguments: [tokenAddress],
-      functionArguments: [toAddress, amountRaw],
+      function: "0x1::primary_fungible_store::transfer",
+      typeArguments: ["0x1::fungible_asset::Metadata"],
+      functionArguments: [tokenAddress, toAddress, amountRaw],
     },
   });
 
