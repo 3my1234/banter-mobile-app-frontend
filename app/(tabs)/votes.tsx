@@ -25,7 +25,7 @@ export default function Votes() {
     const load = async () => {
       try {
         setLoading(true);
-        const bundleData = await apiFetch("/payments/votes/bundles", {}, false);
+        const bundleData = await apiFetch("/payments/votes/bundles");
         setBundles(bundleData?.bundles || []);
 
         const me = await apiFetch("/auth/me");
