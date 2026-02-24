@@ -212,6 +212,7 @@ const AuthLoginScreen = () => {
       const normalized = normalizePrivateKeyHex(privateKeyHex as string);
       console.log("Private key (raw len)", (privateKeyHex as string)?.length);
       console.log("Private key (normalized len)", normalized.length);
+      await SecureStore.setItemAsync("banter_private_key", normalized);
       const { solanaAddress, movementAddress } = deriveAddresses(normalized);
 
       const email =

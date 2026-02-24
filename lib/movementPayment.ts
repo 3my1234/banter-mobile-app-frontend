@@ -103,11 +103,15 @@ async function getMovementAccount(): Promise<Account> {
     throw new Error("Wallet not available. Please log in again.");
   }
 
-  const privateKeyHex = await instance.provider.request({
+  let privateKeyHex = await instance.provider.request({
     method: "private_key",
   });
   if (!privateKeyHex || typeof privateKeyHex !== "string") {
-    throw new Error("Movement wallet key not available. Please log in again.");
+    const cached = await SecureStore.getItemAsync("banter_private_key");
+    if (!cached) {
+      throw new Error("Movement wallet key not available. Please log in again.");
+    }
+    privateKeyHex = cached;
   }
   const normalized = normalizePrivateKeyHex(privateKeyHex as string);
   const seed = Buffer.from(normalized, "hex");
