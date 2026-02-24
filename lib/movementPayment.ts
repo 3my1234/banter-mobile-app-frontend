@@ -106,6 +106,9 @@ async function getMovementAccount(): Promise<Account> {
   const privateKeyHex = await instance.provider.request({
     method: "private_key",
   });
+  if (!privateKeyHex || typeof privateKeyHex !== "string") {
+    throw new Error("Movement wallet key not available. Please log in again.");
+  }
   const normalized = normalizePrivateKeyHex(privateKeyHex as string);
   const seed = Buffer.from(normalized, "hex");
   const privateKey = new Ed25519PrivateKey(seed);
