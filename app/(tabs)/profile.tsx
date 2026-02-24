@@ -113,7 +113,17 @@ export default function ProfileScreen() {
       setBalances(data?.balances || null);
 
       const tx = await apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1");
-      setTransactions(tx?.transactions || []);
+      const rawTransactions = tx?.transactions || [];
+      const deduped: any[] = [];
+      const seen = new Set<string>();
+      for (let i = 0; i < rawTransactions.length; i += 1) {
+        const item = rawTransactions[i] || {};
+        const key = (item.txHash || item.id || `${item.tokenSymbol}-${item.createdAt}-${i}`).toString();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(item);
+      }
+      setTransactions(deduped);
 
       if (!walletsSynced && data?.wallets?.length) {
         setSyncingWallets(true);
@@ -362,7 +372,7 @@ export default function ProfileScreen() {
           {transactions.length === 0 ? (
             <Text style={styles.muted}>No transactions yet.</Text>
           ) : (
-            transactions.map((tx) => {
+            transactions.map((tx, index) => {
               const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
               const chain = (tx.blockchain || tx.chain || "").toString().toUpperCase();
               const isDeposit =
@@ -370,12 +380,24 @@ export default function ProfileScreen() {
                 rawType.includes("CREDIT") ||
                 rawType.includes("RECEIVE");
               const icon = isDeposit ? "arrow-down" : "arrow-up";
-              const amount = formatTokenAmount(tx.amount, tx.metadata?.decimals || 6);
-              const symbol = tx.tokenSymbol || "TOKEN";
+              const symbol = (tx.tokenSymbol || "TOKEN").toString().toUpperCase();
+              const tokenDecimals =
+                tx.metadata?.decimals ??
+                (symbol === "MOVE" ? 8 : symbol === "USDC.E" || symbol === "USDC" ? 6 : 6);
+              const amount = formatTokenAmount(tx.amount, tokenDecimals);
               const canOpen = !!tx.txHash;
+              const txKey = (tx.txHash || tx.id || `${symbol}-${tx.createdAt}-${index}`).toString();
+              const title =
+                rawType.includes("TRANSFER") ||
+                rawType.includes("WITHDRAW") ||
+                rawType.includes("DEBIT")
+                  ? "Transfer"
+                  : isDeposit
+                  ? "Deposit"
+                  : "Activity";
               return (
                 <Pressable
-                  key={tx.id}
+                  key={txKey}
                   style={styles.txRow}
                   onPress={() => (canOpen ? openExplorer(tx.txHash) : undefined)}
                   disabled={!canOpen}
@@ -385,7 +407,7 @@ export default function ProfileScreen() {
                   </RNView>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.txTitle}>
-                      {isDeposit ? "Deposit" : "Payment"}
+                      {title}
                     </Text>
                     <Text style={styles.txMeta} numberOfLines={1}>
                       {tx.txHash ? tx.txHash.slice(0, 12) + "..." : "On-chain"}
