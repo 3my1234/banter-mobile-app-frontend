@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
@@ -55,7 +55,8 @@ const AuthLoginScreen = () => {
       body: JSON.stringify({ privyToken }),
     });
     if (!res.ok) {
-      throw new Error(`Privy verify failed (${res.status})`);
+      const text = await res.text();
+      throw new Error(`Privy verify failed (${res.status}): ${text}`);
     }
     return res.json() as Promise<{ token: string; user: any }>;
   };
@@ -146,7 +147,9 @@ const AuthLoginScreen = () => {
         router.replace("/(tabs)");
       } catch (error) {
         handledLoginRef.current = false;
-        setLoginError((error as Error)?.message ?? "Login failed");
+        const msg = (error as Error)?.message ?? "Login failed";
+        setLoginError(msg);
+        Alert.alert("Login failed", msg);
       }
     };
 
