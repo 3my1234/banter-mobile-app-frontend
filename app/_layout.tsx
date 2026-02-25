@@ -7,9 +7,11 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const privyAppId =
     process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? 'REPLACE_ME_PRIVY_APP_ID';
+  const privyClientId =
+    process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID ?? undefined;
 
   return (
-    <PrivyProvider appId={privyAppId}>
+    <PrivyProvider appId={privyAppId} clientId={privyClientId}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack screenOptions={{ headerShown: false }} />
       </ThemeProvider>
