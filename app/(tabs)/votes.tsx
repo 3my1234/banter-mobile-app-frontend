@@ -137,7 +137,7 @@ export default function Votes() {
         parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId;
       const txRef = parsed.queryParams?.tx_ref || parsed.queryParams?.txRef;
 
-      if (!transactionId) {
+      if (!transactionId && !txRef) {
         throw new Error("Payment did not return a transaction id.");
       }
 
