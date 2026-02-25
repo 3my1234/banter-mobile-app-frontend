@@ -211,7 +211,13 @@ const AuthLoginScreen = () => {
       }
       setLoginLoading(true);
 
-      const loginResult = await web3auth.login({ loginProvider: "google" });
+      const loginResult = await web3auth.login({
+        loginProvider: "google",
+        extraLoginOptions: {
+          scope: "openid email profile",
+          verifierIdField: "email",
+        },
+      });
 
       // Try multiple ways to get profile (email / verifierId)
       const runtimeGetUserInfo = (web3auth as any)?.getUserInfo;
