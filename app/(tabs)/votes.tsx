@@ -9,12 +9,19 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
-import { sendUsdcPayment } from "@/lib/solanaPayment";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import {
+  createAssociatedTokenAccountInstruction,
+  createTransferCheckedInstruction,
+  getAssociatedTokenAddress,
+} from "@solana/spl-token";
 import { usePrivy } from "@privy-io/expo";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { useSignRawHash } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { getMovementWallet, sendMovementTransaction } from "@/lib/privyMovement";
+import { Buffer } from "buffer";
 
 type Bundle = {
   id: string;
@@ -27,6 +34,7 @@ type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
 
 export default function Votes() {
   const { user } = usePrivy();
+  const solanaWallet = useEmbeddedSolanaWallet();
   const { signRawHash } = useSignRawHash();
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
@@ -67,12 +75,70 @@ export default function Votes() {
         body: JSON.stringify({ bundleId }),
       });
 
-      const txHash = await sendUsdcPayment({
-        toAddress: created.toAddress,
-        tokenMint: created.tokenMint,
-        amountRaw: created.amountRaw,
-        decimals: created.decimals ?? 6,
+      let wallet = solanaWallet.wallets?.[0];
+      if (!wallet) {
+        await solanaWallet.create({ recoveryMethod: "privy" });
+        wallet = solanaWallet.wallets?.[0];
+      }
+
+      if (!wallet?.address) {
+        throw new Error("Solana wallet not available. Please log in again.");
+      }
+
+      const provider = await wallet.getProvider();
+      const connection = new Connection(
+        process.env.EXPO_PUBLIC_SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com",
+        "confirmed"
+      );
+
+      const mint = new PublicKey(created.tokenMint);
+      const from = new PublicKey(wallet.address);
+      const to = new PublicKey(created.toAddress);
+      const fromAta = await getAssociatedTokenAddress(mint, from);
+      const toAta = await getAssociatedTokenAddress(mint, to);
+
+      const instructions = [];
+      const toAtaInfo = await connection.getAccountInfo(toAta);
+      if (!toAtaInfo) {
+        instructions.push(
+          createAssociatedTokenAccountInstruction(from, toAta, to, mint)
+        );
+      }
+
+      const amount = BigInt(created.amountRaw);
+      instructions.push(
+        createTransferCheckedInstruction(
+          fromAta,
+          mint,
+          toAta,
+          from,
+          amount,
+          created.decimals ?? 6
+        )
+      );
+
+      const latest = await connection.getLatestBlockhash("finalized");
+      const tx = new Transaction();
+      tx.feePayer = from;
+      tx.recentBlockhash = latest.blockhash;
+      instructions.forEach((ix) => tx.add(ix));
+
+      const serialized = tx.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
       });
+      const encoded = Buffer.from(serialized).toString("base64");
+      const signResult = await (provider as any).request({
+        method: "signAndSendTransaction",
+        params: { transaction: encoded },
+      });
+      const txHash =
+        signResult?.signature || signResult?.result || signResult;
+
+      await connection.confirmTransaction(
+        { signature: txHash, ...latest },
+        "confirmed"
+      );
 
       const verified = await apiFetch("/payments/solana/votes/verify", {
         method: "POST",
