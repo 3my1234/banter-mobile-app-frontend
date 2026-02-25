@@ -80,10 +80,73 @@ const AuthLoginScreen = () => {
     return { movementAddress, solanaAddress };
   };
 
+  const processAuthenticatedUser = async () => {
+    if (!authenticated || !user) return;
+    handledLoginRef.current = true;
+    try {
+      const email = user?.email?.address?.trim();
+      if (!email || !email.includes("@")) {
+        throw new Error("Login failed: Google email was not returned.");
+      }
+
+      let accounts = getLinkedAccounts(user);
+      let { movementAddress, solanaAddress } = ensureWallets(accounts);
+
+      if (!movementAddress || !solanaAddress) {
+        if (!createWallet) {
+          throw new Error("Wallets not found. Privy wallet creation unavailable.");
+        }
+
+        if (!movementAddress) {
+          await createWallet({ chainType: "aptos" });
+        }
+        if (!solanaAddress) {
+          await createWallet({ chainType: "solana" });
+        }
+
+        const refreshedUser = (privy as any)?.user || user;
+        accounts = getLinkedAccounts(refreshedUser);
+        ({ movementAddress, solanaAddress } = ensureWallets(accounts));
+      }
+
+      if (!movementAddress || !solanaAddress) {
+        throw new Error("Wallets not found. Please retry login.");
+      }
+
+      const privyToken =
+        (await (privy as any)?.getAccessToken?.()) ||
+        (user as any)?.accessToken ||
+        (user as any)?.access_token ||
+        (user as any)?.authToken ||
+        (user as any)?.auth_token;
+
+      if (!privyToken) {
+        throw new Error("Privy token not available.");
+      }
+
+      const verified = await verifyPrivy(privyToken);
+      await SecureStore.setItemAsync(
+        "banter_session",
+        JSON.stringify({ token: verified.token, email })
+      );
+      setRedirecting(true);
+      router.replace("/(tabs)");
+    } catch (error) {
+      handledLoginRef.current = false;
+      const msg = (error as Error)?.message ?? "Login failed";
+      setLoginError(msg);
+      Alert.alert("Login failed", msg);
+    }
+  };
+
   const startLogin = async () => {
     try {
       setLoginError(null);
       setLoginLoading(true);
+      if (authenticated && user) {
+        await processAuthenticatedUser();
+        return;
+      }
       await login({ provider: "google" });
     } catch (error) {
       setLoginError((error as Error)?.message ?? "Login failed");
@@ -93,68 +156,9 @@ const AuthLoginScreen = () => {
   };
 
   useEffect(() => {
-    const handlePrivyLogin = async () => {
-      if (!authenticated || !user || handledLoginRef.current) return;
-      handledLoginRef.current = true;
-
-      try {
-        const email = user?.email?.address?.trim();
-        if (!email || !email.includes("@")) {
-          throw new Error("Login failed: Google email was not returned.");
-        }
-
-        let accounts = getLinkedAccounts(user);
-        let { movementAddress, solanaAddress } = ensureWallets(accounts);
-
-        if (!movementAddress || !solanaAddress) {
-          if (!createWallet) {
-            throw new Error("Wallets not found. Privy wallet creation unavailable.");
-          }
-
-          if (!movementAddress) {
-            await createWallet({ chainType: "aptos" });
-          }
-          if (!solanaAddress) {
-            await createWallet({ chainType: "solana" });
-          }
-
-          const refreshedUser = (privy as any)?.user || user;
-          accounts = getLinkedAccounts(refreshedUser);
-          ({ movementAddress, solanaAddress } = ensureWallets(accounts));
-        }
-
-        if (!movementAddress || !solanaAddress) {
-          throw new Error("Wallets not found. Please retry login.");
-        }
-
-        const privyToken =
-          (await (privy as any)?.getAccessToken?.()) ||
-          (user as any)?.accessToken ||
-          (user as any)?.access_token ||
-          (user as any)?.authToken ||
-          (user as any)?.auth_token;
-
-        if (!privyToken) {
-          throw new Error("Privy token not available.");
-        }
-
-        const verified = await verifyPrivy(privyToken);
-        await SecureStore.setItemAsync(
-          "banter_session",
-          JSON.stringify({ token: verified.token, email })
-        );
-        setRedirecting(true);
-        router.replace("/(tabs)");
-      } catch (error) {
-        handledLoginRef.current = false;
-        const msg = (error as Error)?.message ?? "Login failed";
-        setLoginError(msg);
-        Alert.alert("Login failed", msg);
-      }
-    };
-
-    handlePrivyLogin();
-  }, [authenticated, user, router]);
+    if (!authenticated || !user || handledLoginRef.current) return;
+    processAuthenticatedUser();
+  }, [authenticated, user]);
 
   if (checkingSession || redirecting) {
     return (
