@@ -89,7 +89,8 @@ const AuthLoginScreen = () => {
         throw new Error("Login failed: Google email was not returned.");
       }
 
-      let accounts = getLinkedAccounts(user);
+      let latestUser = user;
+      let accounts = getLinkedAccounts(latestUser);
       let { movementAddress, solanaAddress } = ensureWallets(accounts);
 
       if (!movementAddress || !solanaAddress) {
@@ -97,15 +98,17 @@ const AuthLoginScreen = () => {
           throw new Error("Wallets not found. Privy wallet creation unavailable.");
         }
 
-        if (!movementAddress) {
-          await createWallet({ chainType: "aptos" });
-        }
-        if (!solanaAddress) {
-          await createWallet({ chainType: "solana" });
-        }
+          if (!movementAddress) {
+            const result = await createWallet({ chainType: "aptos" });
+            if (result?.user) latestUser = result.user as any;
+          }
+          if (!solanaAddress) {
+            const result = await createWallet({ chainType: "solana" });
+            if (result?.user) latestUser = result.user as any;
+          }
 
-        const refreshedUser = (privy as any)?.user || user;
-        accounts = getLinkedAccounts(refreshedUser);
+          const refreshedUser = (privy as any)?.user || latestUser;
+          accounts = getLinkedAccounts(refreshedUser);
         ({ movementAddress, solanaAddress } = ensureWallets(accounts));
       }
 
