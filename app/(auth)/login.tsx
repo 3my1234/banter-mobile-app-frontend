@@ -147,10 +147,18 @@ const AuthLoginScreen = () => {
       setLoginError(null);
       setLoginLoading(true);
       if (authenticated && user) {
-        await processAuthenticatedUser();
-        return;
+        try {
+          await processAuthenticatedUser();
+          return;
+        } catch {
+          // If session exists but we can't proceed, reset and retry login.
+          await privy.logout();
+        }
       }
-      await login({ provider: "google" });
+      const result = await login({ provider: "google" });
+      if (!result) {
+        throw new Error("Login did not start. Please try again.");
+      }
     } catch (error) {
       const msg = (error as Error)?.message ?? "Login failed";
       if (msg.toLowerCase().includes("already logged in")) {
@@ -158,6 +166,7 @@ const AuthLoginScreen = () => {
         return;
       }
       setLoginError(msg);
+      Alert.alert("Login failed", msg);
     } finally {
       setLoginLoading(false);
     }
