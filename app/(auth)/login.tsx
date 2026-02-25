@@ -30,6 +30,7 @@ const AuthLoginScreen = () => {
   const [redirecting, setRedirecting] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const handledLoginRef = useRef(false);
+  const oauthRetryRef = useRef(false);
 
   useEffect(() => {
     const checkExistingSession = async () => {
@@ -196,7 +197,24 @@ const AuthLoginScreen = () => {
     const msg = `OAuth error: ${raw}`;
     setLoginError(msg);
     Alert.alert("OAuth error", msg);
-  }, [oauthState]);
+
+    // If Privy reports an already-logged-in OAuth session, reset and retry once.
+    if (
+      !oauthRetryRef.current &&
+      String(raw).toLowerCase().includes("already logged in")
+    ) {
+      oauthRetryRef.current = true;
+      (async () => {
+        try {
+          await privy.logout();
+          const redirectUri = "https://sportbanter.online/privy/oauth";
+          await login({ provider: "google", redirectUri });
+        } catch {
+          // fall through to UI error
+        }
+      })();
+    }
+  }, [oauthState, login, privy]);
 
   if (checkingSession || redirecting) {
     return (
