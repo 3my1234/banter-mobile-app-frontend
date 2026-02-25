@@ -215,13 +215,12 @@ const AuthLoginScreen = () => {
       await SecureStore.setItemAsync("banter_private_key", normalized);
       const { solanaAddress, movementAddress } = deriveAddresses(normalized);
 
-      const email =
-        (profile?.email as string | undefined) ||
-        (profile?.verifierId as string | undefined) ||
-        (profile?.sub as string | undefined) ||
-        (profile?.userId as string | undefined) ||
-        (profile?.id as string | undefined) ||
-        `pk-${normalized.slice(-16)}@web3auth.local`;
+      const email = (profile?.email as string | undefined)?.trim();
+      if (!email || !email.includes("@")) {
+        throw new Error(
+          "Login failed: Google email was not returned. Please log in again."
+        );
+      }
 
       const check = await checkUserExists(email);
       if (check.exists) {
