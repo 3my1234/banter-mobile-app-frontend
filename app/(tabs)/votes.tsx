@@ -11,6 +11,8 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { sendUsdcPayment } from "@/lib/solanaPayment";
 import { sendMovementUsdcPayment } from "@/lib/movementPayment";
+import { usePrivy } from "@privy-io/expo";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 
@@ -24,6 +26,7 @@ type Bundle = {
 type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
 
 export default function Votes() {
+  const { user } = usePrivy();
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -93,11 +96,41 @@ export default function Votes() {
         body: JSON.stringify({ bundleId }),
       });
 
-      const txHash = await sendMovementUsdcPayment({
-        toAddress: created.toAddress,
-        tokenAddress: created.tokenAddress,
-        amountRaw: created.amountRaw,
-      });
+      let txHash: string;
+      const accounts =
+        (user as any)?.linkedAccounts || (user as any)?.linked_accounts || [];
+      const movementWallet =
+        accounts.find(
+          (acct: any) =>
+            acct?.type === "wallet" &&
+            (acct?.chainType === "aptos" || acct?.chain_type === "aptos")
+        ) || null;
+
+      if (movementWallet?.signAndSubmitTransaction && movementWallet?.address) {
+        const config = new AptosConfig({
+          network: Network.CUSTOM,
+          fullnode:
+            process.env.EXPO_PUBLIC_MOVEMENT_RPC_URL ??
+            "https://testnet.movementnetwork.xyz/v1",
+        });
+        const aptos = new Aptos(config);
+        const transaction = await aptos.transaction.build.simple({
+          sender: movementWallet.address,
+          data: {
+            function: "0x1::primary_fungible_store::transfer",
+            typeArguments: ["0x1::fungible_asset::Metadata"],
+            functionArguments: [created.tokenAddress, created.toAddress, created.amountRaw],
+          },
+        });
+        const result = await movementWallet.signAndSubmitTransaction(transaction);
+        txHash = result?.hash || result?.transactionHash || result;
+      } else {
+        txHash = await sendMovementUsdcPayment({
+          toAddress: created.toAddress,
+          tokenAddress: created.tokenAddress,
+          amountRaw: created.amountRaw,
+        });
+      }
 
       const verified = await apiFetch("/payments/movement/votes/verify", {
         method: "POST",

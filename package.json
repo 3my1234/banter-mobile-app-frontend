@@ -11,6 +11,8 @@
   "dependencies": {
     "@aptos-labs/ts-sdk": "^6.0.0",
     "@expo/vector-icons": "^15.0.3",
+    "@privy-io/expo": "latest",
+    "@privy-io/expo/extended-chains": "latest",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/native-stack": "^7.11.0",
     "@solana/spl-token": "^0.3.11",
