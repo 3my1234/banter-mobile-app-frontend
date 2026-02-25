@@ -144,6 +144,8 @@ const AuthLoginScreen = () => {
 
   const startLogin = async () => {
     try {
+      Alert.alert("Login", "Button pressed");
+      console.log("Login button pressed");
       setLoginError(null);
       setLoginLoading(true);
       if (authenticated && user) {
