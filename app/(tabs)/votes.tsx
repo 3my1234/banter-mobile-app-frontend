@@ -163,6 +163,11 @@ export default function Votes() {
         body: JSON.stringify({ bundleId }),
       });
 
+      if (created?.status === "COMPLETED") {
+        await refreshBalance();
+        return;
+      }
+
       const movementWallet = getMovementWallet(user);
       if (!movementWallet?.address) {
         throw new Error("Movement wallet not available. Please log in again.");
