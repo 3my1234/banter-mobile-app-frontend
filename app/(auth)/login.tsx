@@ -155,7 +155,7 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
-      const result = await login({ provider: "google" });
+      const result = await login({ provider: "google", redirectUri: "/" });
       if (!result) {
         throw new Error("Login did not start. Please try again.");
       }
