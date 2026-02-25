@@ -5,7 +5,6 @@ import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
 import { useCreateWallet } from "@privy-io/expo/extended-chains";
-import * as Linking from "expo-linking";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -146,8 +145,6 @@ const AuthLoginScreen = () => {
 
   const startLogin = async () => {
     try {
-      Alert.alert("Login", "Button pressed");
-      console.log("Login button pressed");
       setLoginError(null);
       setLoginLoading(true);
       if (authenticated && user) {
@@ -159,7 +156,7 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
-      const redirectUri = Linking.createURL("/(auth)/login");
+      const redirectUri = "banterv3://oauth";
       const result = await login({ provider: "google", redirectUri });
       if (!result) {
         throw new Error("Login did not start. Please try again.");
