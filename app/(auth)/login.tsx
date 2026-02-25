@@ -215,14 +215,11 @@ const AuthLoginScreen = () => {
 
       // Try multiple ways to get profile (email / verifierId)
       const runtimeGetUserInfo = (web3auth as any)?.getUserInfo;
-      const providerGetUserInfo =
-        web3auth.provider?.request?.({ method: "getUserInfo" }).catch(() => undefined);
       let profile: any =
         (web3auth as any)?.userInfo ??
         (typeof runtimeGetUserInfo === "function"
           ? await runtimeGetUserInfo.call(web3auth).catch(() => undefined)
           : undefined) ??
-        (await providerGetUserInfo) ??
         (loginResult as any)?.userInfo ??
         (loginResult as any);
 
