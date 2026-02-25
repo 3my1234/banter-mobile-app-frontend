@@ -4,7 +4,6 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
-import { useCreateWallet } from "@privy-io/expo-extended-chains";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -22,7 +21,6 @@ const AuthLoginScreen = () => {
   const privy = usePrivy();
   const { user, authenticated } = privy;
   const { login } = useLoginWithOAuth();
-  const { createWallet } = useCreateWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -73,21 +71,9 @@ const AuthLoginScreen = () => {
     return wallet?.address as string | undefined;
   };
 
-  const ensureWallets = async (accounts: any[]) => {
-    let movementAddress = findWalletAddress(accounts, "aptos");
-    let solanaAddress = findWalletAddress(accounts, "solana");
-
-    if (!movementAddress) {
-      await createWallet({ chainType: "aptos" });
-    }
-    if (!solanaAddress) {
-      await createWallet({ chainType: "solana" });
-    }
-
-    const refreshed = getLinkedAccounts(user);
-    movementAddress = findWalletAddress(refreshed, "aptos");
-    solanaAddress = findWalletAddress(refreshed, "solana");
-
+  const ensureWallets = (accounts: any[]) => {
+    const movementAddress = findWalletAddress(accounts, "aptos");
+    const solanaAddress = findWalletAddress(accounts, "solana");
     return { movementAddress, solanaAddress };
   };
 
@@ -115,10 +101,12 @@ const AuthLoginScreen = () => {
         }
 
         const accounts = getLinkedAccounts(user);
-        const { movementAddress, solanaAddress } = await ensureWallets(accounts);
+        const { movementAddress, solanaAddress } = ensureWallets(accounts);
 
         if (!movementAddress || !solanaAddress) {
-          throw new Error("Wallet creation failed. Please try again.");
+          throw new Error(
+            "Wallets not found. Please create wallets in Privy or try again."
+          );
         }
 
         const privyToken =
