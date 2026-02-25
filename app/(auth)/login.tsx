@@ -152,7 +152,12 @@ const AuthLoginScreen = () => {
       }
       await login({ provider: "google" });
     } catch (error) {
-      setLoginError((error as Error)?.message ?? "Login failed");
+      const msg = (error as Error)?.message ?? "Login failed";
+      if (msg.toLowerCase().includes("already logged in")) {
+        await processAuthenticatedUser();
+        return;
+      }
+      setLoginError(msg);
     } finally {
       setLoginLoading(false);
     }
