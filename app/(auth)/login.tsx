@@ -9,6 +9,7 @@ import { SolanaPrivateKeyProvider } from "@web3auth/solana-provider";
 import { Keypair } from "@solana/web3.js";
 import { Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
+import { Buffer } from "buffer";
 
 const WEB3AUTH_CLIENT_ID =
   process.env.EXPO_PUBLIC_WEB3AUTH_CLIENT_ID ??
@@ -91,6 +92,9 @@ const AuthLoginScreen = () => {
               verifier: WEB3AUTH_VERIFIER,
               typeOfLogin: "google",
               clientId: GOOGLE_CLIENT_ID,
+              extraLoginOptions: {
+                scope: "openid email profile",
+              },
             },
           },
           privateKeyProvider,
@@ -181,6 +185,23 @@ const AuthLoginScreen = () => {
     throw new Error("Unsupported private key format");
   };
 
+  const decodeJwtEmail = (token?: string | null): string | null => {
+    if (!token || typeof token !== "string") return null;
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    try {
+      const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      const padLen = padded.length % 4;
+      const base64 = padded + (padLen ? "=".repeat(4 - padLen) : "");
+      const json = Buffer.from(base64, "base64").toString("utf8");
+      const payload = JSON.parse(json);
+      const email = (payload?.email as string | undefined)?.trim();
+      return email && email.includes("@") ? email : null;
+    } catch {
+      return null;
+    }
+  };
+
   const login = async () => {
     try {
       setLoginError(null);
@@ -194,11 +215,14 @@ const AuthLoginScreen = () => {
 
       // Try multiple ways to get profile (email / verifierId)
       const runtimeGetUserInfo = (web3auth as any)?.getUserInfo;
+      const providerGetUserInfo =
+        web3auth.provider?.request?.({ method: "getUserInfo" }).catch(() => undefined);
       let profile: any =
         (web3auth as any)?.userInfo ??
         (typeof runtimeGetUserInfo === "function"
           ? await runtimeGetUserInfo.call(web3auth).catch(() => undefined)
           : undefined) ??
+        (await providerGetUserInfo) ??
         (loginResult as any)?.userInfo ??
         (loginResult as any);
 
@@ -215,7 +239,14 @@ const AuthLoginScreen = () => {
       await SecureStore.setItemAsync("banter_private_key", normalized);
       const { solanaAddress, movementAddress } = deriveAddresses(normalized);
 
-      const email = (profile?.email as string | undefined)?.trim();
+      const idToken =
+        (loginResult as any)?.idToken ||
+        (loginResult as any)?.oauthIdToken ||
+        (profile as any)?.idToken ||
+        (profile as any)?.oauthIdToken;
+      const email =
+        (profile?.email as string | undefined)?.trim() ||
+        decodeJwtEmail(idToken);
       if (!email || !email.includes("@")) {
         throw new Error(
           "Login failed: Google email was not returned. Please log in again."
