@@ -10,7 +10,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { sendUsdcPayment } from "@/lib/solanaPayment";
-import { sendMovementUsdcPayment } from "@/lib/movementPayment";
 import { usePrivy } from "@privy-io/expo";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import * as WebBrowser from "expo-web-browser";
@@ -106,31 +105,27 @@ export default function Votes() {
             (acct?.chainType === "aptos" || acct?.chain_type === "aptos")
         ) || null;
 
-      if (movementWallet?.signAndSubmitTransaction && movementWallet?.address) {
-        const config = new AptosConfig({
-          network: Network.CUSTOM,
-          fullnode:
-            process.env.EXPO_PUBLIC_MOVEMENT_RPC_URL ??
-            "https://testnet.movementnetwork.xyz/v1",
-        });
-        const aptos = new Aptos(config);
-        const transaction = await aptos.transaction.build.simple({
-          sender: movementWallet.address,
-          data: {
-            function: "0x1::primary_fungible_store::transfer",
-            typeArguments: ["0x1::fungible_asset::Metadata"],
-            functionArguments: [created.tokenAddress, created.toAddress, created.amountRaw],
-          },
-        });
-        const result = await movementWallet.signAndSubmitTransaction(transaction);
-        txHash = result?.hash || result?.transactionHash || result;
-      } else {
-        txHash = await sendMovementUsdcPayment({
-          toAddress: created.toAddress,
-          tokenAddress: created.tokenAddress,
-          amountRaw: created.amountRaw,
-        });
+      if (!movementWallet?.signAndSubmitTransaction || !movementWallet?.address) {
+        throw new Error("Movement wallet not available. Please log in again.");
       }
+
+      const config = new AptosConfig({
+        network: Network.CUSTOM,
+        fullnode:
+          process.env.EXPO_PUBLIC_MOVEMENT_RPC_URL ??
+          "https://testnet.movementnetwork.xyz/v1",
+      });
+      const aptos = new Aptos(config);
+      const transaction = await aptos.transaction.build.simple({
+        sender: movementWallet.address,
+        data: {
+          function: "0x1::primary_fungible_store::transfer",
+          typeArguments: ["0x1::fungible_asset::Metadata"],
+          functionArguments: [created.tokenAddress, created.toAddress, created.amountRaw],
+        },
+      });
+      const result = await movementWallet.signAndSubmitTransaction(transaction);
+      txHash = result?.hash || result?.transactionHash || result;
 
       const verified = await apiFetch("/payments/movement/votes/verify", {
         method: "POST",
