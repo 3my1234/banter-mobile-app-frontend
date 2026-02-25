@@ -33,7 +33,12 @@ export function getMovementWallet(privyUser: any) {
   }
   const accounts = privyUser?.linkedAccounts || privyUser?.linked_accounts || [];
   return accounts.find(
-    (account: any) => account?.type === "wallet" && (account?.chainType === "aptos" || account?.chain_type === "aptos")
+    (account: any) =>
+      account?.type === "wallet" &&
+      (account?.chainType === "aptos" ||
+        account?.chain_type === "aptos" ||
+        account?.chainType === "movement" ||
+        account?.chain_type === "movement")
   );
 }
 

@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
 import { useCreateWallet } from "@privy-io/expo/extended-chains";
+import * as Linking from "expo-linking";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -75,7 +76,8 @@ const AuthLoginScreen = () => {
   };
 
   const ensureWallets = (accounts: any[]) => {
-    const movementAddress = findWalletAddress(accounts, "aptos");
+    const movementAddress =
+      findWalletAddress(accounts, "aptos") || findWalletAddress(accounts, "movement");
     const solanaAddress = findWalletAddress(accounts, "solana");
     return { movementAddress, solanaAddress };
   };
@@ -157,7 +159,8 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
-      const result = await login({ provider: "google", redirectUri: "/" });
+      const redirectUri = Linking.createURL("/(auth)/login");
+      const result = await login({ provider: "google", redirectUri });
       if (!result) {
         throw new Error("Login did not start. Please try again.");
       }
