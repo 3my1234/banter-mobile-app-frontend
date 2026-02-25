@@ -156,7 +156,7 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
-      const redirectUri = "banterv3://oauth";
+      const redirectUri = "https://sportbanter.online/privy/oauth";
       const result = await login({ provider: "google", redirectUri });
       if (!result) {
         throw new Error("Login did not start. Please try again.");
