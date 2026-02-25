@@ -42,14 +42,18 @@ export async function apiFetch(
     if (contentType.includes("application/json")) {
       try {
         const data = JSON.parse(raw);
-        message = data?.message || data?.error || raw;
+        const details =
+          data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
+        message = (data?.message || data?.error || raw) + details;
       } catch {
         // ignore
       }
     } else {
       try {
         const data = JSON.parse(raw);
-        message = data?.message || data?.error || raw;
+        const details =
+          data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
+        message = (data?.message || data?.error || raw) + details;
       } catch {
         // ignore
       }
