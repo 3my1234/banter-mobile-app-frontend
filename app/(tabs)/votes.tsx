@@ -11,9 +11,10 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { sendUsdcPayment } from "@/lib/solanaPayment";
 import { usePrivy } from "@privy-io/expo";
-import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
+import { useSignRawHash } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import { getMovementWallet, sendMovementTransaction } from "@/lib/privyMovement";
 
 type Bundle = {
   id: string;
@@ -26,6 +27,7 @@ type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
 
 export default function Votes() {
   const { user } = usePrivy();
+  const { signRawHash } = useSignRawHash();
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -95,37 +97,22 @@ export default function Votes() {
         body: JSON.stringify({ bundleId }),
       });
 
-      let txHash: string;
-      const accounts =
-        (user as any)?.linkedAccounts || (user as any)?.linked_accounts || [];
-      const movementWallet =
-        accounts.find(
-          (acct: any) =>
-            acct?.type === "wallet" &&
-            (acct?.chainType === "aptos" || acct?.chain_type === "aptos")
-        ) || null;
-
-      if (!movementWallet?.signAndSubmitTransaction || !movementWallet?.address) {
+      const movementWallet = getMovementWallet(user);
+      if (!movementWallet?.address) {
         throw new Error("Movement wallet not available. Please log in again.");
       }
 
-      const config = new AptosConfig({
-        network: Network.CUSTOM,
-        fullnode:
-          process.env.EXPO_PUBLIC_MOVEMENT_RPC_URL ??
-          "https://testnet.movementnetwork.xyz/v1",
-      });
-      const aptos = new Aptos(config);
-      const transaction = await aptos.transaction.build.simple({
-        sender: movementWallet.address,
-        data: {
-          function: "0x1::primary_fungible_store::transfer",
-          typeArguments: ["0x1::fungible_asset::Metadata"],
-          functionArguments: [created.tokenAddress, created.toAddress, created.amountRaw],
-        },
-      });
-      const result = await movementWallet.signAndSubmitTransaction(transaction);
-      txHash = result?.hash || result?.transactionHash || result;
+      const publicKey = movementWallet.publicKey || movementWallet.public_key;
+      if (!publicKey) {
+        throw new Error("Movement wallet public key not available. Please log in again.");
+      }
+
+      const txHash = await sendMovementTransaction(
+        created.transactionData,
+        movementWallet.address,
+        publicKey,
+        signRawHash
+      );
 
       const verified = await apiFetch("/payments/movement/votes/verify", {
         method: "POST",

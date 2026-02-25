@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
+import { useCreateWallet } from "@privy-io/expo/extended-chains";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -21,6 +22,7 @@ const AuthLoginScreen = () => {
   const privy = usePrivy();
   const { user, authenticated } = privy;
   const { login } = useLoginWithOAuth();
+  const { createWallet } = useCreateWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -100,13 +102,28 @@ const AuthLoginScreen = () => {
           throw new Error("Login failed: Google email was not returned.");
         }
 
-        const accounts = getLinkedAccounts(user);
-        const { movementAddress, solanaAddress } = ensureWallets(accounts);
+        let accounts = getLinkedAccounts(user);
+        let { movementAddress, solanaAddress } = ensureWallets(accounts);
 
         if (!movementAddress || !solanaAddress) {
-          throw new Error(
-            "Wallets not found. Please create wallets in Privy or try again."
-          );
+          if (!createWallet) {
+            throw new Error("Wallets not found. Privy wallet creation unavailable.");
+          }
+
+          if (!movementAddress) {
+            await createWallet({ chainType: "aptos" });
+          }
+          if (!solanaAddress) {
+            await createWallet({ chainType: "solana" });
+          }
+
+          const refreshedUser = (privy as any)?.user || user;
+          accounts = getLinkedAccounts(refreshedUser);
+          ({ movementAddress, solanaAddress } = ensureWallets(accounts));
+        }
+
+        if (!movementAddress || !solanaAddress) {
+          throw new Error("Wallets not found. Please retry login.");
         }
 
         const privyToken =
