@@ -122,6 +122,7 @@ export default function Votes() {
         method: "POST",
         body: JSON.stringify({ bundleId, redirectUrl }),
       });
+      console.log("FW create response:", created);
 
       const result = await WebBrowser.openAuthSessionAsync(
         created.paymentUrl,
@@ -154,6 +155,7 @@ export default function Votes() {
         await refreshBalance();
       }
     } catch (error) {
+      console.log("FW error:", error);
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
     } finally {
       setProcessingId(null);
