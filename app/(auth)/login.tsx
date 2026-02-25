@@ -21,7 +21,7 @@ const AuthLoginScreen = () => {
   const router = useRouter();
   const privy = usePrivy();
   const { user, authenticated } = privy;
-  const { login } = useLoginWithOAuth();
+  const { login, state: oauthState } = useLoginWithOAuth();
   const { createWallet } = useCreateWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
@@ -198,6 +198,9 @@ const AuthLoginScreen = () => {
         source={require("../../assets/images/banter-logo.jpg")}
         style={styles.logo}
       />
+      {oauthState?.status ? (
+        <Text style={styles.mutedText}>OAuth: {oauthState.status}</Text>
+      ) : null}
       {loginError ? <Text style={styles.errorText}>{loginError}</Text> : null}
       <Pressable
         style={[styles.googleButton, loginLoading && styles.googleButtonDisabled]}
@@ -235,6 +238,10 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#ff6b35",
     textAlign: "center",
+    marginBottom: 8,
+  },
+  mutedText: {
+    color: "#666",
     marginBottom: 8,
   },
   googleButton: {
