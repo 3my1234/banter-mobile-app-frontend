@@ -19,7 +19,8 @@ type PendingRegistration = {
 
 const AuthLoginScreen = () => {
   const router = useRouter();
-  const { user, authenticated } = usePrivy();
+  const privy = usePrivy();
+  const { user, authenticated } = privy;
   const { login } = useLoginWithOAuth();
   const { createWallet } = useCreateWallet();
 
@@ -47,28 +48,16 @@ const AuthLoginScreen = () => {
     checkExistingSession();
   }, [router]);
 
-  const checkUserExists = async (email: string) => {
-    const res = await fetch(`${API_BASE_URL}/auth/check`, {
+  const verifyPrivy = async (privyToken: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/privy/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ privyToken }),
     });
     if (!res.ok) {
-      throw new Error(`Auth check failed (${res.status})`);
+      throw new Error(`Privy verify failed (${res.status})`);
     }
-    return res.json() as Promise<{ exists: boolean; token?: string }>;
-  };
-
-  const loginExistingUser = async (email: string) => {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    if (!res.ok) {
-      throw new Error(`Login failed (${res.status})`);
-    }
-    return res.json() as Promise<{ token: string }>;
+    return res.json() as Promise<{ token: string; user: any }>;
   };
 
   const getLinkedAccounts = (currentUser: any) => {
@@ -132,30 +121,24 @@ const AuthLoginScreen = () => {
           throw new Error("Wallet creation failed. Please try again.");
         }
 
-        const check = await checkUserExists(email);
-        if (check.exists) {
-          const token = check.token
-            ? check.token
-            : (await loginExistingUser(email)).token;
-          await SecureStore.setItemAsync(
-            "banter_session",
-            JSON.stringify({ token, email })
-          );
-          setRedirecting(true);
-          router.replace("/(tabs)");
-        } else {
-          const pending: PendingRegistration = {
-            email,
-            solanaAddress,
-            movementAddress,
-            userInfo: user,
-          };
-          await SecureStore.setItemAsync(
-            "banter_pending_registration",
-            JSON.stringify(pending)
-          );
-          router.replace("/(auth)/register");
+        const privyToken =
+          (await (privy as any)?.getAccessToken?.()) ||
+          (user as any)?.accessToken ||
+          (user as any)?.access_token ||
+          (user as any)?.authToken ||
+          (user as any)?.auth_token;
+
+        if (!privyToken) {
+          throw new Error("Privy token not available.");
         }
+
+        const verified = await verifyPrivy(privyToken);
+        await SecureStore.setItemAsync(
+          "banter_session",
+          JSON.stringify({ token: verified.token, email })
+        );
+        setRedirecting(true);
+        router.replace("/(tabs)");
       } catch (error) {
         handledLoginRef.current = false;
         setLoginError((error as Error)?.message ?? "Login failed");
