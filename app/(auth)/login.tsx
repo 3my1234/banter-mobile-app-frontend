@@ -179,6 +179,17 @@ const AuthLoginScreen = () => {
     processAuthenticatedUser();
   }, [authenticated, user]);
 
+  useEffect(() => {
+    if (!oauthState || oauthState.status !== "error") return;
+    const raw =
+      (oauthState as any)?.error?.message ||
+      (oauthState as any)?.error ||
+      JSON.stringify((oauthState as any) || {});
+    const msg = `OAuth error: ${raw}`;
+    setLoginError(msg);
+    Alert.alert("OAuth error", msg);
+  }, [oauthState]);
+
   if (checkingSession || redirecting) {
     return (
       <View style={styles.container}>
