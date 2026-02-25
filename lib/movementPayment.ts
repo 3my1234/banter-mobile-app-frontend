@@ -149,6 +149,14 @@ export async function sendMovementUsdcPayment({
     transaction,
   });
 
-  await aptos.waitForTransaction({ transactionHash: pending.hash });
+  try {
+    await aptos.waitForTransaction({
+      transactionHash: pending.hash,
+      timeoutSecs: 90,
+    });
+  } catch (error) {
+    // If confirmation is slow, return hash and let backend verify later.
+    return pending.hash;
+  }
   return pending.hash;
 }
