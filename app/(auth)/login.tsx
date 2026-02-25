@@ -164,8 +164,16 @@ const AuthLoginScreen = () => {
     } catch (error) {
       const msg = (error as Error)?.message ?? "Login failed";
       if (msg.toLowerCase().includes("already logged in")) {
-        await processAuthenticatedUser();
-        return;
+        try {
+          await processAuthenticatedUser();
+          return;
+        } catch {
+          // If Privy is in a bad session state, reset and retry once.
+          await privy.logout();
+          const redirectUri = "https://sportbanter.online/privy/oauth";
+          await login({ provider: "google", redirectUri });
+          return;
+        }
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
