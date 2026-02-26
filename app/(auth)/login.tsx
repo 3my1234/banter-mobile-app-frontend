@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Alert } fr
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
-import { useCreateWallet } from "@privy-io/expo/extended-chains";
+import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/expo";
 import * as WebBrowser from "expo-web-browser";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
@@ -14,19 +13,20 @@ const API_BASE_URL =
 // Module-level guards survive screen remounts during OAuth callbacks.
 const processingPrivyUserIds = new Set<string>();
 const walletProvisionAttemptedUserIds = new Set<string>();
+let oauthFlowInProgress = false;
 
 const AuthLoginScreen = () => {
   const router = useRouter();
   const { user, isReady, getAccessToken } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
-  const { createWallet } = useCreateWallet();
+  const solanaWalletState = useEmbeddedSolanaWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [redirecting, setRedirecting] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
-  const [authFlowActive, setAuthFlowActive] = useState(false);
+  const [authFlowActive, setAuthFlowActive] = useState(oauthFlowInProgress);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
 
@@ -174,6 +174,27 @@ const AuthLoginScreen = () => {
     throw lastError || new Error("Failed to verify privy token");
   };
 
+  const waitForBackendSolana = async (
+    initialToken: string,
+    currentVerified: { token: string; user: any },
+    maxAttempts: number = 8
+  ) => {
+    let token = initialToken;
+    let verified = currentVerified;
+    for (let i = 0; i < maxAttempts; i += 1) {
+      if (verified?.user?.solanaAddress) {
+        return verified;
+      }
+      await sleep(500);
+      const refreshedToken = await getPrivyTokenWithRetry(3);
+      if (refreshedToken) {
+        token = refreshedToken;
+      }
+      verified = await verifyPrivyWithRetry(token);
+    }
+    return verified;
+  };
+
   const processAuthenticatedUser = async (currentUser?: any) => {
     const activeUser = currentUser || userRef.current;
     if (!activeUser) return;
@@ -216,32 +237,35 @@ const AuthLoginScreen = () => {
           verified = await verifyPrivyWithRetry(refreshedToken);
         } else {
           walletProvisionAttemptedUserIds.add(activeUserId);
-          if (!createWallet) {
-            setLoginError("Wallet provisioning unavailable in this build.");
+          if (typeof solanaWalletState.create !== "function") {
+            setLoginError("Solana wallet provisioning unavailable in this build.");
           } else {
-            if (!solanaAddress) {
-              try {
-                const solanaResult = await createWallet({ chainType: "solana" });
-                if (solanaResult?.user) {
-                  latestUser = solanaResult.user as any;
-                  userRef.current = latestUser;
-                }
-              } catch (error) {
-                const message = ((error as Error)?.message || "").toLowerCase();
-                const alreadyExists =
-                  message.includes("already has an embedded wallet") ||
-                  message.includes("already has an account of the type linked");
-                if (!alreadyExists) {
-                  throw error;
-                }
+            try {
+              await solanaWalletState.create();
+            } catch (error) {
+              const message = ((error as Error)?.message || "").toLowerCase();
+              const alreadyExists =
+                message.includes("already has an embedded wallet") ||
+                message.includes("already has an account of the type linked");
+              if (!alreadyExists) {
+                throw error;
               }
             }
+
+            // Give Privy time to hydrate linkedAccounts after wallet creation.
+            await waitForWalletAddresses(userRef.current || latestUser, 12);
 
             // 3) Re-sync after provisioning so backend stores wallet addresses.
             const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
             verified = await verifyPrivyWithRetry(refreshedToken);
           }
         }
+      }
+
+      // 4) Privy wallet indexing can lag briefly after OAuth callback.
+      // Retry backend sync until Solana wallet is visible (or timeout).
+      if (!verified?.user?.solanaAddress) {
+        verified = await waitForBackendSolana(privyToken, verified);
       }
 
       const sessionEmail = verified?.user?.email || email || "";
@@ -258,6 +282,7 @@ const AuthLoginScreen = () => {
       Alert.alert("Login failed", msg);
     } finally {
       processingPrivyUserIds.delete(activeUserId);
+      oauthFlowInProgress = false;
       setAuthFlowActive(false);
     }
   };
@@ -266,6 +291,7 @@ const AuthLoginScreen = () => {
     try {
       setLoginError(null);
       setLoginLoading(true);
+      oauthFlowInProgress = true;
       setAuthFlowActive(true);
       // Ensure any stale auth session is closed before starting a new one.
       try {
@@ -297,6 +323,7 @@ const AuthLoginScreen = () => {
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
+      oauthFlowInProgress = false;
       setAuthFlowActive(false);
     } finally {
       setLoginLoading(false);
@@ -322,6 +349,7 @@ const AuthLoginScreen = () => {
     setLoginError(msg);
     if (!recoverable) {
       Alert.alert("OAuth error", msg);
+      oauthFlowInProgress = false;
       setAuthFlowActive(false);
     }
 
@@ -334,6 +362,8 @@ const AuthLoginScreen = () => {
   useEffect(() => {
     if (!oauthState || oauthState.status !== "done") return;
     if (handledLoginRef.current) return;
+    oauthFlowInProgress = true;
+    setAuthFlowActive(true);
 
     let cancelled = false;
     const settle = async () => {
