@@ -67,6 +67,21 @@ export default function Votes() {
     setBalance(me?.user?.voteBalance ?? 0);
   };
 
+  const pollFlutterwaveStatus = async (paymentId: string, attempts: number = 15) => {
+    for (let i = 0; i < attempts; i += 1) {
+      const statusData = await apiFetch(`/payments/flutterwave/votes/status/${paymentId}`);
+      const status = statusData?.payment?.status;
+      if (status === "COMPLETED") {
+        return "COMPLETED";
+      }
+      if (status === "FAILED") {
+        return "FAILED";
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return "PENDING";
+  };
+
   const handleBuySolana = async (bundleId: string) => {
     try {
       setProcessingId(bundleId);
@@ -215,31 +230,47 @@ export default function Votes() {
         redirectUrl
       );
 
-      if (result.type !== "success" || !result.url) {
+      let transactionId: string | undefined;
+      let txRef: string | undefined = created.reference;
+
+      if (result.type === "success" && result.url) {
+        const parsed = Linking.parse(result.url);
+        transactionId = (parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId) as
+          | string
+          | undefined;
+        txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
+      } else if (result.type === "cancel" || result.type === "dismiss") {
+        // Do not fail immediately; webhooks/callbacks may still complete shortly.
+        const finalStatus = await pollFlutterwaveStatus(created.paymentId, 6);
+        if (finalStatus === "COMPLETED") {
+          await refreshBalance();
+          return;
+        }
         throw new Error("Payment was cancelled.");
       }
 
-      const parsed = Linking.parse(result.url);
-      const transactionId =
-        parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId;
-      const txRef = parsed.queryParams?.tx_ref || parsed.queryParams?.txRef;
-
-      if (!transactionId && !txRef) {
-        throw new Error("Payment did not return a transaction id.");
+      if (transactionId || txRef) {
+        const verified = await apiFetch("/payments/flutterwave/votes/verify", {
+          method: "POST",
+          body: JSON.stringify({
+            paymentId: created.paymentId,
+            transactionId,
+            txRef,
+          }),
+        });
+        if (verified?.payment?.status === "COMPLETED") {
+          await refreshBalance();
+          return;
+        }
       }
 
-      const verified = await apiFetch("/payments/flutterwave/votes/verify", {
-        method: "POST",
-        body: JSON.stringify({
-          paymentId: created.paymentId,
-          transactionId,
-          txRef,
-        }),
-      });
-
-      if (verified?.payment?.status === "COMPLETED") {
+      const finalStatus = await pollFlutterwaveStatus(created.paymentId);
+      if (finalStatus === "COMPLETED") {
         await refreshBalance();
+        return;
       }
+
+      throw new Error("Payment is still pending verification. Please check again shortly.");
     } catch (error) {
       console.log("FW error:", error);
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
