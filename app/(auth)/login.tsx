@@ -147,15 +147,30 @@ const AuthLoginScreen = () => {
     let accounts = getLinkedAccounts(latestUser);
     let { movementAddress, solanaAddress } = ensureWallets(accounts);
     const userId = (latestUser?.id || "unknown").toString();
+    let createdWallet = false;
 
     if (movementAddress && solanaAddress) {
-      return { latestUser, accounts, movementAddress, solanaAddress };
+      return {
+        latestUser,
+        accounts,
+        movementAddress,
+        solanaAddress,
+        createdWallet,
+        hasBothWallets: true,
+      };
     }
 
     if (!walletCreateAttemptedRef.current[userId]) {
       walletCreateAttemptedRef.current[userId] = true;
       if (!createWallet) {
-        throw new Error("Wallets not found. Privy wallet creation unavailable.");
+        return {
+          latestUser,
+          accounts,
+          movementAddress,
+          solanaAddress,
+          createdWallet,
+          hasBothWallets: false,
+        };
       }
 
       if (!movementAddress) {
@@ -163,6 +178,7 @@ const AuthLoginScreen = () => {
         if (result?.user) {
           latestUser = result.user as any;
           userRef.current = latestUser;
+          createdWallet = true;
         }
       }
 
@@ -171,6 +187,7 @@ const AuthLoginScreen = () => {
         if (result?.user) {
           latestUser = result.user as any;
           userRef.current = latestUser;
+          createdWallet = true;
         }
       }
     }
@@ -179,12 +196,26 @@ const AuthLoginScreen = () => {
       accounts = getLinkedAccounts(userRef.current || latestUser);
       ({ movementAddress, solanaAddress } = ensureWallets(accounts));
       if (movementAddress && solanaAddress) {
-        return { latestUser: userRef.current || latestUser, accounts, movementAddress, solanaAddress };
+        return {
+          latestUser: userRef.current || latestUser,
+          accounts,
+          movementAddress,
+          solanaAddress,
+          createdWallet,
+          hasBothWallets: true,
+        };
       }
       await sleep(250);
     }
 
-    throw new Error("Wallets not found. Please retry login.");
+    return {
+      latestUser,
+      accounts,
+      movementAddress,
+      solanaAddress,
+      createdWallet,
+      hasBothWallets: false,
+    };
   };
 
   const getPrivyTokenWithRetry = async (maxAttempts: number = 10) => {
@@ -225,23 +256,32 @@ const AuthLoginScreen = () => {
     try {
       const email = getBestEmail(activeUser);
 
-      let latestUser = activeUser;
-      let accounts = getLinkedAccounts(latestUser);
-      ({ latestUser, accounts } = await waitForAccounts(latestUser));
-      await ensureWalletsForUser(latestUser);
-
       const privyToken =
         (await getPrivyTokenWithRetry()) ||
-        (latestUser as any)?.accessToken ||
-        (latestUser as any)?.access_token ||
-        (latestUser as any)?.authToken ||
-        (latestUser as any)?.auth_token;
+        (activeUser as any)?.accessToken ||
+        (activeUser as any)?.access_token ||
+        (activeUser as any)?.authToken ||
+        (activeUser as any)?.auth_token;
 
       if (!privyToken) {
         throw new Error("Privy token not available.");
       }
 
-      const verified = await verifyPrivyWithRetry(privyToken);
+      let verified = await verifyPrivyWithRetry(privyToken);
+      let latestUser = userRef.current || activeUser;
+      let accounts = getLinkedAccounts(latestUser);
+      ({ latestUser, accounts } = await waitForAccounts(latestUser));
+
+      const walletResult = await ensureWalletsForUser(latestUser);
+      if (walletResult.createdWallet) {
+        const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
+        verified = await verifyPrivyWithRetry(refreshedToken);
+      }
+
+      if (!walletResult.hasBothWallets) {
+        setLoginError("Wallet setup delayed. You can continue and sync wallets shortly.");
+      }
+
       const sessionEmail = verified?.user?.email || email || "";
       await SecureStore.setItemAsync(
         "banter_session",
