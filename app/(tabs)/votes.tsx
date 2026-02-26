@@ -73,6 +73,14 @@ export default function Votes() {
     setBalance(me?.user?.voteBalance ?? 0);
   };
 
+  const showPaymentSuccess = (bundleId: string, method: PaymentMethod) => {
+    const bundle = bundles.find((b) => b.id === bundleId);
+    const votes = bundle?.votes ?? 0;
+    const methodLabel =
+      method === "SOLANA" ? "Solana" : method === "MOVEMENT" ? "Movement" : "Card";
+    Alert.alert("Payment successful", `You received ${votes} vote${votes === 1 ? "" : "s"} via ${methodLabel}.`);
+  };
+
   const syncPrivySessionToBackend = async () => {
     const privyToken = await getAccessToken();
     if (!privyToken) {
@@ -196,6 +204,7 @@ export default function Votes() {
 
       if (verified?.payment?.status === "COMPLETED") {
         await refreshBalance();
+        showPaymentSuccess(bundleId, "SOLANA");
       }
     } catch (error) {
       const rawMessage = (error as Error)?.message ?? "Try again.";
@@ -257,6 +266,7 @@ export default function Votes() {
 
       if (created?.status === "COMPLETED") {
         await refreshBalance();
+        showPaymentSuccess(bundleId, "MOVEMENT");
         return;
       }
 
@@ -286,6 +296,7 @@ export default function Votes() {
 
       if (verified?.payment?.status === "COMPLETED") {
         await refreshBalance();
+        showPaymentSuccess(bundleId, "MOVEMENT");
       }
     } catch (error) {
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
@@ -323,6 +334,7 @@ export default function Votes() {
         const finalStatus = await pollFlutterwaveStatus(created.paymentId, 6);
         if (finalStatus === "COMPLETED") {
           await refreshBalance();
+          showPaymentSuccess(bundleId, "CARD");
           return;
         }
         throw new Error("Payment was cancelled.");
@@ -339,6 +351,7 @@ export default function Votes() {
         });
         if (verified?.payment?.status === "COMPLETED") {
           await refreshBalance();
+          showPaymentSuccess(bundleId, "CARD");
           return;
         }
       }
@@ -346,6 +359,7 @@ export default function Votes() {
       const finalStatus = await pollFlutterwaveStatus(created.paymentId);
       if (finalStatus === "COMPLETED") {
         await refreshBalance();
+        showPaymentSuccess(bundleId, "CARD");
         return;
       }
 
