@@ -11,6 +11,10 @@ import * as WebBrowser from "expo-web-browser";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
 
+// Module-level guards survive screen remounts during OAuth callbacks.
+const processingPrivyUserIds = new Set<string>();
+const walletProvisionAttemptedUserIds = new Set<string>();
+
 const AuthLoginScreen = () => {
   const router = useRouter();
   const { user, isReady, getAccessToken } = usePrivy();
@@ -24,9 +28,6 @@ const AuthLoginScreen = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
-  const authInFlightRef = useRef(false);
-  const finalizedUserIdRef = useRef<string | null>(null);
-  const walletCreateAttemptedRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     userRef.current = user;
@@ -127,97 +128,6 @@ const AuthLoginScreen = () => {
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const waitForAccounts = async (initialUser: any, maxAttempts: number = 8) => {
-    let latestUser = initialUser;
-    let accounts = getLinkedAccounts(latestUser);
-    for (let i = 0; i < maxAttempts; i += 1) {
-      const { movementAddress, solanaAddress } = ensureWallets(accounts);
-      if (movementAddress && solanaAddress) {
-        return { latestUser, accounts };
-      }
-      await sleep(250);
-      latestUser = userRef.current || latestUser;
-      accounts = getLinkedAccounts(latestUser);
-    }
-    return { latestUser, accounts };
-  };
-
-  const ensureWalletsForUser = async (initialUser: any) => {
-    let latestUser = initialUser;
-    let accounts = getLinkedAccounts(latestUser);
-    let { movementAddress, solanaAddress } = ensureWallets(accounts);
-    const userId = (latestUser?.id || "unknown").toString();
-    let createdWallet = false;
-
-    if (movementAddress && solanaAddress) {
-      return {
-        latestUser,
-        accounts,
-        movementAddress,
-        solanaAddress,
-        createdWallet,
-        hasBothWallets: true,
-      };
-    }
-
-    if (!walletCreateAttemptedRef.current[userId]) {
-      walletCreateAttemptedRef.current[userId] = true;
-      if (!createWallet) {
-        return {
-          latestUser,
-          accounts,
-          movementAddress,
-          solanaAddress,
-          createdWallet,
-          hasBothWallets: false,
-        };
-      }
-
-      if (!movementAddress) {
-        const result = await createWallet({ chainType: "aptos" });
-        if (result?.user) {
-          latestUser = result.user as any;
-          userRef.current = latestUser;
-          createdWallet = true;
-        }
-      }
-
-      if (!solanaAddress) {
-        const result = await createWallet({ chainType: "solana" });
-        if (result?.user) {
-          latestUser = result.user as any;
-          userRef.current = latestUser;
-          createdWallet = true;
-        }
-      }
-    }
-
-    for (let i = 0; i < 12; i += 1) {
-      accounts = getLinkedAccounts(userRef.current || latestUser);
-      ({ movementAddress, solanaAddress } = ensureWallets(accounts));
-      if (movementAddress && solanaAddress) {
-        return {
-          latestUser: userRef.current || latestUser,
-          accounts,
-          movementAddress,
-          solanaAddress,
-          createdWallet,
-          hasBothWallets: true,
-        };
-      }
-      await sleep(250);
-    }
-
-    return {
-      latestUser,
-      accounts,
-      movementAddress,
-      solanaAddress,
-      createdWallet,
-      hasBothWallets: false,
-    };
-  };
-
   const getPrivyTokenWithRetry = async (maxAttempts: number = 10) => {
     for (let i = 0; i < maxAttempts; i += 1) {
       const token = await getAccessToken();
@@ -249,13 +159,14 @@ const AuthLoginScreen = () => {
     const activeUser = currentUser || userRef.current;
     if (!activeUser) return;
     const activeUserId = (activeUser?.id || "").toString();
-    if (activeUserId && finalizedUserIdRef.current === activeUserId) return;
-    if (authInFlightRef.current) return;
-    authInFlightRef.current = true;
+    if (!activeUserId) return;
+    if (processingPrivyUserIds.has(activeUserId)) return;
+    processingPrivyUserIds.add(activeUserId);
     handledLoginRef.current = true;
     try {
       const email = getBestEmail(activeUser);
 
+      // 1) First sync user with backend using current Privy token.
       const privyToken =
         (await getPrivyTokenWithRetry()) ||
         (activeUser as any)?.accessToken ||
@@ -268,18 +179,39 @@ const AuthLoginScreen = () => {
       }
 
       let verified = await verifyPrivyWithRetry(privyToken);
-      let latestUser = userRef.current || activeUser;
-      let accounts = getLinkedAccounts(latestUser);
-      ({ latestUser, accounts } = await waitForAccounts(latestUser));
 
-      const walletResult = await ensureWalletsForUser(latestUser);
-      if (walletResult.createdWallet) {
-        const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
-        verified = await verifyPrivyWithRetry(refreshedToken);
-      }
+      // 2) Provision missing wallets once per Privy user to avoid duplicates.
+      if (
+        !walletProvisionAttemptedUserIds.has(activeUserId) &&
+        (!verified?.user?.movementAddress || !verified?.user?.solanaAddress)
+      ) {
+        walletProvisionAttemptedUserIds.add(activeUserId);
+        if (!createWallet) {
+          setLoginError("Wallet provisioning unavailable in this build.");
+        } else {
+          let latestUser = userRef.current || activeUser;
+          let accounts = getLinkedAccounts(latestUser);
+          let { movementAddress, solanaAddress } = ensureWallets(accounts);
 
-      if (!walletResult.hasBothWallets) {
-        setLoginError("Wallet setup delayed. You can continue and sync wallets shortly.");
+          if (!movementAddress) {
+            const movementResult = await createWallet({ chainType: "aptos" });
+            if (movementResult?.user) {
+              latestUser = movementResult.user as any;
+              userRef.current = latestUser;
+            }
+          }
+          if (!solanaAddress) {
+            const solanaResult = await createWallet({ chainType: "solana" });
+            if (solanaResult?.user) {
+              latestUser = solanaResult.user as any;
+              userRef.current = latestUser;
+            }
+          }
+
+          // 3) Re-sync after provisioning so backend stores wallet addresses.
+          const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
+          verified = await verifyPrivyWithRetry(refreshedToken);
+        }
       }
 
       const sessionEmail = verified?.user?.email || email || "";
@@ -287,9 +219,6 @@ const AuthLoginScreen = () => {
         "banter_session",
         JSON.stringify({ token: verified.token, email: sessionEmail })
       );
-      if (activeUserId) {
-        finalizedUserIdRef.current = activeUserId;
-      }
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {
@@ -298,7 +227,7 @@ const AuthLoginScreen = () => {
       setLoginError(msg);
       Alert.alert("Login failed", msg);
     } finally {
-      authInFlightRef.current = false;
+      processingPrivyUserIds.delete(activeUserId);
     }
   };
 
