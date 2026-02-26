@@ -17,10 +17,12 @@ import {
 } from "@solana/spl-token";
 import { usePrivy } from "@privy-io/expo";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { useSignRawHash } from "@privy-io/expo/extended-chains";
+import { useCreateWallet, useSignRawHash } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { getMovementWallet, sendMovementTransaction } from "@/lib/privyMovement";
+import * as SecureStore from "expo-secure-store";
+import { API_BASE_URL } from "@/lib/api";
 import { Buffer } from "buffer";
 
 type Bundle = {
@@ -33,8 +35,9 @@ type Bundle = {
 type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
 
 export default function Votes() {
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
   const solanaWallet = useEmbeddedSolanaWallet();
+  const { createWallet } = useCreateWallet();
   const { signRawHash } = useSignRawHash();
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
@@ -65,6 +68,34 @@ export default function Votes() {
   const refreshBalance = async () => {
     const me = await apiFetch("/auth/me");
     setBalance(me?.user?.voteBalance ?? 0);
+  };
+
+  const syncPrivySessionToBackend = async () => {
+    const privyToken = await getAccessToken();
+    if (!privyToken) {
+      throw new Error("Privy token not available. Please log in again.");
+    }
+
+    const res = await fetch(`${API_BASE_URL}/auth/privy/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ privyToken }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Failed to sync Movement wallet: ${text}`);
+    }
+
+    const verified = await res.json();
+    await SecureStore.setItemAsync(
+      "banter_session",
+      JSON.stringify({
+        token: verified?.token,
+        email: verified?.user?.email || "",
+      })
+    );
+    return verified;
   };
 
   const pollFlutterwaveStatus = async (paymentId: string, attempts: number = 15) => {
@@ -173,6 +204,48 @@ export default function Votes() {
   const handleMovement = async (bundleId: string) => {
     try {
       setProcessingId(bundleId);
+
+      let movementWallet = getMovementWallet(user);
+      let createdMovementWallet: any = null;
+
+      if (!movementWallet?.address) {
+        try {
+          const createdWallet = await createWallet({ chainType: "movement" });
+          createdMovementWallet = createdWallet?.wallet;
+        } catch (error) {
+          const message = ((error as Error)?.message || "").toLowerCase();
+          const alreadyExists =
+            message.includes("already has an embedded wallet") ||
+            message.includes("already has an account of the type linked") ||
+            message.includes("already has a wallet");
+          if (!alreadyExists) {
+            const fallback = await createWallet({ chainType: "aptos" });
+            createdMovementWallet = fallback?.wallet;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        await syncPrivySessionToBackend();
+        movementWallet =
+          getMovementWallet(user) ||
+          (createdMovementWallet
+            ? {
+                address: createdMovementWallet.address,
+                public_key: createdMovementWallet.public_key,
+                publicKey: createdMovementWallet.public_key,
+              }
+            : null);
+      }
+
+      if (!movementWallet?.address) {
+        throw new Error("Movement wallet not available yet. Please log out and sign in again.");
+      }
+
+      const publicKey = movementWallet.publicKey || movementWallet.public_key;
+      if (!publicKey) {
+        throw new Error("Movement wallet public key not available. Please log in again.");
+      }
+
       const created = await apiFetch("/payments/movement/votes/create", {
         method: "POST",
         body: JSON.stringify({ bundleId }),
@@ -181,16 +254,6 @@ export default function Votes() {
       if (created?.status === "COMPLETED") {
         await refreshBalance();
         return;
-      }
-
-      const movementWallet = getMovementWallet(user);
-      if (!movementWallet?.address) {
-        throw new Error("Movement wallet not available. Please log in again.");
-      }
-
-      const publicKey = movementWallet.publicKey || movementWallet.public_key;
-      if (!publicKey) {
-        throw new Error("Movement wallet public key not available. Please log in again.");
       }
 
       const txHash = await sendMovementTransaction(

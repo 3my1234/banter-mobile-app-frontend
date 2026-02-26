@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { useCreateWallet } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
@@ -20,6 +21,7 @@ const AuthLoginScreen = () => {
   const { user, isReady, getAccessToken } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
   const solanaWalletState = useEmbeddedSolanaWallet();
+  const { createWallet } = useCreateWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -122,7 +124,9 @@ const AuthLoginScreen = () => {
 
   const ensureWallets = (accounts: any[]) => {
     const solanaAddress = findWalletAddress(accounts, "solana");
-    return { solanaAddress };
+    const movementAddress =
+      findWalletAddress(accounts, "movement") || findWalletAddress(accounts, "aptos");
+    return { solanaAddress, movementAddress };
   };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -140,11 +144,12 @@ const AuthLoginScreen = () => {
     let latestUser = initialUser;
     for (let i = 0; i < maxAttempts; i += 1) {
       const accounts = getLinkedAccounts(userRef.current || latestUser);
-      const { solanaAddress } = ensureWallets(accounts);
-      if (solanaAddress) {
+      const { solanaAddress, movementAddress } = ensureWallets(accounts);
+      if (solanaAddress && movementAddress) {
         return {
           latestUser: userRef.current || latestUser,
           solanaAddress,
+          movementAddress,
         };
       }
       await sleep(250);
@@ -153,6 +158,7 @@ const AuthLoginScreen = () => {
     return {
       latestUser: userRef.current || latestUser,
       solanaAddress: undefined,
+      movementAddress: undefined,
     };
   };
 
@@ -174,7 +180,7 @@ const AuthLoginScreen = () => {
     throw lastError || new Error("Failed to verify privy token");
   };
 
-  const waitForBackendSolana = async (
+  const waitForBackendWallets = async (
     initialToken: string,
     currentVerified: { token: string; user: any },
     maxAttempts: number = 8
@@ -182,7 +188,7 @@ const AuthLoginScreen = () => {
     let token = initialToken;
     let verified = currentVerified;
     for (let i = 0; i < maxAttempts; i += 1) {
-      if (verified?.user?.solanaAddress) {
+      if (verified?.user?.solanaAddress && verified?.user?.movementAddress) {
         return verified;
       }
       await sleep(500);
@@ -224,48 +230,77 @@ const AuthLoginScreen = () => {
       // 2) Provision missing wallets once per Privy user to avoid duplicates.
       if (
         !walletProvisionAttemptedUserIds.has(activeUserId) &&
-        !verified?.user?.solanaAddress
+        (!verified?.user?.solanaAddress || !verified?.user?.movementAddress)
       ) {
         let latestUser = userRef.current || activeUser;
         const waited = await waitForWalletAddresses(latestUser);
         latestUser = waited.latestUser;
         let solanaAddress = waited.solanaAddress;
+        let movementAddress = waited.movementAddress;
 
         // If wallets appeared after hydration delay, just resync backend.
-        if (solanaAddress) {
+        if (solanaAddress && movementAddress) {
           const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
           verified = await verifyPrivyWithRetry(refreshedToken);
         } else {
           walletProvisionAttemptedUserIds.add(activeUserId);
-          if (typeof solanaWalletState.create !== "function") {
-            setLoginError("Solana wallet provisioning unavailable in this build.");
-          } else {
+          if (!solanaAddress) {
+            if (typeof solanaWalletState.create !== "function") {
+              setLoginError("Solana wallet provisioning unavailable in this build.");
+            } else {
+              try {
+                await solanaWalletState.create();
+              } catch (error) {
+                const message = ((error as Error)?.message || "").toLowerCase();
+                const alreadyExists =
+                  message.includes("already has an embedded wallet") ||
+                  message.includes("already has an account of the type linked");
+                if (!alreadyExists) {
+                  throw error;
+                }
+              }
+            }
+          }
+
+          if (!movementAddress) {
             try {
-              await solanaWalletState.create();
+              await createWallet({ chainType: "movement" });
             } catch (error) {
               const message = ((error as Error)?.message || "").toLowerCase();
               const alreadyExists =
                 message.includes("already has an embedded wallet") ||
-                message.includes("already has an account of the type linked");
+                message.includes("already has an account of the type linked") ||
+                message.includes("already has a wallet");
               if (!alreadyExists) {
-                throw error;
+                try {
+                  await createWallet({ chainType: "aptos" });
+                } catch (fallbackError) {
+                  const fallbackMsg = ((fallbackError as Error)?.message || "").toLowerCase();
+                  const fallbackAlreadyExists =
+                    fallbackMsg.includes("already has an embedded wallet") ||
+                    fallbackMsg.includes("already has an account of the type linked") ||
+                    fallbackMsg.includes("already has a wallet");
+                  if (!fallbackAlreadyExists) {
+                    throw fallbackError;
+                  }
+                }
               }
             }
-
-            // Give Privy time to hydrate linkedAccounts after wallet creation.
-            await waitForWalletAddresses(userRef.current || latestUser, 12);
-
-            // 3) Re-sync after provisioning so backend stores wallet addresses.
-            const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
-            verified = await verifyPrivyWithRetry(refreshedToken);
           }
+
+          // Give Privy time to hydrate linkedAccounts after wallet creation.
+          await waitForWalletAddresses(userRef.current || latestUser, 12);
+
+          // 3) Re-sync after provisioning so backend stores wallet addresses.
+          const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
+          verified = await verifyPrivyWithRetry(refreshedToken);
         }
       }
 
       // 4) Privy wallet indexing can lag briefly after OAuth callback.
-      // Retry backend sync until Solana wallet is visible (or timeout).
-      if (!verified?.user?.solanaAddress) {
-        verified = await waitForBackendSolana(privyToken, verified);
+      // Retry backend sync until both wallets are visible (or timeout).
+      if (!verified?.user?.solanaAddress || !verified?.user?.movementAddress) {
+        verified = await waitForBackendWallets(privyToken, verified);
       }
 
       const sessionEmail = verified?.user?.email || email || "";
