@@ -195,7 +195,21 @@ export default function Votes() {
         await refreshBalance();
       }
     } catch (error) {
-      Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
+      const rawMessage = (error as Error)?.message ?? "Try again.";
+      const lowered = rawMessage.toLowerCase();
+      const isMovementAccountMissing =
+        lowered.includes("account_not_found") ||
+        lowered.includes("account not found by address") ||
+        lowered.includes("movement account not initialized on-chain");
+
+      if (isMovementAccountMissing) {
+        Alert.alert(
+          "Payment failed",
+          "This Movement wallet is not initialized on-chain yet. Fund this exact wallet with a small amount of MOVE on Movement testnet, wait 1-2 minutes, then try again."
+        );
+      } else {
+        Alert.alert("Payment failed", rawMessage);
+      }
     } finally {
       setProcessingId(null);
     }
