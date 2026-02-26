@@ -13,7 +13,7 @@ const API_BASE_URL =
 
 const AuthLoginScreen = () => {
   const router = useRouter();
-  const { user, isReady, getAccessToken, logout } = usePrivy();
+  const { user, isReady, getAccessToken } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
   const { createWallet } = useCreateWallet();
 
@@ -25,6 +25,8 @@ const AuthLoginScreen = () => {
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
   const authInFlightRef = useRef(false);
+  const finalizedUserIdRef = useRef<string | null>(null);
+  const walletCreateAttemptedRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     userRef.current = user;
@@ -140,6 +142,51 @@ const AuthLoginScreen = () => {
     return { latestUser, accounts };
   };
 
+  const ensureWalletsForUser = async (initialUser: any) => {
+    let latestUser = initialUser;
+    let accounts = getLinkedAccounts(latestUser);
+    let { movementAddress, solanaAddress } = ensureWallets(accounts);
+    const userId = (latestUser?.id || "unknown").toString();
+
+    if (movementAddress && solanaAddress) {
+      return { latestUser, accounts, movementAddress, solanaAddress };
+    }
+
+    if (!walletCreateAttemptedRef.current[userId]) {
+      walletCreateAttemptedRef.current[userId] = true;
+      if (!createWallet) {
+        throw new Error("Wallets not found. Privy wallet creation unavailable.");
+      }
+
+      if (!movementAddress) {
+        const result = await createWallet({ chainType: "aptos" });
+        if (result?.user) {
+          latestUser = result.user as any;
+          userRef.current = latestUser;
+        }
+      }
+
+      if (!solanaAddress) {
+        const result = await createWallet({ chainType: "solana" });
+        if (result?.user) {
+          latestUser = result.user as any;
+          userRef.current = latestUser;
+        }
+      }
+    }
+
+    for (let i = 0; i < 12; i += 1) {
+      accounts = getLinkedAccounts(userRef.current || latestUser);
+      ({ movementAddress, solanaAddress } = ensureWallets(accounts));
+      if (movementAddress && solanaAddress) {
+        return { latestUser: userRef.current || latestUser, accounts, movementAddress, solanaAddress };
+      }
+      await sleep(250);
+    }
+
+    throw new Error("Wallets not found. Please retry login.");
+  };
+
   const getPrivyTokenWithRetry = async (maxAttempts: number = 10) => {
     for (let i = 0; i < maxAttempts; i += 1) {
       const token = await getAccessToken();
@@ -149,9 +196,29 @@ const AuthLoginScreen = () => {
     return null;
   };
 
+  const verifyPrivyWithRetry = async (privyToken: string, maxAttempts: number = 3) => {
+    let lastError: unknown = null;
+    for (let i = 0; i < maxAttempts; i += 1) {
+      try {
+        return await verifyPrivy(privyToken);
+      } catch (error) {
+        lastError = error;
+        const msg = (error as Error)?.message || "";
+        const isRetryable = msg.includes("(500)") || msg.toLowerCase().includes("failed to verify privy token");
+        if (!isRetryable || i === maxAttempts - 1) {
+          throw error;
+        }
+        await sleep(300 * (i + 1));
+      }
+    }
+    throw lastError || new Error("Failed to verify privy token");
+  };
+
   const processAuthenticatedUser = async (currentUser?: any) => {
     const activeUser = currentUser || userRef.current;
     if (!activeUser) return;
+    const activeUserId = (activeUser?.id || "").toString();
+    if (activeUserId && finalizedUserIdRef.current === activeUserId) return;
     if (authInFlightRef.current) return;
     authInFlightRef.current = true;
     handledLoginRef.current = true;
@@ -161,38 +228,7 @@ const AuthLoginScreen = () => {
       let latestUser = activeUser;
       let accounts = getLinkedAccounts(latestUser);
       ({ latestUser, accounts } = await waitForAccounts(latestUser));
-      let { movementAddress, solanaAddress } = ensureWallets(accounts);
-
-      if (!movementAddress || !solanaAddress) {
-        if (!createWallet) {
-          throw new Error("Wallets not found. Privy wallet creation unavailable.");
-        }
-
-          if (!movementAddress) {
-            try {
-              const result = await createWallet({ chainType: "aptos", createAdditional: false });
-              if (result?.user) latestUser = result.user as any;
-            } catch {
-              latestUser = userRef.current || latestUser;
-            }
-          }
-          if (!solanaAddress) {
-            try {
-              const result = await createWallet({ chainType: "solana", createAdditional: false });
-              if (result?.user) latestUser = result.user as any;
-            } catch {
-              latestUser = userRef.current || latestUser;
-            }
-          }
-
-          const refreshedUser = userRef.current || latestUser;
-          accounts = getLinkedAccounts(refreshedUser);
-        ({ movementAddress, solanaAddress } = ensureWallets(accounts));
-      }
-
-      if (!movementAddress || !solanaAddress) {
-        throw new Error("Wallets not found. Please retry login.");
-      }
+      await ensureWalletsForUser(latestUser);
 
       const privyToken =
         (await getPrivyTokenWithRetry()) ||
@@ -205,12 +241,15 @@ const AuthLoginScreen = () => {
         throw new Error("Privy token not available.");
       }
 
-      const verified = await verifyPrivy(privyToken);
+      const verified = await verifyPrivyWithRetry(privyToken);
       const sessionEmail = verified?.user?.email || email || "";
       await SecureStore.setItemAsync(
         "banter_session",
         JSON.stringify({ token: verified.token, email: sessionEmail })
       );
+      if (activeUserId) {
+        finalizedUserIdRef.current = activeUserId;
+      }
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {
@@ -234,13 +273,8 @@ const AuthLoginScreen = () => {
         // ignore
       }
       if (isReady && userRef.current) {
-        try {
-          await processAuthenticatedUser(userRef.current);
-          return;
-        } catch {
-          // If session exists but we can't proceed, reset and retry login.
-          await logout();
-        }
+        await processAuthenticatedUser(userRef.current);
+        return;
       }
       const redirectUri = "/oauth";
       await login({ provider: "google", redirectUri });
@@ -259,7 +293,6 @@ const AuthLoginScreen = () => {
           await processAuthenticatedUser(userRef.current);
           return;
         }
-        await logout();
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
@@ -280,11 +313,17 @@ const AuthLoginScreen = () => {
       (oauthState as any)?.error ||
       JSON.stringify((oauthState as any) || {});
     const msg = `OAuth error: ${raw}`;
+    const lower = String(raw).toLowerCase();
+    const recoverable =
+      lower.includes("already logged in") ||
+      lower.includes("already has an account");
     setLoginError(msg);
-    Alert.alert("OAuth error", msg);
+    if (!recoverable) {
+      Alert.alert("OAuth error", msg);
+    }
 
     // If Privy reports an existing session, finish login from current user state.
-    if (String(raw).toLowerCase().includes("already logged in") && userRef.current) {
+    if (recoverable && userRef.current) {
       processAuthenticatedUser(userRef.current);
     }
   }, [oauthState]);
