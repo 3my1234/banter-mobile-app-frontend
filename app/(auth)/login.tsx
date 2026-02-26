@@ -11,13 +11,6 @@ import * as WebBrowser from "expo-web-browser";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
 
-type PendingRegistration = {
-  email: string;
-  solanaAddress: string;
-  movementAddress: string;
-  userInfo: any;
-};
-
 const AuthLoginScreen = () => {
   const router = useRouter();
   const { user, isReady, getAccessToken, logout } = usePrivy();
@@ -31,7 +24,6 @@ const AuthLoginScreen = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
-  const oauthRetryRef = useRef(false);
 
   useEffect(() => {
     userRef.current = user;
@@ -71,6 +63,22 @@ const AuthLoginScreen = () => {
     return currentUser?.linkedAccounts || currentUser?.linked_accounts || [];
   };
 
+  const getBestEmail = (currentUser: any): string | undefined => {
+    const direct = currentUser?.email?.address || currentUser?.email;
+    if (typeof direct === "string" && direct.includes("@")) {
+      return direct.trim().toLowerCase();
+    }
+    const accounts = getLinkedAccounts(currentUser);
+    const fromLinked = accounts.find((account: any) => {
+      const email = account?.email;
+      return typeof email === "string" && email.includes("@");
+    })?.email;
+    if (typeof fromLinked === "string" && fromLinked.includes("@")) {
+      return fromLinked.trim().toLowerCase();
+    }
+    return undefined;
+  };
+
   const findWalletAddress = (accounts: any[], chainType: string) => {
     const wallet = accounts.find(
       (account: any) =>
@@ -92,10 +100,7 @@ const AuthLoginScreen = () => {
     if (!activeUser) return;
     handledLoginRef.current = true;
     try {
-      const email = activeUser?.email?.address?.trim();
-      if (!email || !email.includes("@")) {
-        throw new Error("Login failed: Google email was not returned.");
-      }
+      const email = getBestEmail(activeUser);
 
       let latestUser = activeUser;
       let accounts = getLinkedAccounts(latestUser);
@@ -136,9 +141,10 @@ const AuthLoginScreen = () => {
       }
 
       const verified = await verifyPrivy(privyToken);
+      const sessionEmail = verified?.user?.email || email || "";
       await SecureStore.setItemAsync(
         "banter_session",
-        JSON.stringify({ token: verified.token, email })
+        JSON.stringify({ token: verified.token, email: sessionEmail })
       );
       setRedirecting(true);
       router.replace("/(tabs)");
@@ -177,16 +183,12 @@ const AuthLoginScreen = () => {
     } catch (error) {
       const msg = (error as Error)?.message ?? "Login failed";
       if (msg.toLowerCase().includes("already logged in")) {
-        try {
+        if (userRef.current) {
           await processAuthenticatedUser(userRef.current);
           return;
-        } catch {
-          // If Privy is in a bad session state, reset and retry once.
-          await logout();
-          const redirectUri = "/oauth";
-          await login({ provider: "google", redirectUri });
-          return;
         }
+        setLoginError("Session detected. Finalizing login...");
+        return;
       }
       if (msg.toLowerCase().includes("already has an account")) {
         if (userRef.current) {
@@ -217,23 +219,32 @@ const AuthLoginScreen = () => {
     setLoginError(msg);
     Alert.alert("OAuth error", msg);
 
-    // If Privy reports an already-logged-in OAuth session, reset and retry once.
-    if (
-      !oauthRetryRef.current &&
-      String(raw).toLowerCase().includes("already logged in")
-    ) {
-      oauthRetryRef.current = true;
-      (async () => {
-        try {
-          await logout();
-          const redirectUri = "/oauth";
-          await login({ provider: "google", redirectUri });
-        } catch {
-          // fall through to UI error
-        }
-      })();
+    // If Privy reports an existing session, finish login from current user state.
+    if (String(raw).toLowerCase().includes("already logged in") && userRef.current) {
+      processAuthenticatedUser(userRef.current);
     }
-  }, [oauthState, login, logout]);
+  }, [oauthState]);
+
+  useEffect(() => {
+    if (!oauthState || oauthState.status !== "done") return;
+    if (handledLoginRef.current) return;
+
+    let cancelled = false;
+    const settle = async () => {
+      for (let i = 0; i < 12; i += 1) {
+        if (cancelled) return;
+        if (userRef.current) {
+          await processAuthenticatedUser(userRef.current);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    };
+    settle();
+    return () => {
+      cancelled = true;
+    };
+  }, [oauthState?.status]);
 
   if (checkingSession || redirecting) {
     return (
