@@ -137,6 +137,28 @@ const AuthLoginScreen = () => {
     return null;
   };
 
+  const waitForWalletAddresses = async (initialUser: any, maxAttempts: number = 12) => {
+    let latestUser = initialUser;
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const accounts = getLinkedAccounts(userRef.current || latestUser);
+      const { movementAddress, solanaAddress } = ensureWallets(accounts);
+      if (movementAddress && solanaAddress) {
+        return {
+          latestUser: userRef.current || latestUser,
+          movementAddress,
+          solanaAddress,
+        };
+      }
+      await sleep(250);
+      latestUser = userRef.current || latestUser;
+    }
+    return {
+      latestUser: userRef.current || latestUser,
+      movementAddress: undefined,
+      solanaAddress: undefined,
+    };
+  };
+
   const verifyPrivyWithRetry = async (privyToken: string, maxAttempts: number = 3) => {
     let lastError: unknown = null;
     for (let i = 0; i < maxAttempts; i += 1) {
@@ -185,32 +207,40 @@ const AuthLoginScreen = () => {
         !walletProvisionAttemptedUserIds.has(activeUserId) &&
         (!verified?.user?.movementAddress || !verified?.user?.solanaAddress)
       ) {
-        walletProvisionAttemptedUserIds.add(activeUserId);
-        if (!createWallet) {
-          setLoginError("Wallet provisioning unavailable in this build.");
-        } else {
-          let latestUser = userRef.current || activeUser;
-          let accounts = getLinkedAccounts(latestUser);
-          let { movementAddress, solanaAddress } = ensureWallets(accounts);
+        let latestUser = userRef.current || activeUser;
+        const waited = await waitForWalletAddresses(latestUser);
+        latestUser = waited.latestUser;
+        let movementAddress = waited.movementAddress;
+        let solanaAddress = waited.solanaAddress;
 
-          if (!movementAddress) {
-            const movementResult = await createWallet({ chainType: "aptos" });
-            if (movementResult?.user) {
-              latestUser = movementResult.user as any;
-              userRef.current = latestUser;
-            }
-          }
-          if (!solanaAddress) {
-            const solanaResult = await createWallet({ chainType: "solana" });
-            if (solanaResult?.user) {
-              latestUser = solanaResult.user as any;
-              userRef.current = latestUser;
-            }
-          }
-
-          // 3) Re-sync after provisioning so backend stores wallet addresses.
+        // If wallets appeared after hydration delay, just resync backend.
+        if (movementAddress && solanaAddress) {
           const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
           verified = await verifyPrivyWithRetry(refreshedToken);
+        } else {
+          walletProvisionAttemptedUserIds.add(activeUserId);
+          if (!createWallet) {
+            setLoginError("Wallet provisioning unavailable in this build.");
+          } else {
+            if (!movementAddress) {
+              const movementResult = await createWallet({ chainType: "aptos" });
+              if (movementResult?.user) {
+                latestUser = movementResult.user as any;
+                userRef.current = latestUser;
+              }
+            }
+            if (!solanaAddress) {
+              const solanaResult = await createWallet({ chainType: "solana" });
+              if (solanaResult?.user) {
+                latestUser = solanaResult.user as any;
+                userRef.current = latestUser;
+              }
+            }
+
+            // 3) Re-sync after provisioning so backend stores wallet addresses.
+            const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
+            verified = await verifyPrivyWithRetry(refreshedToken);
+          }
         }
       }
 
