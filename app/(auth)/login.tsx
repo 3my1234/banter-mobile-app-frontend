@@ -24,19 +24,47 @@ const AuthLoginScreen = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
+  const authInFlightRef = useRef(false);
 
   useEffect(() => {
     userRef.current = user;
   }, [user]);
 
   useEffect(() => {
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const validateStoredSession = async (token: string) => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    };
+
     const checkExistingSession = async () => {
       try {
         const raw = await SecureStore.getItemAsync("banter_session");
         if (raw) {
-          setRedirecting(true);
-          router.replace("/(tabs)");
-          return;
+          try {
+            const parsed = JSON.parse(raw);
+            const token = parsed?.token;
+            if (typeof token === "string" && token.length > 0) {
+              const valid = await validateStoredSession(token);
+              if (valid) {
+                setRedirecting(true);
+                router.replace("/(tabs)");
+                return;
+              }
+            }
+          } catch {
+            // ignore invalid JSON and clear below
+          }
+          await SecureStore.deleteItemAsync("banter_session");
+          await sleep(50);
         }
       } finally {
         setCheckingSession(false);
@@ -95,15 +123,44 @@ const AuthLoginScreen = () => {
     return { movementAddress, solanaAddress };
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const waitForAccounts = async (initialUser: any, maxAttempts: number = 8) => {
+    let latestUser = initialUser;
+    let accounts = getLinkedAccounts(latestUser);
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const { movementAddress, solanaAddress } = ensureWallets(accounts);
+      if (movementAddress && solanaAddress) {
+        return { latestUser, accounts };
+      }
+      await sleep(250);
+      latestUser = userRef.current || latestUser;
+      accounts = getLinkedAccounts(latestUser);
+    }
+    return { latestUser, accounts };
+  };
+
+  const getPrivyTokenWithRetry = async (maxAttempts: number = 10) => {
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const token = await getAccessToken();
+      if (token) return token;
+      await sleep(200);
+    }
+    return null;
+  };
+
   const processAuthenticatedUser = async (currentUser?: any) => {
     const activeUser = currentUser || userRef.current;
     if (!activeUser) return;
+    if (authInFlightRef.current) return;
+    authInFlightRef.current = true;
     handledLoginRef.current = true;
     try {
       const email = getBestEmail(activeUser);
 
       let latestUser = activeUser;
       let accounts = getLinkedAccounts(latestUser);
+      ({ latestUser, accounts } = await waitForAccounts(latestUser));
       let { movementAddress, solanaAddress } = ensureWallets(accounts);
 
       if (!movementAddress || !solanaAddress) {
@@ -112,12 +169,20 @@ const AuthLoginScreen = () => {
         }
 
           if (!movementAddress) {
-            const result = await createWallet({ chainType: "aptos" });
-            if (result?.user) latestUser = result.user as any;
+            try {
+              const result = await createWallet({ chainType: "aptos", createAdditional: false });
+              if (result?.user) latestUser = result.user as any;
+            } catch {
+              latestUser = userRef.current || latestUser;
+            }
           }
           if (!solanaAddress) {
-            const result = await createWallet({ chainType: "solana" });
-            if (result?.user) latestUser = result.user as any;
+            try {
+              const result = await createWallet({ chainType: "solana", createAdditional: false });
+              if (result?.user) latestUser = result.user as any;
+            } catch {
+              latestUser = userRef.current || latestUser;
+            }
           }
 
           const refreshedUser = userRef.current || latestUser;
@@ -130,7 +195,7 @@ const AuthLoginScreen = () => {
       }
 
       const privyToken =
-        (await getAccessToken()) ||
+        (await getPrivyTokenWithRetry()) ||
         (latestUser as any)?.accessToken ||
         (latestUser as any)?.access_token ||
         (latestUser as any)?.authToken ||
@@ -153,6 +218,8 @@ const AuthLoginScreen = () => {
       const msg = (error as Error)?.message ?? "Login failed";
       setLoginError(msg);
       Alert.alert("Login failed", msg);
+    } finally {
+      authInFlightRef.current = false;
     }
   };
 
@@ -176,10 +243,7 @@ const AuthLoginScreen = () => {
         }
       }
       const redirectUri = "/oauth";
-      const oauthUser = await login({ provider: "google", redirectUri });
-      if (oauthUser) {
-        await processAuthenticatedUser(oauthUser);
-      }
+      await login({ provider: "google", redirectUri });
     } catch (error) {
       const msg = (error as Error)?.message ?? "Login failed";
       if (msg.toLowerCase().includes("already logged in")) {
@@ -231,13 +295,13 @@ const AuthLoginScreen = () => {
 
     let cancelled = false;
     const settle = async () => {
-      for (let i = 0; i < 12; i += 1) {
+      for (let i = 0; i < 24; i += 1) {
         if (cancelled) return;
         if (userRef.current) {
           await processAuthenticatedUser(userRef.current);
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await sleep(250);
       }
     };
     settle();
