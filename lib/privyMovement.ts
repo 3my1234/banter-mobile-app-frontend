@@ -42,6 +42,23 @@ export function getMovementWallet(privyUser: any) {
   );
 }
 
+export function getMovementWalletByAddress(privyUser: any, address?: string | null) {
+  if (!address) return null;
+  if (!privyUser?.linkedAccounts && !privyUser?.linked_accounts) {
+    return null;
+  }
+  const wanted = address.trim().toLowerCase();
+  const accounts = privyUser?.linkedAccounts || privyUser?.linked_accounts || [];
+  return (
+    accounts.find((account: any) => {
+      const chain = (account?.chainType || account?.chain_type || "").toLowerCase();
+      const isMovementChain = chain === "movement" || chain === "aptos";
+      const accountAddress = (account?.address || "").trim().toLowerCase();
+      return account?.type === "wallet" && isMovementChain && accountAddress === wanted;
+    }) || null
+  );
+}
+
 export async function sendMovementTransaction(
   transactionData: MovementTransactionData,
   walletAddress: string,

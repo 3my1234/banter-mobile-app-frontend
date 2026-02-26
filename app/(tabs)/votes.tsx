@@ -20,7 +20,10 @@ import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { useCreateWallet, useSignRawHash } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
-import { getMovementWallet, sendMovementTransaction } from "@/lib/privyMovement";
+import {
+  getMovementWalletByAddress,
+  sendMovementTransaction,
+} from "@/lib/privyMovement";
 import * as SecureStore from "expo-secure-store";
 import { API_BASE_URL } from "@/lib/api";
 import { Buffer } from "buffer";
@@ -218,41 +221,50 @@ export default function Votes() {
   const handleMovement = async (bundleId: string) => {
     try {
       setProcessingId(bundleId);
+      let created: any;
+      try {
+        created = await apiFetch("/payments/movement/votes/create", {
+          method: "POST",
+          body: JSON.stringify({ bundleId }),
+        });
+      } catch (error) {
+        const message = ((error as Error)?.message || "").toLowerCase();
+        const missingMovementWallet = message.includes("movement wallet not found");
+        if (!missingMovementWallet) {
+          throw error;
+        }
 
-      let movementWallet = getMovementWallet(user);
-      let createdMovementWallet: any = null;
-
-      if (!movementWallet?.address) {
         try {
-          const createdWallet = await createWallet({ chainType: "movement" });
-          createdMovementWallet = createdWallet?.wallet;
-        } catch (error) {
-          const message = ((error as Error)?.message || "").toLowerCase();
+          await createWallet({ chainType: "movement" });
+        } catch (createError) {
+          const createMsg = ((createError as Error)?.message || "").toLowerCase();
           const alreadyExists =
-            message.includes("already has an embedded wallet") ||
-            message.includes("already has an account of the type linked") ||
-            message.includes("already has a wallet");
+            createMsg.includes("already has an embedded wallet") ||
+            createMsg.includes("already has an account of the type linked") ||
+            createMsg.includes("already has a wallet");
           if (!alreadyExists) {
-            const fallback = await createWallet({ chainType: "aptos" });
-            createdMovementWallet = fallback?.wallet;
+            await createWallet({ chainType: "aptos" });
           }
         }
 
         await new Promise((resolve) => setTimeout(resolve, 400));
         await syncPrivySessionToBackend();
-        movementWallet =
-          getMovementWallet(user) ||
-          (createdMovementWallet
-            ? {
-                address: createdMovementWallet.address,
-                public_key: createdMovementWallet.public_key,
-                publicKey: createdMovementWallet.public_key,
-              }
-            : null);
+        created = await apiFetch("/payments/movement/votes/create", {
+          method: "POST",
+          body: JSON.stringify({ bundleId }),
+        });
       }
 
+      if (created?.status === "COMPLETED") {
+        await refreshBalance();
+        return;
+      }
+
+      const movementWallet = getMovementWalletByAddress(user, created?.fromAddress);
       if (!movementWallet?.address) {
-        throw new Error("Movement wallet not available yet. Please log out and sign in again.");
+        throw new Error(
+          `Movement wallet mismatch. Backend expects ${created?.fromAddress || "unknown"}, but Privy session is using a different Movement wallet. Please log out and sign in again.`
+        );
       }
 
       const publicKey = movementWallet.publicKey || movementWallet.public_key;
@@ -260,19 +272,9 @@ export default function Votes() {
         throw new Error("Movement wallet public key not available. Please log in again.");
       }
 
-      const created = await apiFetch("/payments/movement/votes/create", {
-        method: "POST",
-        body: JSON.stringify({ bundleId }),
-      });
-
-      if (created?.status === "COMPLETED") {
-        await refreshBalance();
-        return;
-      }
-
       const txHash = await sendMovementTransaction(
         created.transactionData,
-        movementWallet.address,
+        created.fromAddress,
         publicKey,
         signRawHash
       );
