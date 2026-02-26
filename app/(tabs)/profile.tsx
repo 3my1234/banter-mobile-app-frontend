@@ -20,11 +20,13 @@ import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
+import { usePrivy } from "@privy-io/expo";
 
 type Session = { token: string; email?: string };
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { logout: privyLogout } = usePrivy();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -171,6 +173,16 @@ export default function ProfileScreen() {
   }, [me]);
 
   const logout = async () => {
+    try {
+      await privyLogout();
+    } catch {
+      // Keep local logout path even if Privy session teardown fails.
+    }
+    try {
+      await WebBrowser.dismissAuthSession();
+    } catch {
+      // ignore
+    }
     await SecureStore.deleteItemAsync("banter_session");
     await SecureStore.deleteItemAsync("banter_pending_registration");
     setSession(null);

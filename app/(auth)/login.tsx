@@ -26,6 +26,7 @@ const AuthLoginScreen = () => {
   const [checkingSession, setCheckingSession] = useState(true);
   const [redirecting, setRedirecting] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [authFlowActive, setAuthFlowActive] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
 
@@ -120,10 +121,8 @@ const AuthLoginScreen = () => {
   };
 
   const ensureWallets = (accounts: any[]) => {
-    const movementAddress =
-      findWalletAddress(accounts, "aptos") || findWalletAddress(accounts, "movement");
     const solanaAddress = findWalletAddress(accounts, "solana");
-    return { movementAddress, solanaAddress };
+    return { solanaAddress };
   };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -137,15 +136,14 @@ const AuthLoginScreen = () => {
     return null;
   };
 
-  const waitForWalletAddresses = async (initialUser: any, maxAttempts: number = 12) => {
+  const waitForWalletAddresses = async (initialUser: any, maxAttempts: number = 24) => {
     let latestUser = initialUser;
     for (let i = 0; i < maxAttempts; i += 1) {
       const accounts = getLinkedAccounts(userRef.current || latestUser);
-      const { movementAddress, solanaAddress } = ensureWallets(accounts);
-      if (movementAddress && solanaAddress) {
+      const { solanaAddress } = ensureWallets(accounts);
+      if (solanaAddress) {
         return {
           latestUser: userRef.current || latestUser,
-          movementAddress,
           solanaAddress,
         };
       }
@@ -154,7 +152,6 @@ const AuthLoginScreen = () => {
     }
     return {
       latestUser: userRef.current || latestUser,
-      movementAddress: undefined,
       solanaAddress: undefined,
     };
   };
@@ -185,6 +182,7 @@ const AuthLoginScreen = () => {
     if (processingPrivyUserIds.has(activeUserId)) return;
     processingPrivyUserIds.add(activeUserId);
     handledLoginRef.current = true;
+    setAuthFlowActive(true);
     try {
       const email = getBestEmail(activeUser);
 
@@ -205,16 +203,15 @@ const AuthLoginScreen = () => {
       // 2) Provision missing wallets once per Privy user to avoid duplicates.
       if (
         !walletProvisionAttemptedUserIds.has(activeUserId) &&
-        (!verified?.user?.movementAddress || !verified?.user?.solanaAddress)
+        !verified?.user?.solanaAddress
       ) {
         let latestUser = userRef.current || activeUser;
         const waited = await waitForWalletAddresses(latestUser);
         latestUser = waited.latestUser;
-        let movementAddress = waited.movementAddress;
         let solanaAddress = waited.solanaAddress;
 
         // If wallets appeared after hydration delay, just resync backend.
-        if (movementAddress && solanaAddress) {
+        if (solanaAddress) {
           const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
           verified = await verifyPrivyWithRetry(refreshedToken);
         } else {
@@ -222,18 +219,21 @@ const AuthLoginScreen = () => {
           if (!createWallet) {
             setLoginError("Wallet provisioning unavailable in this build.");
           } else {
-            if (!movementAddress) {
-              const movementResult = await createWallet({ chainType: "aptos" });
-              if (movementResult?.user) {
-                latestUser = movementResult.user as any;
-                userRef.current = latestUser;
-              }
-            }
             if (!solanaAddress) {
-              const solanaResult = await createWallet({ chainType: "solana" });
-              if (solanaResult?.user) {
-                latestUser = solanaResult.user as any;
-                userRef.current = latestUser;
+              try {
+                const solanaResult = await createWallet({ chainType: "solana" });
+                if (solanaResult?.user) {
+                  latestUser = solanaResult.user as any;
+                  userRef.current = latestUser;
+                }
+              } catch (error) {
+                const message = ((error as Error)?.message || "").toLowerCase();
+                const alreadyExists =
+                  message.includes("already has an embedded wallet") ||
+                  message.includes("already has an account of the type linked");
+                if (!alreadyExists) {
+                  throw error;
+                }
               }
             }
 
@@ -258,6 +258,7 @@ const AuthLoginScreen = () => {
       Alert.alert("Login failed", msg);
     } finally {
       processingPrivyUserIds.delete(activeUserId);
+      setAuthFlowActive(false);
     }
   };
 
@@ -265,6 +266,7 @@ const AuthLoginScreen = () => {
     try {
       setLoginError(null);
       setLoginLoading(true);
+      setAuthFlowActive(true);
       // Ensure any stale auth session is closed before starting a new one.
       try {
         await WebBrowser.dismissAuthSession();
@@ -295,6 +297,7 @@ const AuthLoginScreen = () => {
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
+      setAuthFlowActive(false);
     } finally {
       setLoginLoading(false);
     }
@@ -319,6 +322,7 @@ const AuthLoginScreen = () => {
     setLoginError(msg);
     if (!recoverable) {
       Alert.alert("OAuth error", msg);
+      setAuthFlowActive(false);
     }
 
     // If Privy reports an existing session, finish login from current user state.
@@ -356,7 +360,23 @@ const AuthLoginScreen = () => {
           style={styles.logo}
         />
         <ActivityIndicator color="#ff6b35" />
-        <Text style={styles.errorText}>Signing you in…</Text>
+        <Text style={styles.errorText}>Signing you in...</Text>
+      </View>
+    );
+  }
+
+  if (authFlowActive) {
+    return (
+      <View style={styles.container}>
+        <Image
+          source={require("../../assets/images/banter-logo.jpg")}
+          style={styles.logo}
+        />
+        {oauthState?.status ? (
+          <Text style={styles.mutedText}>OAuth: {oauthState.status}</Text>
+        ) : null}
+        <ActivityIndicator color="#ff6b35" />
+        <Text style={styles.errorText}>Finalizing sign in...</Text>
       </View>
     );
   }
