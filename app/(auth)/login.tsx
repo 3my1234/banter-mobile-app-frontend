@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth } from "@privy-io/expo";
 import { useCreateWallet } from "@privy-io/expo/extended-chains";
+import * as WebBrowser from "expo-web-browser";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -148,6 +149,12 @@ const AuthLoginScreen = () => {
     try {
       setLoginError(null);
       setLoginLoading(true);
+      // Ensure any stale auth session is closed before starting a new one.
+      try {
+        await WebBrowser.dismissAuthSession();
+      } catch {
+        // ignore
+      }
       if (authenticated && user) {
         try {
           await processAuthenticatedUser();
@@ -157,6 +164,8 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
+      // Force a clean OAuth session (avoids "already has an account linked" errors)
+      await privy.logout();
       const redirectUri = "/oauth";
       const result = await login({ provider: "google", redirectUri });
       if (!result) {
@@ -175,6 +184,9 @@ const AuthLoginScreen = () => {
           await login({ provider: "google", redirectUri });
           return;
         }
+      }
+      if (msg.toLowerCase().includes("already has an account")) {
+        await privy.logout();
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
