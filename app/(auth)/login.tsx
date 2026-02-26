@@ -20,8 +20,7 @@ type PendingRegistration = {
 
 const AuthLoginScreen = () => {
   const router = useRouter();
-  const privy = usePrivy();
-  const { user, authenticated } = privy;
+  const { user, isReady, getAccessToken, logout } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
   const { createWallet } = useCreateWallet();
 
@@ -31,7 +30,12 @@ const AuthLoginScreen = () => {
   const [redirecting, setRedirecting] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const handledLoginRef = useRef(false);
+  const userRef = useRef<any>(null);
   const oauthRetryRef = useRef(false);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     const checkExistingSession = async () => {
@@ -83,16 +87,17 @@ const AuthLoginScreen = () => {
     return { movementAddress, solanaAddress };
   };
 
-  const processAuthenticatedUser = async () => {
-    if (!authenticated || !user) return;
+  const processAuthenticatedUser = async (currentUser?: any) => {
+    const activeUser = currentUser || userRef.current;
+    if (!activeUser) return;
     handledLoginRef.current = true;
     try {
-      const email = user?.email?.address?.trim();
+      const email = activeUser?.email?.address?.trim();
       if (!email || !email.includes("@")) {
         throw new Error("Login failed: Google email was not returned.");
       }
 
-      let latestUser = user;
+      let latestUser = activeUser;
       let accounts = getLinkedAccounts(latestUser);
       let { movementAddress, solanaAddress } = ensureWallets(accounts);
 
@@ -110,7 +115,7 @@ const AuthLoginScreen = () => {
             if (result?.user) latestUser = result.user as any;
           }
 
-          const refreshedUser = (privy as any)?.user || latestUser;
+          const refreshedUser = userRef.current || latestUser;
           accounts = getLinkedAccounts(refreshedUser);
         ({ movementAddress, solanaAddress } = ensureWallets(accounts));
       }
@@ -120,11 +125,11 @@ const AuthLoginScreen = () => {
       }
 
       const privyToken =
-        (await (privy as any)?.getAccessToken?.()) ||
-        (user as any)?.accessToken ||
-        (user as any)?.access_token ||
-        (user as any)?.authToken ||
-        (user as any)?.auth_token;
+        (await getAccessToken()) ||
+        (latestUser as any)?.accessToken ||
+        (latestUser as any)?.access_token ||
+        (latestUser as any)?.authToken ||
+        (latestUser as any)?.auth_token;
 
       if (!privyToken) {
         throw new Error("Privy token not available.");
@@ -155,38 +160,40 @@ const AuthLoginScreen = () => {
       } catch {
         // ignore
       }
-      if (authenticated && user) {
+      if (isReady && userRef.current) {
         try {
-          await processAuthenticatedUser();
+          await processAuthenticatedUser(userRef.current);
           return;
         } catch {
           // If session exists but we can't proceed, reset and retry login.
-          await privy.logout();
+          await logout();
         }
       }
-      // Force a clean OAuth session (avoids "already has an account linked" errors)
-      await privy.logout();
       const redirectUri = "/oauth";
-      const result = await login({ provider: "google", redirectUri });
-      if (!result) {
-        throw new Error("Login did not start. Please try again.");
+      const oauthUser = await login({ provider: "google", redirectUri });
+      if (oauthUser) {
+        await processAuthenticatedUser(oauthUser);
       }
     } catch (error) {
       const msg = (error as Error)?.message ?? "Login failed";
       if (msg.toLowerCase().includes("already logged in")) {
         try {
-          await processAuthenticatedUser();
+          await processAuthenticatedUser(userRef.current);
           return;
         } catch {
           // If Privy is in a bad session state, reset and retry once.
-          await privy.logout();
+          await logout();
           const redirectUri = "/oauth";
           await login({ provider: "google", redirectUri });
           return;
         }
       }
       if (msg.toLowerCase().includes("already has an account")) {
-        await privy.logout();
+        if (userRef.current) {
+          await processAuthenticatedUser(userRef.current);
+          return;
+        }
+        await logout();
       }
       setLoginError(msg);
       Alert.alert("Login failed", msg);
@@ -196,9 +203,9 @@ const AuthLoginScreen = () => {
   };
 
   useEffect(() => {
-    if (!authenticated || !user || handledLoginRef.current) return;
-    processAuthenticatedUser();
-  }, [authenticated, user]);
+    if (!isReady || !user || handledLoginRef.current) return;
+    processAuthenticatedUser(user);
+  }, [isReady, user]);
 
   useEffect(() => {
     if (!oauthState || oauthState.status !== "error") return;
@@ -218,7 +225,7 @@ const AuthLoginScreen = () => {
       oauthRetryRef.current = true;
       (async () => {
         try {
-          await privy.logout();
+          await logout();
           const redirectUri = "/oauth";
           await login({ provider: "google", redirectUri });
         } catch {
@@ -226,7 +233,7 @@ const AuthLoginScreen = () => {
         }
       })();
     }
-  }, [oauthState, login, privy]);
+  }, [oauthState, login, logout]);
 
   if (checkingSession || redirecting) {
     return (
