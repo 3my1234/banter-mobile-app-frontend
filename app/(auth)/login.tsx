@@ -157,7 +157,7 @@ const AuthLoginScreen = () => {
           await privy.logout();
         }
       }
-      const redirectUri = "/oauth";
+      const redirectUri = "/privy/oauth";
       const result = await login({ provider: "google", redirectUri });
       if (!result) {
         throw new Error("Login did not start. Please try again.");
@@ -171,7 +171,7 @@ const AuthLoginScreen = () => {
         } catch {
           // If Privy is in a bad session state, reset and retry once.
           await privy.logout();
-          const redirectUri = "/oauth";
+          const redirectUri = "/privy/oauth";
           await login({ provider: "google", redirectUri });
           return;
         }
@@ -207,7 +207,7 @@ const AuthLoginScreen = () => {
       (async () => {
         try {
           await privy.logout();
-          const redirectUri = "/oauth";
+          const redirectUri = "/privy/oauth";
           await login({ provider: "google", redirectUri });
         } catch {
           // fall through to UI error
