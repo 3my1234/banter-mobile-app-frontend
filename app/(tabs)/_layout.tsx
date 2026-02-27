@@ -1,35 +1,141 @@
-import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
+import { Tabs } from "expo-router";
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { useColorScheme } from "@/components/useColorScheme";
+import { useClientOnlyValue } from "@/components/useClientOnlyValue";
+import { apiFetch } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
+  name: React.ComponentProps<typeof FontAwesome>["name"];
   color: string;
 }) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
+  return <FontAwesome size={24} {...props} />;
+}
+
+function HorizontalTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const visibleRoutes = useMemo(
+    () => state.routes.filter((route) => route.name !== "compose"),
+    [state.routes]
+  );
+
+  return (
+    <View style={[styles.tabBarWrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabBarScroll}
+      >
+        {visibleRoutes.map((route) => {
+          const routeIndex = state.routes.findIndex((r) => r.key === route.key);
+          const isFocused = state.index === routeIndex;
+          const descriptor = descriptors[route.key];
+          const options = descriptor.options;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
+            });
+            if (!isFocused && !event.defaultPrevented) {
+              (navigation as any).navigate(route.name, route.params);
+            }
+          };
+
+          const icon =
+            typeof options.tabBarIcon === "function"
+              ? options.tabBarIcon({
+                  focused: isFocused,
+                  color: "#ffffff",
+                  size: 24,
+                })
+              : null;
+          const badgeCount =
+            typeof options.tabBarBadge === "number" && options.tabBarBadge > 0
+              ? options.tabBarBadge
+              : 0;
+
+          return (
+            <Pressable key={route.key} onPress={onPress} style={styles.tabItem}>
+              <View style={styles.iconWrap}>
+                {icon}
+                {badgeCount > 0 ? <View style={styles.badge} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  useColorScheme();
+  const [notificationUnread, setNotificationUnread] = useState(0);
+  const [messageUnread] = useState(0);
+
+  const loadNotificationUnread = useCallback(async () => {
+    try {
+      const response = await apiFetch("/notifications?unreadOnly=1&limit=100");
+      const items = Array.isArray(response?.notifications) ? response.notifications : [];
+      setNotificationUnread(items.length);
+    } catch {
+      // keep last value
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotificationUnread();
+    let socket: any;
+    let disposed = false;
+    const setup = async () => {
+      try {
+        socket = await getSocket();
+        if (disposed || !socket) return;
+        socket.emit("notifications.subscribe");
+        socket.on("notifications.new", () => {
+          setNotificationUnread((prev) => prev + 1);
+        });
+        socket.on("notifications.read", () => {
+          setNotificationUnread((prev) => Math.max(0, prev - 1));
+        });
+        socket.on("notifications.read_all", () => {
+          setNotificationUnread(0);
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    setup();
+    return () => {
+      disposed = true;
+      if (socket) {
+        socket.off("notifications.new");
+        socket.off("notifications.read");
+        socket.off("notifications.read_all");
+      }
+    };
+  }, [loadNotificationUnread]);
 
   return (
     <Tabs
+      tabBar={(props) => <HorizontalTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: "#ff6b35",
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
+        tabBarShowLabel: false,
         headerShown: useClientOnlyValue(false, true),
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: "Home",
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
           headerShown: false,
         }}
@@ -37,7 +143,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: "Profile",
           tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
           headerShown: false,
         }}
@@ -45,7 +151,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="votes"
         options={{
-          title: 'Votes',
+          title: "Votes",
           tabBarIcon: ({ color }) => <TabBarIcon name="ticket" color={color} />,
           headerShown: false,
         }}
@@ -59,10 +165,28 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: "Messages",
+          tabBarIcon: ({ color }) => <TabBarIcon name="envelope" color={color} />,
+          tabBarBadge: messageUnread > 0 ? messageUnread : undefined,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Alerts',
+          title: "Notifications",
           tabBarIcon: ({ color }) => <TabBarIcon name="bell" color={color} />,
+          tabBarBadge: notificationUnread > 0 ? notificationUnread : undefined,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="bot"
+        options={{
+          title: "Bot",
+          tabBarIcon: ({ color }) => <TabBarIcon name="android" color={color} />,
           headerShown: false,
         }}
       />
@@ -76,3 +200,37 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBarWrap: {
+    backgroundColor: "#0d0d0d",
+    borderTopColor: "#1f2937",
+    borderTopWidth: 1,
+    paddingTop: 6,
+  },
+  tabBarScroll: {
+    paddingHorizontal: 8,
+    gap: 14,
+  },
+  tabItem: {
+    paddingVertical: 6,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: "#ff3b30",
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
+});

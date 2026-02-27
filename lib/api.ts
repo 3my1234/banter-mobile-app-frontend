@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
+const DEBUG_AUTH = process.env.EXPO_PUBLIC_DEBUG_AUTH === "1";
 
 export type Session = { token: string; email?: string };
 
@@ -25,6 +26,9 @@ export async function apiFetch(
 
   if (requireAuth) {
     const session = await getSession();
+    if (DEBUG_AUTH) {
+      console.log("[AUTH DEBUG] JWT from session:", session?.token || "<none>");
+    }
     if (session?.token) {
       headers.set("Authorization", `Bearer ${session.token}`);
     }

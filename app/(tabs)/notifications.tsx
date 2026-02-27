@@ -1,35 +1,241 @@
-import React from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "@/components/Themed";
+import { apiFetch } from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 
-const items = [
-  { id: "n1", type: "like", text: "Jude liked your banter", time: "5m" },
-  { id: "n2", type: "comment", text: "Pep commented: 'Interesting take!'", time: "12m" },
-  { id: "n3", type: "vote", text: "Your roast gained 32 🔥 votes", time: "1h" },
-];
+type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  data?: any;
+  readAt?: string | null;
+  createdAt: string;
+};
+
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const formatRelativeTime = (value?: string) => {
+  if (!value) return "";
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+};
+
+const buildDailyFallbackNotification = (meUser: any): NotificationItem | null => {
+  const lastDaily = meUser?.lastDailyRolAt ? new Date(meUser.lastDailyRolAt) : null;
+  if (!lastDaily || Number.isNaN(lastDaily.getTime())) {
+    return null;
+  }
+  if (!isSameDay(lastDaily, new Date())) {
+    return null;
+  }
+  return {
+    id: `local:daily-rol:${lastDaily.toISOString().slice(0, 10)}`,
+    type: "DAILY_ROL",
+    title: "Daily ROL received",
+    body: "You received 0.0001 ROL for today login.",
+    createdAt: lastDaily.toISOString(),
+    readAt: null,
+  };
+};
 
 export default function Notifications() {
-  const renderItem = ({ item }: any) => (
-    <View style={styles.item}>
-      <View style={styles.dot} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.text}>{item.text}</Text>
-        <Text style={styles.time}>{item.time}</Text>
-      </View>
-    </View>
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const unreadCount = useMemo(
+    () => items.filter((item) => !item.readAt).length,
+    [items]
   );
+
+  const loadFallbackDailyRolNotification = useCallback(async () => {
+    try {
+      const me = await apiFetch("/auth/me");
+      const user = me?.user || {};
+      const fallback = buildDailyFallbackNotification(user);
+      setItems(fallback ? [fallback] : []);
+    } catch {
+      setItems([]);
+    }
+  }, []);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiFetch("/notifications?limit=100");
+      const apiItems: NotificationItem[] = Array.isArray(response?.notifications)
+        ? response.notifications
+        : [];
+      try {
+        const me = await apiFetch("/auth/me");
+        const fallback = buildDailyFallbackNotification(me?.user || {});
+        const hasDaily = apiItems.some((item) => item.type === "DAILY_ROL");
+        if (fallback && !hasDaily) {
+          setItems([fallback, ...apiItems]);
+        } else {
+          setItems(apiItems);
+        }
+      } catch {
+        setItems(apiItems);
+      }
+    } catch (e: any) {
+      const message = String(e?.message || "");
+      const endpointMissing =
+        message.includes("Cannot GET /api/notifications") || message.includes("Request failed (404)");
+      if (endpointMissing) {
+        setError(null);
+        await loadFallbackDailyRolNotification();
+        return;
+      }
+      setError("Failed to load notifications");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadFallbackDailyRolNotification]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications();
+    }, [loadNotifications])
+  );
+
+  useEffect(() => {
+    let socket: any;
+    let disposed = false;
+
+    const setup = async () => {
+      try {
+        socket = await getSocket();
+        if (disposed || !socket) return;
+
+        socket.emit("notifications.subscribe");
+
+        const onNew = (payload: NotificationItem) => {
+          setItems((prev) => {
+            const filtered = prev.filter((item) => item.id !== payload.id);
+            return [payload, ...filtered];
+          });
+        };
+
+        const onRead = (payload: { id: string; readAt: string }) => {
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === payload.id ? { ...item, readAt: payload.readAt } : item
+            )
+          );
+        };
+
+        const onReadAll = (payload: { readAt: string }) => {
+          setItems((prev) =>
+            prev.map((item) => (item.readAt ? item : { ...item, readAt: payload.readAt }))
+          );
+        };
+
+        socket.on("notifications.new", onNew);
+        socket.on("notifications.read", onRead);
+        socket.on("notifications.read_all", onReadAll);
+      } catch {
+        // Silent fail: list API still works.
+      }
+    };
+
+    setup();
+    return () => {
+      disposed = true;
+      if (socket) {
+        socket.off("notifications.new");
+        socket.off("notifications.read");
+        socket.off("notifications.read_all");
+      }
+    };
+  }, []);
+
+  const markRead = async (id: string) => {
+    if (id.startsWith("local:")) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, readAt: new Date().toISOString() } : item
+        )
+      );
+      return;
+    }
+    try {
+      await apiFetch(`/notifications/${id}/read`, { method: "POST" });
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, readAt: new Date().toISOString() } : item
+        )
+      );
+    } catch {
+      // Ignore local read errors.
+    }
+  };
+
+  const markAllRead = async () => {
+    const now = new Date().toISOString();
+    setItems((prev) => prev.map((item) => (item.readAt ? item : { ...item, readAt: now })));
+    try {
+      await apiFetch("/notifications/read-all", { method: "POST" });
+    } catch {
+      // Ignore local read-all errors.
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
-      <FlatList
-        data={items}
-        keyExtractor={(i) => i.id}
-        renderItem={renderItem}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
-        contentContainerStyle={{ paddingVertical: 12 }}
-      />
+        <View style={styles.header}>
+          <Text style={styles.title}>Notifications</Text>
+          <Pressable onPress={markAllRead} disabled={unreadCount === 0}>
+            <Text style={[styles.markAll, unreadCount === 0 && styles.markAllDisabled]}>
+              Mark all read
+            </Text>
+          </Pressable>
+        </View>
+        <Text style={styles.subtle}>{unreadCount} unread</Text>
+
+        {loading ? <Text style={styles.subtle}>Loading...</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingVertical: 12 }}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
+          ListEmptyComponent={
+            !loading ? <Text style={styles.subtle}>No notifications yet.</Text> : null
+          }
+          renderItem={({ item }) => (
+            <Pressable
+              style={styles.item}
+              onPress={() => {
+                if (!item.readAt) markRead(item.id);
+              }}
+            >
+              <View style={[styles.dot, item.readAt ? styles.dotRead : styles.dotUnread]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemTitle}>{item.title}</Text>
+                {item.body ? <Text style={styles.text}>{item.body}</Text> : null}
+              </View>
+              <Text style={styles.time}>{formatRelativeTime(item.createdAt)}</Text>
+            </Pressable>
+          )}
+        />
       </View>
     </SafeAreaView>
   );
@@ -38,9 +244,23 @@ export default function Notifications() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0d0d0d" },
   container: { flex: 1, backgroundColor: "#0d0d0d", paddingHorizontal: 12 },
-  item: { flexDirection: "row", gap: 10, paddingVertical: 10, alignItems: "center" },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ff6b35" },
-  text: { color: "#fafafa", fontSize: 15 },
-  time: { color: "#888", fontSize: 12, marginTop: 2 },
+  header: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  title: { color: "#fafafa", fontSize: 18, fontWeight: "700" },
+  markAll: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
+  markAllDisabled: { opacity: 0.4 },
+  subtle: { color: "#888", fontSize: 12, marginTop: 4 },
+  error: { color: "#ff6b35", marginTop: 8, fontSize: 12 },
+  item: { flexDirection: "row", gap: 10, paddingVertical: 10, alignItems: "flex-start" },
+  dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
+  dotUnread: { backgroundColor: "#ff6b35" },
+  dotRead: { backgroundColor: "#353535" },
+  itemTitle: { color: "#fafafa", fontSize: 14, fontWeight: "700" },
+  text: { color: "#c8c8c8", fontSize: 13, marginTop: 2 },
+  time: { color: "#777", fontSize: 11, marginTop: 2 },
   sep: { height: 1, backgroundColor: "#1d1d1d" },
 });

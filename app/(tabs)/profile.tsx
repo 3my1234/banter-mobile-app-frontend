@@ -21,6 +21,7 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
 import { usePrivy } from "@privy-io/expo";
+import { disconnectSocket } from "@/lib/socket";
 
 type Session = { token: string; email?: string };
 
@@ -185,6 +186,7 @@ export default function ProfileScreen() {
     }
     await SecureStore.deleteItemAsync("banter_session");
     await SecureStore.deleteItemAsync("banter_pending_registration");
+    disconnectSocket();
     setSession(null);
     setMe(null);
     router.replace("/(auth)/login");
@@ -292,7 +294,12 @@ export default function ProfileScreen() {
   const bio = me?.bio || "No bio yet.";
   const solBalance = balances?.SOL;
   const usdcBalance = balances?.USDC;
-  const rolBalance = balances?.ROL;
+  const rolFromWallet = balances?.ROL;
+  const rolFallbackRaw = String(me?.rolBalanceRaw || "0");
+  const rolBalance =
+    rolFromWallet && String(rolFromWallet.balance || "0") !== "0"
+      ? rolFromWallet
+      : { balance: rolFallbackRaw, decimals: 8 };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -384,64 +391,68 @@ export default function ProfileScreen() {
           {transactions.length === 0 ? (
             <Text style={styles.muted}>No transactions yet.</Text>
           ) : (
-            transactions.map((tx, index) => {
-              const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
-              const chain = (tx.blockchain || tx.chain || "").toString().toUpperCase();
-              const isDeposit =
-                rawType.includes("DEPOSIT") ||
-                rawType.includes("CREDIT") ||
-                rawType.includes("RECEIVE");
-              const icon = isDeposit ? "arrow-down" : "arrow-up";
-              const symbol = (tx.tokenSymbol || "TOKEN").toString().toUpperCase();
-              const tokenDecimals =
-                tx.metadata?.decimals ??
-                (symbol === "MOVE" ? 8 : symbol === "USDC.E" || symbol === "USDC" ? 6 : 6);
-              const amount = formatTokenAmount(tx.amount, tokenDecimals);
-              const canOpen = !!tx.txHash;
-              const txKey = (tx.txHash || tx.id || `${symbol}-${tx.createdAt}-${index}`).toString();
-              const title =
-                rawType.includes("TRANSFER") ||
-                rawType.includes("WITHDRAW") ||
-                rawType.includes("DEBIT")
-                  ? "Transfer"
-                  : isDeposit
-                  ? "Deposit"
-                  : "Activity";
-              return (
-                <Pressable
-                  key={txKey}
-                  style={styles.txRow}
-                  onPress={() => (canOpen ? openExplorer(tx.txHash) : undefined)}
-                  disabled={!canOpen}
-                >
-                  <RNView style={[styles.txIconWrap, isDeposit ? styles.txIn : styles.txOut]}>
-                    <FontAwesome name={icon} size={12} color="#0d0d0d" />
-                  </RNView>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.txTitle}>
-                      {title}
-                    </Text>
-                    <Text style={styles.txMeta} numberOfLines={1}>
-                      {tx.txHash ? tx.txHash.slice(0, 12) + "..." : "On-chain"}
-                    </Text>
-                  </View>
-                  <RNView style={styles.txRight}>
-                    <Text style={styles.txAmount}>
-                      {isDeposit ? "+" : "-"} {amount} {symbol}
-                    </Text>
-                    {canOpen ? (
-                      <Pressable
-                        onPress={() => openExplorer(tx.txHash)}
-                        style={styles.txLink}
-                        hitSlop={8}
-                      >
-                        <FontAwesome name="external-link" size={12} color="#9ca3af" />
-                      </Pressable>
-                    ) : null}
-                  </RNView>
-                </Pressable>
-              );
-            })
+            <ScrollView
+              style={styles.txList}
+              contentContainerStyle={styles.txListContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              {transactions.map((tx, index) => {
+                const rawType = (tx.txType || tx.type || "").toString().toUpperCase();
+                const isDeposit =
+                  rawType.includes("DEPOSIT") ||
+                  rawType.includes("CREDIT") ||
+                  rawType.includes("RECEIVE");
+                const icon = isDeposit ? "arrow-down" : "arrow-up";
+                const symbol = (tx.tokenSymbol || "TOKEN").toString().toUpperCase();
+                const tokenDecimals =
+                  tx.metadata?.decimals ??
+                  (symbol === "MOVE" ? 8 : symbol === "USDC.E" || symbol === "USDC" ? 6 : 6);
+                const amount = formatTokenAmount(tx.amount, tokenDecimals);
+                const canOpen = !!tx.txHash;
+                const txKey = (tx.txHash || tx.id || `${symbol}-${tx.createdAt}-${index}`).toString();
+                const title =
+                  rawType.includes("TRANSFER") ||
+                  rawType.includes("WITHDRAW") ||
+                  rawType.includes("DEBIT")
+                    ? "Transfer"
+                    : isDeposit
+                    ? "Deposit"
+                    : "Activity";
+                return (
+                  <Pressable
+                    key={txKey}
+                    style={styles.txRow}
+                    onPress={() => (canOpen ? openExplorer(tx.txHash) : undefined)}
+                    disabled={!canOpen}
+                  >
+                    <RNView style={[styles.txIconWrap, isDeposit ? styles.txIn : styles.txOut]}>
+                      <FontAwesome name={icon} size={12} color="#0d0d0d" />
+                    </RNView>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.txTitle}>{title}</Text>
+                      <Text style={styles.txMeta} numberOfLines={1}>
+                        {tx.txHash ? tx.txHash.slice(0, 12) + "..." : "On-chain"}
+                      </Text>
+                    </View>
+                    <RNView style={styles.txRight}>
+                      <Text style={styles.txAmount}>
+                        {isDeposit ? "+" : "-"} {amount} {symbol}
+                      </Text>
+                      {canOpen ? (
+                        <Pressable
+                          onPress={() => openExplorer(tx.txHash)}
+                          style={styles.txLink}
+                          hitSlop={8}
+                        >
+                          <FontAwesome name="external-link" size={12} color="#9ca3af" />
+                        </Pressable>
+                      ) : null}
+                    </RNView>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           )}
         </View>
 
@@ -654,6 +665,8 @@ const styles = StyleSheet.create({
   txAmount: { color: "#fff", fontSize: 12, fontWeight: "700" },
   txRight: { alignItems: "flex-end", gap: 4 },
   txLink: { paddingLeft: 6, paddingVertical: 2 },
+  txList: { maxHeight: 260 },
+  txListContent: { paddingBottom: 2 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",

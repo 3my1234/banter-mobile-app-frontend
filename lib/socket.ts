@@ -7,14 +7,27 @@ let socketInstance: Socket | null = null;
 let connecting: Promise<Socket> | null = null;
 
 export async function getSocket(): Promise<Socket> {
-  if (socketInstance && socketInstance.connected) return socketInstance;
+  const session = await getSession();
+  const nextToken = session?.token;
+
+  if (socketInstance) {
+    const currentToken = (socketInstance.auth as any)?.token;
+    if (nextToken && currentToken !== nextToken) {
+      socketInstance.auth = { token: nextToken };
+      if (socketInstance.connected) {
+        socketInstance.disconnect();
+      }
+      socketInstance.connect();
+    }
+    if (socketInstance.connected) return socketInstance;
+  }
+
   if (connecting) return connecting;
 
   connecting = (async () => {
-    const session = await getSession();
     socketInstance = io(API_ORIGIN, {
       transports: ["websocket"],
-      auth: session?.token ? { token: session.token } : undefined,
+      auth: nextToken ? { token: nextToken } : undefined,
       autoConnect: true,
     });
     return socketInstance;

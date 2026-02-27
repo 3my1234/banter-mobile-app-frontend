@@ -308,6 +308,10 @@ const AuthLoginScreen = () => {
         "banter_session",
         JSON.stringify({ token: verified.token, email: sessionEmail })
       );
+      if (process.env.EXPO_PUBLIC_DEBUG_AUTH === "1") {
+        console.log("[AUTH DEBUG] Stored JWT:", verified.token);
+        console.log("[AUTH DEBUG] Session email:", sessionEmail);
+      }
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {
