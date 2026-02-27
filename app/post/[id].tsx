@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -517,7 +517,7 @@ socket.off("comment-deleted");
               </Text>
             ) : null}
             <Text style={styles.name}>
-              {displayName} <Text style={styles.handle}>{handle} � {createdAt}</Text>
+              {displayName} <Text style={styles.handle}>{handle} · {createdAt}</Text>
             </Text>
             {post.content?.trim() ? (
               <Text style={styles.body}>{stripRoastPrefix(post.content || "")}</Text>
@@ -1011,6 +1011,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
   },
+  headerSpacer: { width: 18 },
   headerTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
   postCard: { padding: 16, borderBottomColor: "#1d1d1d", borderBottomWidth: 1 },
   row: { flexDirection: "row", gap: 12 },
@@ -1245,6 +1246,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
 
 
 

@@ -417,8 +417,6 @@ export default function HomeFeed() {
         )
       );
     } catch (e: any) {
-      setPosts(prevPosts);
-      setBanters(prevBanters);
       showToast(e.message || "Failed to react");
     }
   };
@@ -595,9 +593,9 @@ export default function HomeFeed() {
     };
   }, []);
 
-  const pendingPostItems = useMemo(() => {
+  const pendingPostItems = useMemo<Post[]>(() => {
     if (!pendingPosts.length) return [] as Post[];
-    return pendingPosts.map((pending) => ({
+    return pendingPosts.map<Post>((pending) => ({
       id: pending.id,
       name: "You",
       handle: "@you",

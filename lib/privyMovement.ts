@@ -12,7 +12,7 @@ import { Buffer } from "buffer";
 
 type SignRawHashInput = {
   address: string;
-  chainType: "aptos" | "movement" | string;
+  chainType: string;
   hash: `0x${string}`;
 };
 
@@ -63,7 +63,7 @@ export async function sendMovementTransaction(
   transactionData: MovementTransactionData,
   walletAddress: string,
   publicKey: string,
-  signRawHash: (input: SignRawHashInput) => Promise<SignRawHashOutput>
+  signRawHash: (input: SignRawHashInput) => Promise<SignRawHashOutput> | Promise<any>
 ): Promise<string> {
   const movementConfig = new AptosConfig({
     network: Network.CUSTOM,

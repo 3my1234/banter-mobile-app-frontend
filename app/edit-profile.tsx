@@ -284,6 +284,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1d1d1d",
     borderBottomWidth: 1,
   },
+  headerSpacer: { width: 18 },
   headerTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
   saveBtn: {
     backgroundColor: "#ff6b35",

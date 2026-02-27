@@ -134,6 +134,9 @@ export default function Votes() {
 
       let wallet = solanaWallet.wallets?.[0];
       if (!wallet) {
+        if (typeof solanaWallet.create !== "function") {
+          throw new Error("Solana wallet creation is not available in this session.");
+        }
         await solanaWallet.create({ recoveryMethod: "privy" });
         wallet = solanaWallet.wallets?.[0];
       }
@@ -286,7 +289,7 @@ export default function Votes() {
         created.transactionData,
         created.fromAddress,
         publicKey,
-        signRawHash
+        signRawHash as any
       );
 
       const verified = await apiFetch("/payments/movement/votes/verify", {

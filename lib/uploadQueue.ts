@@ -22,7 +22,9 @@ const emit = () => {
 export const subscribePendingPosts = (listener: Listener) => {
   listeners.add(listener);
   listener([...pendingPosts]);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
 
 export const addPendingPost = (post: PendingPost) => {
