@@ -56,9 +56,8 @@ const formatStatLabel = (key: string) =>
 
 const resolveNomineeMediaUrl = (url?: string | null) => {
   if (!url) return undefined;
-  // Admin uploads may be configured outside media CDN path mapping.
-  if (url.includes("/admin-uploads/")) return url;
-  return normalizeMediaUrl(url);
+  // Prefer normalized CDN/media URL when possible; fallback to original URL.
+  return normalizeMediaUrl(url) || url;
 };
 
 export default function PCA() {
