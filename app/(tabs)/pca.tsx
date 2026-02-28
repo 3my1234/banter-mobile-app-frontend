@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { ResizeMode, Video } from "expo-av";
 import { Text } from "@/components/Themed";
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 
@@ -54,10 +54,37 @@ const formatStatLabel = (key: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+
+const toImageViewUrl = (key: string) => `${API_ORIGIN}/api/images/view/${key.replace(/^\/+/, "")}`;
+
+const extractPathFromUrl = (url: string) => {
+  try {
+    return new URL(url).pathname.replace(/^\/+/, "");
+  } catch {
+    return "";
+  }
+};
+
 const resolveNomineeMediaUrl = (url?: string | null) => {
   if (!url) return undefined;
-  // Prefer normalized CDN/media URL when possible; fallback to original URL.
-  return normalizeMediaUrl(url) || url;
+  const raw = url.trim();
+  if (!raw) return undefined;
+  if (raw.includes("/api/images/view/")) return raw;
+
+  // Raw S3 URLs are often private; always route through backend image view.
+  if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(raw)) {
+    const key = extractPathFromUrl(raw);
+    return key ? toImageViewUrl(key) : raw;
+  }
+
+  // Media CDN links for admin uploads can be served more reliably via backend view route.
+  if (raw.includes("/admin-uploads/") || raw.startsWith("admin-uploads/")) {
+    const key = raw.startsWith("admin-uploads/") ? raw : extractPathFromUrl(raw);
+    return key ? toImageViewUrl(key) : raw;
+  }
+
+  return normalizeMediaUrl(raw) || raw;
 };
 
 export default function PCA() {
