@@ -56,7 +56,7 @@ const formatStatLabel = (key: string) =>
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 
-const toImageViewUrl = (key: string) => `${API_ORIGIN}/api/images/view/${key.replace(/^\/+/, "")}`;
+const toImageViewUrl = (key: string) => `${API_ORIGIN}/api/public/images/view/${key.replace(/^\/+/, "")}`;
 
 const extractPathFromUrl = (url: string) => {
   try {
@@ -70,7 +70,9 @@ const resolveNomineeMediaUrl = (url?: string | null) => {
   if (!url) return undefined;
   const raw = url.trim();
   if (!raw) return undefined;
-  if (raw.includes("/api/images/view/")) return raw;
+  if (raw.includes("/api/images/view/")) {
+    return raw.replace("/api/images/view/", "/api/public/images/view/");
+  }
 
   // Raw S3 URLs are often private; always route through backend image view.
   if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(raw)) {
