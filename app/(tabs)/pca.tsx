@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -49,6 +51,7 @@ export default function PCA() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [voteBalance, setVoteBalance] = useState<number>(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submittingNomineeId, setSubmittingNomineeId] = useState<string | null>(null);
   const [voteAmountByNominee, setVoteAmountByNominee] = useState<Record<string, number>>({});
   const [showIntro, setShowIntro] = useState(false);
@@ -56,27 +59,39 @@ export default function PCA() {
   const loadPca = useCallback(async () => {
     try {
       setLoading(true);
-      const [categoryRes, meRes] = await Promise.all([
+      setLoadError(null);
+      const [categoryRes, meRes] = await Promise.allSettled([
         apiFetch(`/pca/categories?sport=${sport}&activeOnly=1`),
         apiFetch("/auth/me"),
       ]);
-      const nextCategories = Array.isArray(categoryRes?.categories)
-        ? categoryRes.categories
-        : [];
-      setCategories(nextCategories);
-      setVoteBalance(meRes?.user?.voteBalance ?? 0);
 
-      if (nextCategories.length > 0) {
-        setSelectedCategoryId((current) =>
-          current && nextCategories.some((c: Category) => c.id === current)
-            ? current
-            : nextCategories[0].id
-        );
+      if (categoryRes.status === "fulfilled") {
+        const nextCategories = Array.isArray(categoryRes.value?.categories)
+          ? categoryRes.value.categories
+          : [];
+        setCategories(nextCategories);
+        if (nextCategories.length > 0) {
+          setSelectedCategoryId((current) =>
+            current && nextCategories.some((c: Category) => c.id === current)
+              ? current
+              : nextCategories[0].id
+          );
+        } else {
+          setSelectedCategoryId(null);
+        }
       } else {
-        setSelectedCategoryId(null);
+        setLoadError(categoryRes.reason?.message || "PCA categories failed to load.");
+      }
+
+      if (meRes.status === "fulfilled") {
+        setVoteBalance(meRes.value?.user?.voteBalance ?? 0);
+      } else {
+        setLoadError((prev) =>
+          prev ? `${prev} Vote balance unavailable.` : "Vote balance unavailable."
+        );
       }
     } catch (error: any) {
-      Alert.alert("PCA", error?.message || "Failed to load PCA.");
+      setLoadError(error?.message || "Failed to load PCA.");
     } finally {
       setLoading(false);
     }
@@ -264,7 +279,7 @@ export default function PCA() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>People&apos;s Choice Awards</Text>
+          <Text style={styles.title}>People&apos;s Choice Awards</Text> 
           <TouchableOpacity onPress={() => setShowIntro(true)}>
             <Text style={styles.help}>How it works</Text>
           </TouchableOpacity>
@@ -299,7 +314,24 @@ export default function PCA() {
           ))}
         </ScrollView>
 
-        {loading ? <Text style={styles.loading}>Loading...</Text> : null}
+        {loading ? (
+          <View style={styles.loaderWrap}>
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={styles.loaderLogo}
+            />
+            <ActivityIndicator size="small" color="#ff6b35" />
+            <Text style={styles.loading}>Loading PCA...</Text>
+          </View>
+        ) : null}
+        {!loading && loadError ? (
+          <View style={styles.errorWrap}>
+            <Text style={styles.errorText}>{loadError}</Text>
+            <TouchableOpacity onPress={() => void loadPca()}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {!loading && !selectedCategory ? <Text style={styles.loading}>No active category yet.</Text> : null}
 
         {selectedCategory ? (
@@ -381,6 +413,11 @@ const styles = StyleSheet.create({
   categoryTabTitle: { color: "#fff", fontWeight: "700", fontSize: 12 },
   categoryTabSub: { color: "#a3a3a3", fontSize: 11, marginTop: 3 },
   loading: { color: "#9ca3af", marginTop: 14 },
+  loaderWrap: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 10 },
+  loaderLogo: { width: 22, height: 22, borderRadius: 4 },
+  errorWrap: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
+  errorText: { color: "#ff6b35", flex: 1, fontSize: 12 },
+  retryText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
   categoryHeader: {
     marginTop: 12,
     flexDirection: "row",
@@ -451,4 +488,3 @@ const styles = StyleSheet.create({
   },
   modalBtnText: { color: "#111", fontWeight: "700" },
 });
-
