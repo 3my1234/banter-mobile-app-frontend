@@ -16,6 +16,7 @@ import * as SecureStore from "expo-secure-store";
 import { ResizeMode, Video } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
+import { normalizeMediaUrl } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 
 type Sport = "SOCCER" | "BASKETBALL";
@@ -234,11 +235,9 @@ export default function PCA() {
 
   const renderNominee = ({ item }: { item: Nominee }) => {
     const amount = voteAmountByNominee[item.id] || 1;
-    const stats = Object.entries(item.stats || {}).filter(([, value]) => {
-      if (value == null || value === "") return false;
-      if (typeof value === "number") return value !== 0;
-      return String(value).trim() !== "" && String(value).trim() !== "0";
-    });
+    const stats = Object.entries(item.stats || {}).filter(([, value]) => value !== null && value !== undefined);
+    const imageUri = normalizeMediaUrl(item.imageUrl || undefined);
+    const videoUri = normalizeMediaUrl(item.videoUrl || undefined);
 
     return (
       <View style={styles.nomineeCard}>
@@ -252,14 +251,14 @@ export default function PCA() {
           <Text style={styles.nomineeVotes}>{item.voteCount.toLocaleString()} votes</Text>
         </View>
 
-        {item.imageUrl || item.videoUrl ? (
+        {imageUri || videoUri ? (
           <View style={styles.mediaGrid}>
-            {item.imageUrl ? (
-              <Image source={{ uri: item.imageUrl }} style={styles.mediaCard} resizeMode="cover" />
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.mediaCard} resizeMode="cover" />
             ) : null}
-            {item.videoUrl ? (
+            {videoUri ? (
               <Video
-                source={{ uri: item.videoUrl }}
+                source={{ uri: videoUri }}
                 style={styles.mediaCard}
                 useNativeControls
                 shouldPlay={false}
@@ -310,6 +309,14 @@ export default function PCA() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
+        {loading && categories.length === 0 ? (
+          <View style={styles.loaderCenterWrap}>
+            <Image source={require("../../assets/images/logo.jpg")} style={styles.loaderLogoLarge} />
+            <ActivityIndicator size="small" color="#ff6b35" />
+            <Text style={styles.loading}>Loading PCA...</Text>
+          </View>
+        ) : null}
+
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setShowIntro(true)}>
             <Text style={styles.help}>How it works</Text>
@@ -345,7 +352,7 @@ export default function PCA() {
           ))}
         </ScrollView>
 
-        {loading ? (
+        {loading && categories.length > 0 ? (
           <View style={styles.loaderWrap}>
             <Image source={require("../../assets/images/logo.jpg")} style={styles.loaderLogo} />
             <ActivityIndicator size="small" color="#ff6b35" />
@@ -440,8 +447,17 @@ const styles = StyleSheet.create({
   categoryTabTitle: { color: "#fff", fontWeight: "700", fontSize: 12 },
   categoryTabSub: { color: "#a3a3a3", fontSize: 11, marginTop: 3 },
   loading: { color: "#9ca3af", marginTop: 14 },
+  loaderCenterWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "rgba(13,13,13,0.92)",
+  },
   loaderWrap: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 10 },
   loaderLogo: { width: 24, height: 24, borderRadius: 6 },
+  loaderLogoLarge: { width: 58, height: 58, borderRadius: 12 },
   errorWrap: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   errorText: { color: "#ff6b35", flex: 1, fontSize: 12 },
   retryText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
