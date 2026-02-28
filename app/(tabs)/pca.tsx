@@ -101,6 +101,7 @@ export default function PCA() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [voteBalance, setVoteBalance] = useState<number>(0);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submittingNomineeId, setSubmittingNomineeId] = useState<string | null>(null);
   const [voteAmountByNominee, setVoteAmountByNominee] = useState<Record<string, number>>({});
@@ -147,6 +148,15 @@ export default function PCA() {
       setLoading(false);
     }
   }, [sport]);
+
+  const refreshPca = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      await loadPca();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadPca]);
 
   useEffect(() => {
     loadPca();
@@ -283,6 +293,7 @@ export default function PCA() {
     const imageError = mediaErrors[`${item.id}:image`];
     const videoError = mediaErrors[`${item.id}:video`];
     const mediaError = imageError || videoError;
+    const mediaCount = (imageUri ? 1 : 0) + (videoUri ? 1 : 0);
 
     return (
       <View style={styles.nomineeCard}>
@@ -301,7 +312,7 @@ export default function PCA() {
             {imageUri ? (
               <ExpoImage
                 source={{ uri: imageUri }}
-                style={styles.mediaCard}
+                style={[styles.mediaCard, mediaCount === 1 && styles.mediaCardSingle]}
                 contentFit="cover"
                 transition={150}
                 onError={(event) => {
@@ -313,7 +324,7 @@ export default function PCA() {
             {videoUri ? (
               <Video
                 source={{ uri: videoUri }}
-                style={styles.mediaCard}
+                style={[styles.mediaCard, mediaCount === 1 && styles.mediaCardSingle]}
                 useNativeControls
                 shouldPlay={false}
                 resizeMode={ResizeMode.COVER}
@@ -447,6 +458,8 @@ export default function PCA() {
               keyExtractor={(item) => item.id}
               renderItem={renderNominee}
               contentContainerStyle={styles.listContent}
+              refreshing={refreshing}
+              onRefresh={refreshPca}
             />
           </>
         ) : null}
@@ -544,15 +557,19 @@ const styles = StyleSheet.create({
   nomineeName: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
   nomineeMeta: { color: "#9ca3af", marginTop: 3, fontSize: 11 },
   nomineeVotes: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
-  mediaGrid: { gap: 8 },
+  mediaGrid: { flexDirection: "row", gap: 8 },
   mediaCard: {
-    width: "100%",
-    minHeight: 200,
-    maxHeight: 260,
+    flex: 1,
+    minHeight: 160,
+    maxHeight: 220,
     borderRadius: 10,
     backgroundColor: "#101010",
     borderWidth: 1,
     borderColor: "#2b2b2b",
+  },
+  mediaCardSingle: {
+    flex: 0,
+    width: "100%",
   },
   mediaError: { color: "#fca5a5", fontSize: 11 },
   statsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
