@@ -54,6 +54,13 @@ const formatStatLabel = (key: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+const resolveNomineeMediaUrl = (url?: string | null) => {
+  if (!url) return undefined;
+  // Admin uploads may be configured outside media CDN path mapping.
+  if (url.includes("/admin-uploads/")) return url;
+  return normalizeMediaUrl(url);
+};
+
 export default function PCA() {
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [categories, setCategories] = useState<Category[]>([]);
@@ -236,8 +243,8 @@ export default function PCA() {
   const renderNominee = ({ item }: { item: Nominee }) => {
     const amount = voteAmountByNominee[item.id] || 1;
     const stats = Object.entries(item.stats || {}).filter(([, value]) => value !== null && value !== undefined);
-    const imageUri = normalizeMediaUrl(item.imageUrl || undefined);
-    const videoUri = normalizeMediaUrl(item.videoUrl || undefined);
+    const imageUri = resolveNomineeMediaUrl(item.imageUrl || undefined);
+    const videoUri = resolveNomineeMediaUrl(item.videoUrl || undefined);
 
     return (
       <View style={styles.nomineeCard}>
