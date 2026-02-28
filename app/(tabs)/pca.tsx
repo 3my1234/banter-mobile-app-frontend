@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { ResizeMode, Video } from "expo-av";
+import { Image as ExpoImage } from "expo-image";
 import { Text } from "@/components/Themed";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
@@ -70,8 +70,14 @@ const resolveNomineeMediaUrl = (url?: string | null) => {
   if (!url) return undefined;
   const raw = url.trim();
   if (!raw) return undefined;
+  if (raw.includes("/api/public/images/view/")) {
+    return raw;
+  }
   if (raw.includes("/api/images/view/")) {
     return raw.replace("/api/images/view/", "/api/public/images/view/");
+  }
+  if (raw.startsWith("admin-uploads/") || raw.startsWith("user-uploads/")) {
+    return toImageViewUrl(raw);
   }
 
   // Raw S3 URLs are often private; always route through backend image view.
@@ -99,6 +105,7 @@ export default function PCA() {
   const [submittingNomineeId, setSubmittingNomineeId] = useState<string | null>(null);
   const [voteAmountByNominee, setVoteAmountByNominee] = useState<Record<string, number>>({});
   const [showIntro, setShowIntro] = useState(false);
+  const [mediaErrors, setMediaErrors] = useState<Record<string, string>>({});
 
   const loadPca = useCallback(async () => {
     try {
@@ -273,6 +280,9 @@ export default function PCA() {
     const stats = Object.entries(item.stats || {}).filter(([, value]) => value !== null && value !== undefined);
     const imageUri = resolveNomineeMediaUrl(item.imageUrl || undefined);
     const videoUri = resolveNomineeMediaUrl(item.videoUrl || undefined);
+    const imageError = mediaErrors[`${item.id}:image`];
+    const videoError = mediaErrors[`${item.id}:video`];
+    const mediaError = imageError || videoError;
 
     return (
       <View style={styles.nomineeCard}>
@@ -289,7 +299,16 @@ export default function PCA() {
         {imageUri || videoUri ? (
           <View style={styles.mediaGrid}>
             {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.mediaCard} resizeMode="cover" />
+              <ExpoImage
+                source={{ uri: imageUri }}
+                style={styles.mediaCard}
+                contentFit="cover"
+                transition={150}
+                onError={(event) => {
+                  const message = (event as any)?.error || "Image failed to load";
+                  setMediaErrors((prev) => ({ ...prev, [`${item.id}:image`]: String(message) }));
+                }}
+              />
             ) : null}
             {videoUri ? (
               <Video
@@ -299,10 +318,16 @@ export default function PCA() {
                 shouldPlay={false}
                 resizeMode={ResizeMode.COVER}
                 isLooping
+                onError={(message) => {
+                  setMediaErrors((prev) => ({ ...prev, [`${item.id}:video`]: String(message || "Video failed to load") }));
+                }}
               />
             ) : null}
+            {mediaError ? <Text style={styles.mediaError}>Media failed to load</Text> : null}
           </View>
-        ) : null}
+        ) : (
+          <Text style={styles.mediaError}>No media attached for this nominee</Text>
+        )}
 
         {stats.length > 0 ? (
           <View style={styles.statsWrap}>
@@ -346,7 +371,7 @@ export default function PCA() {
       <View style={styles.container}>
         {loading && categories.length === 0 ? (
           <View style={styles.loaderCenterWrap}>
-            <Image source={require("../../assets/images/logo.jpg")} style={styles.loaderLogoLarge} />
+            <ExpoImage source={require("../../assets/images/logo.jpg")} style={styles.loaderLogoLarge} />
             <ActivityIndicator size="small" color="#ff6b35" />
             <Text style={styles.loading}>Loading PCA...</Text>
           </View>
@@ -389,7 +414,7 @@ export default function PCA() {
 
         {loading && categories.length > 0 ? (
           <View style={styles.loaderWrap}>
-            <Image source={require("../../assets/images/logo.jpg")} style={styles.loaderLogo} />
+            <ExpoImage source={require("../../assets/images/logo.jpg")} style={styles.loaderLogo} />
             <ActivityIndicator size="small" color="#ff6b35" />
             <Text style={styles.loading}>Loading PCA...</Text>
           </View>
@@ -519,16 +544,17 @@ const styles = StyleSheet.create({
   nomineeName: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
   nomineeMeta: { color: "#9ca3af", marginTop: 3, fontSize: 11 },
   nomineeVotes: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
-  mediaGrid: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  mediaGrid: { gap: 8 },
   mediaCard: {
     width: "100%",
-    maxWidth: 180,
-    aspectRatio: 16 / 10,
+    minHeight: 200,
+    maxHeight: 260,
     borderRadius: 10,
     backgroundColor: "#101010",
     borderWidth: 1,
     borderColor: "#2b2b2b",
   },
+  mediaError: { color: "#fca5a5", fontSize: 11 },
   statsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   statChip: {
     backgroundColor: "#1f1f1f",
