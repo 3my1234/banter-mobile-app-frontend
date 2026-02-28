@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -27,6 +28,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { API_BASE_URL } from "@/lib/api";
 import { Buffer } from "buffer";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type Bundle = {
   id: string;
@@ -45,28 +47,38 @@ export default function Votes() {
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
 
+  const loadVotesPage = async () => {
+    try {
+      setLoading(true);
+      const bundleData = await apiFetch("/payments/votes/bundles");
+      setBundles(bundleData?.bundles || []);
+
+      const me = await apiFetch("/auth/me");
+      setBalance(me?.user?.voteBalance ?? 0);
+    } catch {
+      // Keep defaults
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const bundleData = await apiFetch("/payments/votes/bundles");
-        setBundles(bundleData?.bundles || []);
-
-        const me = await apiFetch("/auth/me");
-        setBalance(me?.user?.voteBalance ?? 0);
-      } catch {
-        // Keep defaults
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
+    loadVotesPage();
   }, []);
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await loadVotesPage();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const refreshBalance = async () => {
     const me = await apiFetch("/auth/me");
@@ -400,7 +412,20 @@ export default function Votes() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading votes..." : "Refreshing..."} />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+      >
         <Text style={styles.title}>Votes</Text>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Your vote balance</Text>

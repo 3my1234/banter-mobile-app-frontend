@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type NotificationItem = {
   id: string;
@@ -86,6 +87,7 @@ const buildDailyFallbackNotification = (meUser: any): NotificationItem | null =>
 export default function Notifications() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NotificationItem | null>(null);
 
@@ -228,9 +230,19 @@ export default function Notifications() {
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await loadNotifications();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
+        <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading notifications..." : "Refreshing..."} />
         <View style={styles.header}>
           <Text style={styles.title}>Notifications</Text>
           <Pressable onPress={markAllRead} disabled={unreadCount === 0}>
@@ -241,13 +253,21 @@ export default function Notifications() {
         </View>
         <Text style={styles.subtle}>{unreadCount} unread</Text>
 
-        {loading ? <Text style={styles.subtle}>Loading...</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingVertical: 12 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="transparent"
+              colors={["transparent"]}
+              progressBackgroundColor="transparent"
+            />
+          }
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListEmptyComponent={
             !loading ? <Text style={styles.subtle}>No notifications yet.</Text> : null

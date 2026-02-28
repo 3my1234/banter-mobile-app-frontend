@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -18,6 +18,7 @@ import { Text } from "@/components/Themed";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type Sport = "SOCCER" | "BASKETBALL";
 
@@ -66,33 +67,48 @@ const extractPathFromUrl = (url: string) => {
   }
 };
 
-const resolveNomineeMediaUrl = (url?: string | null) => {
+const resolveNomineeMediaUrls = (url?: string | null) => {
   if (!url) return undefined;
   const raw = url.trim();
   if (!raw) return undefined;
+
+  const toResult = (primary?: string, fallback?: string) => {
+    if (!primary && !fallback) return undefined;
+    return { primary, fallback };
+  };
+
   if (raw.includes("/api/public/images/view/")) {
-    return raw;
+    const key = raw.split("/api/public/images/view/")[1]?.replace(/^\/+/, "");
+    const primary = key ? normalizeMediaUrl(key) || undefined : undefined;
+    return toResult(primary, raw);
   }
   if (raw.includes("/api/images/view/")) {
-    return raw.replace("/api/images/view/", "/api/public/images/view/");
+    const publicView = raw.replace("/api/images/view/", "/api/public/images/view/");
+    const key = publicView.split("/api/public/images/view/")[1]?.replace(/^\/+/, "");
+    const primary = key ? normalizeMediaUrl(key) || undefined : undefined;
+    return toResult(primary, publicView);
   }
   if (raw.startsWith("admin-uploads/") || raw.startsWith("user-uploads/")) {
-    return toImageViewUrl(raw);
+    const fallback = toImageViewUrl(raw);
+    const primary = normalizeMediaUrl(raw) || undefined;
+    return toResult(primary, fallback);
   }
 
-  // Raw S3 URLs are often private; always route through backend image view.
   if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(raw)) {
     const key = extractPathFromUrl(raw);
-    return key ? toImageViewUrl(key) : raw;
+    const fallback = key ? toImageViewUrl(key) : undefined;
+    const primary = normalizeMediaUrl(raw) || undefined;
+    return toResult(primary, fallback);
   }
 
-  // Media CDN links for admin uploads can be served more reliably via backend view route.
   if (raw.includes("/admin-uploads/") || raw.startsWith("admin-uploads/")) {
     const key = raw.startsWith("admin-uploads/") ? raw : extractPathFromUrl(raw);
-    return key ? toImageViewUrl(key) : raw;
+    const fallback = key ? toImageViewUrl(key) : undefined;
+    const primary = normalizeMediaUrl(raw) || undefined;
+    return toResult(primary, fallback);
   }
 
-  return normalizeMediaUrl(raw) || raw;
+  return toResult(normalizeMediaUrl(raw) || raw);
 };
 
 export default function PCA() {
@@ -107,6 +123,8 @@ export default function PCA() {
   const [voteAmountByNominee, setVoteAmountByNominee] = useState<Record<string, number>>({});
   const [showIntro, setShowIntro] = useState(false);
   const [mediaErrors, setMediaErrors] = useState<Record<string, string>>({});
+  const [mediaFallback, setMediaFallback] = useState<Record<string, boolean>>({});
+  const [expandedImageUri, setExpandedImageUri] = useState<string | null>(null);
 
   const loadPca = useCallback(async () => {
     try {
@@ -288,8 +306,16 @@ export default function PCA() {
   const renderNominee = ({ item }: { item: Nominee }) => {
     const amount = voteAmountByNominee[item.id] || 1;
     const stats = Object.entries(item.stats || {}).filter(([, value]) => value !== null && value !== undefined);
-    const imageUri = resolveNomineeMediaUrl(item.imageUrl || undefined);
-    const videoUri = resolveNomineeMediaUrl(item.videoUrl || undefined);
+    const imageSources = resolveNomineeMediaUrls(item.imageUrl || undefined);
+    const videoSources = resolveNomineeMediaUrls(item.videoUrl || undefined);
+    const imageFallbackKey = `${item.id}:image:fallback`;
+    const videoFallbackKey = `${item.id}:video:fallback`;
+    const imageUri = mediaFallback[imageFallbackKey]
+      ? imageSources?.fallback || imageSources?.primary
+      : imageSources?.primary || imageSources?.fallback;
+    const videoUri = mediaFallback[videoFallbackKey]
+      ? videoSources?.fallback || videoSources?.primary
+      : videoSources?.primary || videoSources?.fallback;
     const imageError = mediaErrors[`${item.id}:image`];
     const videoError = mediaErrors[`${item.id}:video`];
     const mediaError = imageError || videoError;
@@ -310,16 +336,22 @@ export default function PCA() {
         {imageUri || videoUri ? (
           <View style={styles.mediaGrid}>
             {imageUri ? (
-              <ExpoImage
-                source={{ uri: imageUri }}
-                style={[styles.mediaCard, mediaCount === 1 && styles.mediaCardSingle]}
-                contentFit="cover"
-                transition={150}
-                onError={(event) => {
-                  const message = (event as any)?.error || "Image failed to load";
-                  setMediaErrors((prev) => ({ ...prev, [`${item.id}:image`]: String(message) }));
-                }}
-              />
+              <Pressable onPress={() => setExpandedImageUri(imageUri)} style={styles.mediaTap}>
+                <ExpoImage
+                  source={{ uri: imageUri }}
+                  style={[styles.mediaCard, mediaCount === 1 && styles.mediaCardSingle]}
+                  contentFit="cover"
+                  transition={150}
+                  onError={(event) => {
+                    if (!mediaFallback[imageFallbackKey] && imageSources?.fallback) {
+                      setMediaFallback((prev) => ({ ...prev, [imageFallbackKey]: true }));
+                      return;
+                    }
+                    const message = (event as any)?.error || "Image failed to load";
+                    setMediaErrors((prev) => ({ ...prev, [`${item.id}:image`]: String(message) }));
+                  }}
+                />
+              </Pressable>
             ) : null}
             {videoUri ? (
               <Video
@@ -330,6 +362,10 @@ export default function PCA() {
                 resizeMode={ResizeMode.COVER}
                 isLooping
                 onError={(message) => {
+                  if (!mediaFallback[videoFallbackKey] && videoSources?.fallback) {
+                    setMediaFallback((prev) => ({ ...prev, [videoFallbackKey]: true }));
+                    return;
+                  }
                   setMediaErrors((prev) => ({ ...prev, [`${item.id}:video`]: String(message || "Video failed to load") }));
                 }}
               />
@@ -380,13 +416,10 @@ export default function PCA() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
-        {loading && categories.length === 0 ? (
-          <View style={styles.loaderCenterWrap}>
-            <ExpoImage source={require("../../assets/images/logo.jpg")} style={styles.loaderLogoLarge} />
-            <ActivityIndicator size="small" color="#ff6b35" />
-            <Text style={styles.loading}>Loading PCA...</Text>
-          </View>
-        ) : null}
+        <CenteredHeartbeatLoader
+          visible={loading || refreshing}
+          text={loading ? "Loading PCA..." : "Refreshing..."}
+        />
 
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setShowIntro(true)}>
@@ -423,13 +456,6 @@ export default function PCA() {
           ))}
         </ScrollView>
 
-        {loading && categories.length > 0 ? (
-          <View style={styles.loaderWrap}>
-            <ExpoImage source={require("../../assets/images/logo.jpg")} style={styles.loaderLogo} />
-            <ActivityIndicator size="small" color="#ff6b35" />
-            <Text style={styles.loading}>Loading PCA...</Text>
-          </View>
-        ) : null}
         {!loading && loadError ? (
           <View style={styles.errorWrap}>
             <Text style={styles.errorText}>{loadError}</Text>
@@ -458,8 +484,15 @@ export default function PCA() {
               keyExtractor={(item) => item.id}
               renderItem={renderNominee}
               contentContainerStyle={styles.listContent}
-              refreshing={refreshing}
-              onRefresh={refreshPca}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={refreshPca}
+                  tintColor="transparent"
+                  colors={["transparent"]}
+                  progressBackgroundColor="transparent"
+                />
+              }
             />
           </>
         ) : null}
@@ -483,6 +516,24 @@ export default function PCA() {
               <Text style={styles.modalBtnText}>Got it</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      <Modal visible={Boolean(expandedImageUri)} transparent animationType="fade">
+        <View style={styles.previewBackdrop}>
+          <Pressable style={styles.previewClose} onPress={() => setExpandedImageUri(null)}>
+            <Text style={styles.previewCloseText}>×</Text>
+          </Pressable>
+          <Pressable style={styles.previewBody} onPress={() => setExpandedImageUri(null)}>
+            {expandedImageUri ? (
+              <ExpoImage
+                source={{ uri: expandedImageUri }}
+                style={styles.previewImage}
+                contentFit="contain"
+                transition={120}
+              />
+            ) : null}
+          </Pressable>
         </View>
       </Modal>
     </SafeAreaView>
@@ -520,17 +571,6 @@ const styles = StyleSheet.create({
   categoryTabTitle: { color: "#fff", fontWeight: "700", fontSize: 12 },
   categoryTabSub: { color: "#a3a3a3", fontSize: 11, marginTop: 3 },
   loading: { color: "#9ca3af", marginTop: 14 },
-  loaderCenterWrap: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: "rgba(13,13,13,0.92)",
-  },
-  loaderWrap: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  loaderLogo: { width: 24, height: 24, borderRadius: 6 },
-  loaderLogoLarge: { width: 58, height: 58, borderRadius: 12 },
   errorWrap: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   errorText: { color: "#ff6b35", flex: 1, fontSize: 12 },
   retryText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
@@ -558,6 +598,7 @@ const styles = StyleSheet.create({
   nomineeMeta: { color: "#9ca3af", marginTop: 3, fontSize: 11 },
   nomineeVotes: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
   mediaGrid: { flexDirection: "row", gap: 8 },
+  mediaTap: { flex: 1 },
   mediaCard: {
     flex: 1,
     minHeight: 160,
@@ -618,4 +659,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { color: "#111", fontWeight: "700" },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+  },
+  previewClose: {
+    position: "absolute",
+    top: 46,
+    right: 18,
+    zIndex: 3,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(17,17,17,0.88)",
+  },
+  previewCloseText: { color: "#fff", fontSize: 24, lineHeight: 24 },
+  previewBody: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  previewImage: { width: "100%", height: "82%" },
 });

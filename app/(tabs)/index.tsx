@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   Share,
   StyleSheet,
   ToastAndroid,
@@ -24,6 +25,7 @@ import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
 import { useRouter } from "expo-router";
 import VoteGauge from "@/components/VoteGauge";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
@@ -1386,12 +1388,10 @@ export default function HomeFeed() {
           </View>
         ) : null}
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator />
-            <Text style={styles.muted}>
-              {mainTab === "posts" ? "Loading posts..." : "Loading banter..."}
-            </Text>
-          </View>
+          <CenteredHeartbeatLoader
+            visible
+            text={mainTab === "posts" ? "Loading posts..." : "Loading banter..."}
+          />
         ) : null}
 
         {mainTab === "posts" ? (
@@ -1401,8 +1401,15 @@ export default function HomeFeed() {
             renderItem={renderPostItem}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
             contentContainerStyle={{ paddingBottom: 100 }}
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="transparent"
+                colors={["transparent"]}
+                progressBackgroundColor="transparent"
+              />
+            }
             estimatedItemSize={520}
             drawDistance={windowHeight * 2}
             viewabilityConfig={viewabilityConfig.current}
@@ -1419,8 +1426,15 @@ export default function HomeFeed() {
             contentContainerStyle={{ paddingBottom: 0 }}
             snapToInterval={windowHeight}
             snapToAlignment="start"
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="transparent"
+                colors={["transparent"]}
+                progressBackgroundColor="transparent"
+              />
+            }
             estimatedItemSize={windowHeight}
             drawDistance={windowHeight * 2}
             viewabilityConfig={viewabilityConfig.current}

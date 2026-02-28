@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -22,6 +22,7 @@ import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
 import { usePrivy } from "@privy-io/expo";
 import { disconnectSocket } from "@/lib/socket";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type Session = { token: string; email?: string };
 
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null);
   const [balances, setBalances] = useState<Record<string, any> | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [syncingWallets, setSyncingWallets] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
   const movementExplorerBase =
@@ -173,6 +175,15 @@ export default function ProfileScreen() {
     fetchPosts();
   }, [me]);
 
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([fetchMe(), fetchWalletData()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await privyLogout();
@@ -271,10 +282,9 @@ export default function ProfileScreen() {
 
   if (!sessionLoaded) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.muted}>Loading your profile...</Text>
-      </View>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <CenteredHeartbeatLoader visible text="Loading your profile..." />
+      </SafeAreaView>
     );
   }
 
@@ -303,9 +313,21 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading profile..." : "Refreshing..."} />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+      >
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading ? <Text style={styles.muted}>Loading profile…</Text> : null}
 
         <Pressable style={styles.bannerWrap} onPress={() => bannerUrl && setShowBanner(true)}>
           {bannerUrl ? (

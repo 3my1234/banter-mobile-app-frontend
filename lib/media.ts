@@ -128,15 +128,17 @@ export function normalizeMediaUrl(url?: string | null) {
   if (!url) return undefined;
   let normalized = url;
   const viewPrefix = "/api/images/view/";
+  const publicViewPrefix = "/api/public/images/view/";
   if (normalized.startsWith("http://localhost") || normalized.startsWith("http://127.") || normalized.startsWith("http://0.0.0.0")) {
     normalized = normalized.replace(/^http:\/\/[^/]+/, API_ORIGIN);
   }
   if (normalized.startsWith("/api/")) {
     normalized = `${API_ORIGIN}${normalized}`;
   }
-  if (normalized.includes(viewPrefix)) {
-    const idx = normalized.indexOf(viewPrefix);
-    const key = normalized.slice(idx + viewPrefix.length).replace(/^\/+/, "");
+  if (normalized.includes(publicViewPrefix) || normalized.includes(viewPrefix)) {
+    const targetPrefix = normalized.includes(publicViewPrefix) ? publicViewPrefix : viewPrefix;
+    const idx = normalized.indexOf(targetPrefix);
+    const key = normalized.slice(idx + targetPrefix.length).replace(/^\/+/, "");
     if (key) {
       return toCdnUrl(key);
     }

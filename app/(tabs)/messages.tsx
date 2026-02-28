@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
+import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type MessageItem = {
   id: string;
@@ -15,15 +16,20 @@ type MessageItem = {
 
 export default function MessagesScreen() {
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadMessages = useCallback(async () => {
     try {
+      setLoading(true);
       // Messaging backend routes are optional in this app version.
       const response = await apiFetch("/messages?limit=50");
       const items = Array.isArray(response?.messages) ? response.messages : [];
       setMessages(items);
     } catch {
       setMessages([]);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -33,14 +39,33 @@ export default function MessagesScreen() {
     }, [loadMessages])
   );
 
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await loadMessages();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
+        <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading messages..." : "Refreshing..."} />
         <Text style={styles.title}>Messages</Text>
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingTop: 12 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="transparent"
+              colors={["transparent"]}
+              progressBackgroundColor="transparent"
+            />
+          }
           ListEmptyComponent={<Text style={styles.empty}>No messages</Text>}
           renderItem={({ item }) => (
             <View style={styles.row}>
