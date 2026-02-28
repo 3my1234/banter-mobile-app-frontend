@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
+import { ResizeMode, Video } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -25,6 +26,8 @@ type Nominee = {
   team?: string | null;
   country?: string | null;
   position?: string | null;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
   voteCount: number;
   stats?: Record<string, number | string> | null;
 };
@@ -44,6 +47,11 @@ type Category = {
 };
 
 const INTRO_SEEN_KEY = "banter_pca_intro_seen_v1";
+
+const formatStatLabel = (key: string) =>
+  key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export default function PCA() {
   const [sport, setSport] = useState<Sport>("SOCCER");
@@ -226,24 +234,48 @@ export default function PCA() {
 
   const renderNominee = ({ item }: { item: Nominee }) => {
     const amount = voteAmountByNominee[item.id] || 1;
+    const stats = Object.entries(item.stats || {}).filter(([, value]) => {
+      if (value == null || value === "") return false;
+      if (typeof value === "number") return value !== 0;
+      return String(value).trim() !== "" && String(value).trim() !== "0";
+    });
+
     return (
       <View style={styles.nomineeCard}>
         <View style={styles.nomineeTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.nomineeName}>{item.name}</Text>
             <Text style={styles.nomineeMeta}>
-              {[item.team, item.position, item.country].filter(Boolean).join(" • ") || "Nominee"}
+              {[item.team, item.position, item.country].filter(Boolean).join(" - ") || "Nominee"}
             </Text>
           </View>
           <Text style={styles.nomineeVotes}>{item.voteCount.toLocaleString()} votes</Text>
         </View>
 
-        {item.stats && Object.keys(item.stats).length > 0 ? (
+        {item.imageUrl || item.videoUrl ? (
+          <View style={styles.mediaGrid}>
+            {item.imageUrl ? (
+              <Image source={{ uri: item.imageUrl }} style={styles.mediaCard} resizeMode="cover" />
+            ) : null}
+            {item.videoUrl ? (
+              <Video
+                source={{ uri: item.videoUrl }}
+                style={styles.mediaCard}
+                useNativeControls
+                shouldPlay={false}
+                resizeMode={ResizeMode.COVER}
+                isLooping
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {stats.length > 0 ? (
           <View style={styles.statsWrap}>
-            {Object.entries(item.stats).map(([key, value]) => (
+            {stats.map(([key, value]) => (
               <View key={key} style={styles.statChip}>
                 <Text style={styles.statText}>
-                  {key}: {String(value)}
+                  {formatStatLabel(key)}: {String(value)}
                 </Text>
               </View>
             ))}
@@ -279,7 +311,6 @@ export default function PCA() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>People&apos;s Choice Awards</Text> 
           <TouchableOpacity onPress={() => setShowIntro(true)}>
             <Text style={styles.help}>How it works</Text>
           </TouchableOpacity>
@@ -316,10 +347,7 @@ export default function PCA() {
 
         {loading ? (
           <View style={styles.loaderWrap}>
-            <Image
-              source={require("../../assets/images/logo.png")}
-              style={styles.loaderLogo}
-            />
+            <Image source={require("../../assets/images/logo.jpg")} style={styles.loaderLogo} />
             <ActivityIndicator size="small" color="#ff6b35" />
             <Text style={styles.loading}>Loading PCA...</Text>
           </View>
@@ -384,8 +412,7 @@ export default function PCA() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0d0d0d" },
   container: { flex: 1, backgroundColor: "#0d0d0d", paddingHorizontal: 14, paddingTop: 10 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: { color: "#fafafa", fontSize: 22, fontWeight: "700" },
+  header: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", minHeight: 24 },
   help: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
   balance: { color: "#f5f5f5", marginTop: 8, fontWeight: "700" },
   sportSwitch: { flexDirection: "row", gap: 8, marginTop: 12 },
@@ -414,7 +441,7 @@ const styles = StyleSheet.create({
   categoryTabSub: { color: "#a3a3a3", fontSize: 11, marginTop: 3 },
   loading: { color: "#9ca3af", marginTop: 14 },
   loaderWrap: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  loaderLogo: { width: 22, height: 22, borderRadius: 4 },
+  loaderLogo: { width: 24, height: 24, borderRadius: 6 },
   errorWrap: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   errorText: { color: "#ff6b35", flex: 1, fontSize: 12 },
   retryText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
@@ -441,6 +468,16 @@ const styles = StyleSheet.create({
   nomineeName: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
   nomineeMeta: { color: "#9ca3af", marginTop: 3, fontSize: 11 },
   nomineeVotes: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
+  mediaGrid: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  mediaCard: {
+    width: "100%",
+    maxWidth: 180,
+    aspectRatio: 16 / 10,
+    borderRadius: 10,
+    backgroundColor: "#101010",
+    borderWidth: 1,
+    borderColor: "#2b2b2b",
+  },
   statsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   statChip: {
     backgroundColor: "#1f1f1f",
