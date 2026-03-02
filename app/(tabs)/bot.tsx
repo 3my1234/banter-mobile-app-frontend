@@ -14,17 +14,32 @@ type Sport = "SOCCER" | "BASKETBALL";
 
 type RolleyPick = {
   id: string;
+  external_match_id?: string;
   date: string;
   sport: Sport;
   league: string;
   home_team: string;
   away_team: string;
+  kick_off_utc?: string;
   market: string;
   selection: string;
   confidence: number;
+  implied_odds?: number;
   rationale: string;
   model_version: string;
+  is_primary?: boolean;
+  settlement_outcome?: "PENDING" | "WIN" | "LOSS" | "VOID";
+  settlement_notes?: string | null;
+  settled_at?: string | null;
   created_at: string;
+};
+
+type DailyResponse = {
+  date: string;
+  sport: Sport;
+  primary_pick?: RolleyPick | null;
+  alternatives?: RolleyPick[];
+  picks?: RolleyPick[];
 };
 
 const ROLLEY_SERVICE_URL =
@@ -50,6 +65,8 @@ const formatDateTime = (iso?: string) => {
 export default function RolleyBotScreen() {
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [picks, setPicks] = useState<RolleyPick[]>([]);
+  const [primaryPick, setPrimaryPick] = useState<RolleyPick | null>(null);
+  const [alternatives, setAlternatives] = useState<RolleyPick[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,11 +83,20 @@ export default function RolleyBotScreen() {
         const message = await response.text().catch(() => "");
         throw new Error(message || `Rolley service error (${response.status})`);
       }
-      const data = await response.json();
-      setPicks(Array.isArray(data?.picks) ? data.picks : []);
+      const data: DailyResponse = await response.json();
+      const all = Array.isArray(data?.picks) ? data.picks : [];
+      const primary = data?.primary_pick || all.find((pick) => pick?.is_primary) || null;
+      const alts = Array.isArray(data?.alternatives)
+        ? data.alternatives
+        : all.filter((pick) => pick.id !== primary?.id);
+      setPicks(all);
+      setPrimaryPick(primary);
+      setAlternatives(alts);
     } catch (e: any) {
       setError(e?.message || "Failed to load Rolley picks");
       setPicks([]);
+      setPrimaryPick(null);
+      setAlternatives([]);
     } finally {
       setLoading(false);
     }
@@ -152,11 +178,38 @@ export default function RolleyBotScreen() {
         {!error && picks.length === 0 ? (
           <View style={styles.card}>
             <Text style={styles.empty}>No picks available yet for {sport}.</Text>
-            <Text style={styles.emptySub}>The standalone Rolley cron may still be generating today’s slate.</Text>
+            <Text style={styles.emptySub}>The standalone Rolley cron may still be generating today's slate.</Text>
           </View>
         ) : null}
 
-        {picks.map((pick) => (
+        {primaryPick ? (
+          <View style={styles.primaryCard}>
+            <View style={styles.pickHead}>
+              <Text style={styles.primaryLabel}>Primary Pick (used for stake)</Text>
+              <Text style={styles.confidence}>{formatPct(primaryPick.confidence)}</Text>
+            </View>
+            <Text style={styles.match}>{primaryPick.home_team} vs {primaryPick.away_team}</Text>
+            <Text style={styles.league}>{primaryPick.league}</Text>
+            <View style={styles.marketWrap}>
+              <Text style={styles.market}>{primaryPick.market}</Text>
+              <Text style={styles.selection}>{primaryPick.selection}</Text>
+              {typeof primaryPick.implied_odds === "number" ? (
+                <Text style={styles.odds}>x{primaryPick.implied_odds.toFixed(3)}</Text>
+              ) : null}
+            </View>
+            <Text style={styles.reason}>{primaryPick.rationale}</Text>
+            <Text style={styles.foot}>Generated: {formatDateTime(primaryPick.created_at)}</Text>
+            <Text style={styles.stakeNote}>Stake engine uses this primary pick only.</Text>
+          </View>
+        ) : null}
+
+        {alternatives.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.altTitle}>Alternative Picks</Text>
+          </View>
+        ) : null}
+
+        {alternatives.map((pick) => (
           <View key={pick.id} style={styles.pickCard}>
             <View style={styles.pickHead}>
               <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
@@ -166,6 +219,9 @@ export default function RolleyBotScreen() {
             <View style={styles.marketWrap}>
               <Text style={styles.market}>{pick.market}</Text>
               <Text style={styles.selection}>{pick.selection}</Text>
+              {typeof pick.implied_odds === "number" ? (
+                <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
+              ) : null}
             </View>
             <Text style={styles.reason}>{pick.rationale}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
@@ -225,6 +281,24 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
+  primaryCard: {
+    backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  primaryLabel: {
+    color: "#ff6b35",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  altTitle: {
+    color: "#f5f5f5",
+    fontWeight: "700",
+    fontSize: 13,
+  },
   pickHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
   match: { color: "#fafafa", fontSize: 14, fontWeight: "700", flex: 1 },
   confidence: { color: "#22c55e", fontSize: 13, fontWeight: "700" },
@@ -240,6 +314,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   selection: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  odds: { color: "#9ca3af", fontSize: 11, fontWeight: "600" },
   reason: { color: "#d1d5db", fontSize: 12, lineHeight: 17 },
   foot: { color: "#6b7280", fontSize: 10, marginTop: 2 },
+  stakeNote: { color: "#9ca3af", fontSize: 11, marginTop: 2 },
 });
