@@ -92,6 +92,19 @@ const formatRol = (value?: number) => {
   return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
 };
 
+const getSettlementUi = (outcome?: RolleyPick["settlement_outcome"]) => {
+  switch (outcome) {
+    case "WIN":
+      return { label: "WIN ✅", color: "#22c55e", bg: "rgba(34,197,94,0.16)" };
+    case "LOSS":
+      return { label: "LOSS ❌", color: "#ef4444", bg: "rgba(239,68,68,0.16)" };
+    case "VOID":
+      return { label: "VOID ⏺", color: "#eab308", bg: "rgba(234,179,8,0.16)" };
+    default:
+      return { label: "PENDING", color: "#9ca3af", bg: "rgba(156,163,175,0.14)" };
+  }
+};
+
 export default function RolleyBotScreen() {
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [picks, setPicks] = useState<RolleyPick[]>([]);
@@ -389,6 +402,21 @@ export default function RolleyBotScreen() {
               <Text style={styles.primaryLabel}>Primary Pick (used for stake)</Text>
               <Text style={styles.confidence}>{formatPct(primaryPick.confidence)}</Text>
             </View>
+            <View
+              style={[
+                styles.outcomePill,
+                { backgroundColor: getSettlementUi(primaryPick.settlement_outcome).bg },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.outcomeText,
+                  { color: getSettlementUi(primaryPick.settlement_outcome).color },
+                ]}
+              >
+                {getSettlementUi(primaryPick.settlement_outcome).label}
+              </Text>
+            </View>
             <Text style={styles.match}>{primaryPick.home_team} vs {primaryPick.away_team}</Text>
             <Text style={styles.league}>{primaryPick.league}</Text>
             <View style={styles.marketWrap}>
@@ -400,6 +428,7 @@ export default function RolleyBotScreen() {
             </View>
             <Text style={styles.reason}>{primaryPick.rationale}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(primaryPick.created_at)}</Text>
+            <Text style={styles.foot}>Settled: {formatDateTime(primaryPick.settled_at ?? undefined)}</Text>
             <Text style={styles.stakeNote}>Stake engine uses this primary pick only.</Text>
           </View>
         ) : null}
@@ -416,6 +445,13 @@ export default function RolleyBotScreen() {
               <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
               <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
             </View>
+            <View
+              style={[styles.outcomePill, { backgroundColor: getSettlementUi(pick.settlement_outcome).bg }]}
+            >
+              <Text style={[styles.outcomeText, { color: getSettlementUi(pick.settlement_outcome).color }]}>
+                {getSettlementUi(pick.settlement_outcome).label}
+              </Text>
+            </View>
             <Text style={styles.league}>{pick.league}</Text>
             <View style={styles.marketWrap}>
               <Text style={styles.market}>{pick.market}</Text>
@@ -426,6 +462,7 @@ export default function RolleyBotScreen() {
             </View>
             <Text style={styles.reason}>{pick.rationale}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
+            <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
           </View>
         ))}
       </ScrollView>
@@ -574,4 +611,15 @@ const styles = StyleSheet.create({
   reason: { color: "#d1d5db", fontSize: 12, lineHeight: 17 },
   foot: { color: "#6b7280", fontSize: 10, marginTop: 2 },
   stakeNote: { color: "#9ca3af", fontSize: 11, marginTop: 2 },
+  outcomePill: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  outcomeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
 });
