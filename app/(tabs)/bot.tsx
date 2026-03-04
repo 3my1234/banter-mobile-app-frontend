@@ -92,6 +92,13 @@ const toUserRationale = (value?: string) => {
   return value.replace(/\s*\[Data completeness[^\]]*\]\s*$/i, "").trim();
 };
 
+const formatLocalDate = (value: Date = new Date()) => {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const d = String(value.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const formatRol = (value?: number) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "0";
   return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
@@ -157,23 +164,57 @@ export default function RolleyBotScreen() {
     try {
       setLoading(true);
       setError(null);
-      const today = new Date().toISOString().slice(0, 10);
-      const response = await fetch(
-        buildRolleyUrl(`/api/v1/picks/daily?sport=${sport}&pick_date=${today}`)
+      const normalizeDaily = (data: DailyResponse) => {
+        const all = Array.isArray(data?.picks) ? data.picks : [];
+        const primary = data?.primary_pick || all.find((pick) => pick?.is_primary) || null;
+        const alts = Array.isArray(data?.alternatives)
+          ? data.alternatives
+          : all.filter((pick) => pick.id !== primary?.id);
+        return { all, primary, alts };
+      };
+
+      const dateCandidates = Array.from(
+        new Set([formatLocalDate(), new Date().toISOString().slice(0, 10)])
       );
-      if (!response.ok) {
-        const message = await response.text().catch(() => "");
-        throw new Error(message || `Rolley service error (${response.status})`);
+
+      for (const pickDate of dateCandidates) {
+        const response = await fetch(buildRolleyUrl(`/api/v1/picks/daily?sport=${sport}&pick_date=${pickDate}`));
+        if (!response.ok) {
+          continue;
+        }
+        const data: DailyResponse = await response.json();
+        const { all, primary, alts } = normalizeDaily(data);
+        if (all.length || primary) {
+          setPicks(all);
+          setPrimaryPick(primary);
+          setAlternatives(alts);
+          return;
+        }
       }
-      const data: DailyResponse = await response.json();
-      const all = Array.isArray(data?.picks) ? data.picks : [];
-      const primary = data?.primary_pick || all.find((pick) => pick?.is_primary) || null;
-      const alts = Array.isArray(data?.alternatives)
-        ? data.alternatives
-        : all.filter((pick) => pick.id !== primary?.id);
-      setPicks(all);
-      setPrimaryPick(primary);
-      setAlternatives(alts);
+
+      // Fallback: show latest available picks for that sport if date tokens differ.
+      const latestResponse = await fetch(buildRolleyUrl("/api/v1/picks/latest?limit=100"));
+      if (latestResponse.ok) {
+        const payload = await latestResponse.json();
+        const latestAll = Array.isArray(payload?.picks) ? payload.picks : [];
+        const sportRows = latestAll.filter((pick: RolleyPick) => pick?.sport === sport);
+        if (sportRows.length) {
+          const newestDate = sportRows
+            .map((pick: RolleyPick) => pick.date)
+            .sort((a: string, b: string) => b.localeCompare(a))[0];
+          const picksForDate = sportRows.filter((pick: RolleyPick) => pick.date === newestDate);
+          const primary = picksForDate.find((pick: RolleyPick) => pick?.is_primary) || picksForDate[0] || null;
+          const alts = picksForDate.filter((pick: RolleyPick) => pick.id !== primary?.id);
+          setPicks(picksForDate);
+          setPrimaryPick(primary);
+          setAlternatives(alts);
+          return;
+        }
+      }
+
+      setPicks([]);
+      setPrimaryPick(null);
+      setAlternatives([]);
     } catch (e: any) {
       setError(e?.message || "Failed to load Rolley picks");
       setPicks([]);
