@@ -87,6 +87,11 @@ const formatDateTime = (iso?: string) => {
   return d.toLocaleString();
 };
 
+const toUserRationale = (value?: string) => {
+  if (!value) return "";
+  return value.replace(/\s*\[Data completeness[^\]]*\]\s*$/i, "").trim();
+};
+
 const formatRol = (value?: number) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "0";
   return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
@@ -426,7 +431,7 @@ export default function RolleyBotScreen() {
                 <Text style={styles.odds}>x{primaryPick.implied_odds.toFixed(3)}</Text>
               ) : null}
             </View>
-            <Text style={styles.reason}>{primaryPick.rationale}</Text>
+            <Text style={styles.reason}>{toUserRationale(primaryPick.rationale)}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(primaryPick.created_at)}</Text>
             <Text style={styles.foot}>Settled: {formatDateTime(primaryPick.settled_at ?? undefined)}</Text>
             <Text style={styles.stakeNote}>Stake engine uses this primary pick only.</Text>
@@ -460,7 +465,7 @@ export default function RolleyBotScreen() {
                 <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
               ) : null}
             </View>
-            <Text style={styles.reason}>{pick.rationale}</Text>
+            <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
             <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
           </View>

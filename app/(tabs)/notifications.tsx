@@ -42,20 +42,65 @@ const formatDateTime = (value?: string) => {
   return date.toLocaleString();
 };
 
+const asTrimmed = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+const looksLikeJson = (value: string) => value.startsWith("{") && value.endsWith("}");
+
+const formatRawAmount = (raw: string, decimals: number) => {
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return raw;
+  return (numeric / 10 ** Math.max(0, decimals)).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Math.min(Math.max(0, decimals), 8),
+  });
+};
+
+const resolveAmount = (payload: Record<string, any>, tokenSymbol: string) => {
+  const display =
+    asTrimmed(payload.amountDisplay) ||
+    asTrimmed(payload.ammountDisplay) ||
+    asTrimmed(payload.amount);
+  if (display) return display;
+
+  const raw = asTrimmed(payload.amountRaw) || asTrimmed(payload.ammountRaw);
+  if (!raw) return "";
+  const decimalsCandidate = Number(payload.decimals ?? payload.tokenDecimals ?? (tokenSymbol === "ROL" ? 8 : 6));
+  const decimals = Number.isFinite(decimalsCandidate) ? decimalsCandidate : tokenSymbol === "ROL" ? 8 : 6;
+  return formatRawAmount(raw, decimals);
+};
+
+const toDisplayTitle = (item: NotificationItem) => {
+  if (item.type === "DAILY_ROL") return "Daily ROL Received";
+  if (item.type === "WALLET_RECEIVE") return "Wallet Credit";
+  if (item.type === "WALLET_TRANSFER") return "Wallet Transfer";
+  if (item.type === "VOTE_PURCHASE") return "Vote Purchase";
+
+  const title = asTrimmed(item.title);
+  if (!title) return "Notification";
+  if (/^[A-Z0-9_]+$/.test(title)) {
+    return title
+      .toLowerCase()
+      .split("_")
+      .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+      .join(" ");
+  }
+  return title;
+};
+
 const toDisplayMessage = (item: NotificationItem) => {
   const direct = (item.body || "").trim();
-  if (direct) return direct;
+  if (direct && !looksLikeJson(direct)) return direct;
 
-  const payload = item.data || {};
+  const payload = (item.data || {}) as Record<string, any>;
   if (item.type === "DAILY_ROL") return "You received your daily ROL reward.";
   if (item.type === "WALLET_RECEIVE") {
-    const amount = payload.amountDisplay || payload.amountRaw || "";
-    const token = payload.tokenSymbol || "TOKEN";
+    const token = asTrimmed(payload.tokenSymbol) || "TOKEN";
+    const amount = resolveAmount(payload, token);
     return amount ? `+${amount} ${token}` : "Wallet received funds.";
   }
   if (item.type === "WALLET_TRANSFER") {
-    const amount = payload.amountDisplay || payload.amountRaw || "";
-    const token = payload.tokenSymbol || "TOKEN";
+    const token = asTrimmed(payload.tokenSymbol) || "TOKEN";
+    const amount = resolveAmount(payload, token);
     return amount ? `-${amount} ${token}` : "Wallet transfer sent.";
   }
   if (item.type === "VOTE_PURCHASE") {
@@ -284,7 +329,7 @@ export default function Notifications() {
             >
               <View style={[styles.dot, item.readAt ? styles.dotRead : styles.dotUnread]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
+                <Text style={styles.itemTitle}>{toDisplayTitle(item)}</Text>
                 <Text style={styles.text}>{toDisplayMessage(item)}</Text>
               </View>
               <Text style={styles.time}>{formatRelativeTime(item.createdAt)}</Text>
@@ -302,19 +347,12 @@ export default function Notifications() {
             <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
               {selected ? (
                 <ScrollView>
-                  <Text style={styles.modalTitle}>{selected.title}</Text>
-                  <Text style={styles.modalType}>{selected.type}</Text>
+                  <Text style={styles.modalTitle}>{toDisplayTitle(selected)}</Text>
                   <Text style={styles.modalMessage}>{toDisplayMessage(selected)}</Text>
                   <Text style={styles.modalMeta}>Created: {formatDateTime(selected.createdAt)}</Text>
                   <Text style={styles.modalMeta}>
                     Status: {selected.readAt ? `Read at ${formatDateTime(selected.readAt)}` : "Unread"}
                   </Text>
-                  {selected.data ? (
-                    <View style={styles.metaBox}>
-                      <Text style={styles.metaTitle}>Details</Text>
-                      <Text style={styles.metaText}>{JSON.stringify(selected.data, null, 2)}</Text>
-                    </View>
-                  ) : null}
                   <Pressable style={styles.closeButton} onPress={() => setSelected(null)}>
                     <Text style={styles.closeButtonText}>Close</Text>
                   </Pressable>
@@ -365,19 +403,8 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   modalTitle: { color: "#fafafa", fontSize: 18, fontWeight: "700" },
-  modalType: { color: "#ff6b35", fontSize: 12, marginTop: 4 },
   modalMessage: { color: "#d5d5d5", fontSize: 14, marginTop: 10, lineHeight: 20 },
   modalMeta: { color: "#8f8f8f", fontSize: 12, marginTop: 8 },
-  metaBox: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#2b2b2b",
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: "#0b0b0b",
-  },
-  metaTitle: { color: "#f5f5f5", fontSize: 12, fontWeight: "700", marginBottom: 6 },
-  metaText: { color: "#b5b5b5", fontSize: 11, fontFamily: "monospace" },
   closeButton: {
     marginTop: 14,
     backgroundColor: "#ff6b35",
