@@ -99,6 +99,13 @@ const formatLocalDate = (value: Date = new Date()) => {
   return `${y}-${m}-${d}`;
 };
 
+const addDaysToDateToken = (dateToken: string, days: number) => {
+  const [y, m, d] = dateToken.split("-").map((part) => Number(part));
+  const date = new Date(y, (m || 1) - 1, d || 1);
+  date.setDate(date.getDate() + days);
+  return formatLocalDate(date);
+};
+
 const formatRol = (value?: number) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "0";
   return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
@@ -173,11 +180,13 @@ export default function RolleyBotScreen() {
         return { all, primary, alts };
       };
 
-      const dateCandidates = Array.from(
-        new Set([formatLocalDate(), new Date().toISOString().slice(0, 10)])
-      );
+      const localToday = formatLocalDate();
+      const uniqueDateCandidates =
+        sport === "BASKETBALL"
+          ? [localToday, addDaysToDateToken(localToday, 1)]
+          : [localToday];
 
-      for (const pickDate of dateCandidates) {
+      for (const pickDate of uniqueDateCandidates) {
         const response = await fetch(buildRolleyUrl(`/api/v1/picks/daily?sport=${sport}&pick_date=${pickDate}`));
         if (!response.ok) {
           continue;
@@ -186,26 +195,6 @@ export default function RolleyBotScreen() {
         const { all, primary, alts } = normalizeDaily(data);
         if (all.length || primary) {
           setPicks(all);
-          setPrimaryPick(primary);
-          setAlternatives(alts);
-          return;
-        }
-      }
-
-      // Fallback: show latest available picks for that sport if date tokens differ.
-      const latestResponse = await fetch(buildRolleyUrl("/api/v1/picks/latest?limit=100"));
-      if (latestResponse.ok) {
-        const payload = await latestResponse.json();
-        const latestAll = Array.isArray(payload?.picks) ? payload.picks : [];
-        const sportRows = latestAll.filter((pick: RolleyPick) => pick?.sport === sport);
-        if (sportRows.length) {
-          const newestDate = sportRows
-            .map((pick: RolleyPick) => pick.date)
-            .sort((a: string, b: string) => b.localeCompare(a))[0];
-          const picksForDate = sportRows.filter((pick: RolleyPick) => pick.date === newestDate);
-          const primary = picksForDate.find((pick: RolleyPick) => pick?.is_primary) || picksForDate[0] || null;
-          const alts = picksForDate.filter((pick: RolleyPick) => pick.id !== primary?.id);
-          setPicks(picksForDate);
           setPrimaryPick(primary);
           setAlternatives(alts);
           return;
