@@ -69,6 +69,7 @@ type StakePosition = {
 
 const ROLLEY_SERVICE_URL =
   process.env.EXPO_PUBLIC_ROLLEY_SERVICE_URL ?? "https://sportbanter.online/rolley";
+const STAKE_DAY_OPTIONS = [5, 10, 15, 20, 25, 30] as const;
 
 const buildRolleyUrl = (path: string) => {
   const base = ROLLEY_SERVICE_URL.replace(/\/+$/, "");
@@ -132,7 +133,7 @@ export default function RolleyBotScreen() {
   const [userId, setUserId] = useState<string>("");
   const [rolBalance, setRolBalance] = useState<number>(0);
   const [stakeAmount, setStakeAmount] = useState("1");
-  const [stakeDays, setStakeDays] = useState<number>(30);
+  const [stakeDays, setStakeDays] = useState<number>(5);
   const [stakes, setStakes] = useState<StakePosition[]>([]);
   const [stakeBusy, setStakeBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -268,8 +269,20 @@ export default function RolleyBotScreen() {
         const text = await response.text().catch(() => "");
         throw new Error(text || `Stake create failed (${response.status})`);
       }
+      try {
+        const reward = await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
+        if (reward?.awarded) {
+          Alert.alert(
+            "Stake created",
+            `Locked ${amount} ROL for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
+          );
+        } else {
+          Alert.alert("Stake created", `Locked ${amount} ROL for ${stakeDays} days.`);
+        }
+      } catch {
+        Alert.alert("Stake created", `Locked ${amount} ROL for ${stakeDays} days.`);
+      }
       await loadStakes();
-      Alert.alert("Stake created", `Locked ${amount} ROL for ${stakeDays} days.`);
     } catch (e: any) {
       Alert.alert("Stake failed", e?.message || "Failed to create stake");
     } finally {
@@ -369,7 +382,7 @@ export default function RolleyBotScreen() {
             />
           </View>
           <View style={styles.durationRow}>
-            {[30, 60, 90, 180, 365].map((days) => (
+            {STAKE_DAY_OPTIONS.map((days) => (
               <Pressable
                 key={days}
                 style={[styles.durationChip, stakeDays === days && styles.durationChipActive]}
