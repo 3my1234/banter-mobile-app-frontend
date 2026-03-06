@@ -70,8 +70,8 @@ const resolveAmount = (payload: Record<string, any>, tokenSymbol: string) => {
 };
 
 const toDisplayTitle = (item: NotificationItem) => {
-  if (item.type === "DAILY_ROL") return "Daily ROL Received";
   if (item.type === "DAILY_POINTS") return "Daily Banter Points Received";
+  if (item.type === "DAILY_ROL") return "Daily Banter Points Received";
   if (item.type === "WALLET_RECEIVE") return "Wallet Credit";
   if (item.type === "WALLET_TRANSFER") return "Wallet Transfer";
   if (item.type === "VOTE_PURCHASE") return "Vote Purchase";
@@ -93,8 +93,12 @@ const toDisplayMessage = (item: NotificationItem) => {
   if (direct && !looksLikeJson(direct)) return direct;
 
   const payload = (item.data || {}) as Record<string, any>;
-  if (item.type === "DAILY_ROL") return "You received your daily ROL reward.";
-  if (item.type === "DAILY_POINTS") return "You received your daily Banter Points reward.";
+  if (item.type === "DAILY_POINTS") {
+    return "You received your daily Banter Points reward. See Profile > Banter Points for airdrop eligibility details.";
+  }
+  if (item.type === "DAILY_ROL") {
+    return "Legacy reward entry. Current daily rewards are now issued as Banter Points. See Profile > Banter Points.";
+  }
   if (item.type === "WALLET_RECEIVE") {
     const token = asTrimmed(payload.tokenSymbol) || "TOKEN";
     const amount = resolveAmount(payload, token);
@@ -166,14 +170,15 @@ export default function Notifications() {
       try {
         const me = await apiFetch("/auth/me");
         const fallback = buildDailyFallbackNotification(me?.user || {});
-        const hasDaily = apiItems.some((item) => item.type === "DAILY_ROL" || item.type === "DAILY_POINTS");
+        const filteredItems = apiItems.filter((item) => item.type !== "DAILY_ROL");
+        const hasDaily = filteredItems.some((item) => item.type === "DAILY_POINTS");
         if (fallback && !hasDaily) {
-          setItems([fallback, ...apiItems]);
+          setItems([fallback, ...filteredItems]);
         } else {
-          setItems(apiItems);
+          setItems(filteredItems);
         }
       } catch {
-        setItems(apiItems);
+        setItems(apiItems.filter((item) => item.type !== "DAILY_ROL"));
       }
     } catch (e: any) {
       const message = String(e?.message || "");

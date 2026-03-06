@@ -112,6 +112,12 @@ export default function ProfileScreen() {
     });
   };
 
+  const formatPoints = (raw?: string | number) => {
+    const numeric = Number(raw || 0);
+    if (!Number.isFinite(numeric)) return "0";
+    return numeric.toLocaleString();
+  };
+
   const fetchWalletData = async () => {
     try {
       const data = await apiFetch("/wallet/balances");
@@ -306,6 +312,7 @@ export default function ProfileScreen() {
   const usdcBalance = balances?.USDC;
   const rolFromWallet = balances?.ROL;
   const rolFallbackRaw = String(me?.rolBalanceRaw || "0");
+  const banterPointsRaw = String(me?.banterPointsRaw || "0");
   const rolBalance =
     rolFromWallet && String(rolFromWallet.balance || "0") !== "0"
       ? rolFromWallet
@@ -406,6 +413,42 @@ export default function ProfileScreen() {
           {syncingWallets ? (
             <Text style={styles.muted}>Syncing wallets...</Text>
           ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Banter Points</Text>
+          <Text style={styles.pointsValue}>{formatPoints(banterPointsRaw)} pts</Text>
+          <Text style={styles.pointsSub}>
+            Banter Points are tracked off-chain and may be used to weight future ROL airdrop eligibility.
+          </Text>
+          <View style={styles.pointsRule}>
+            <Text style={styles.pointsRuleTitle}>EARLY_USER</Text>
+            <Text style={styles.pointsRuleValue}>+500</Text>
+          </View>
+          <Text style={styles.pointsRuleBody}>
+            One-time thank-you reward for joining early.
+          </Text>
+          <View style={styles.pointsRule}>
+            <Text style={styles.pointsRuleTitle}>LOGIN</Text>
+            <Text style={styles.pointsRuleValue}>+10</Text>
+          </View>
+          <Text style={styles.pointsRuleBody}>
+            Daily habit reward, awarded once per local day.
+          </Text>
+          <View style={styles.pointsRule}>
+            <Text style={styles.pointsRuleTitle}>PCA_VOTE</Text>
+            <Text style={styles.pointsRuleValue}>+5</Text>
+          </View>
+          <Text style={styles.pointsRuleBody}>
+            Community participation reward. This path is planned next.
+          </Text>
+          <View style={styles.pointsRule}>
+            <Text style={styles.pointsRuleTitle}>FIRST_ROLLEY_STAKE</Text>
+            <Text style={styles.pointsRuleValue}>+75</Text>
+          </View>
+          <Text style={styles.pointsRuleBody}>
+            One-time reward for completing your first Rolley stake.
+          </Text>
         </View>
 
         <View style={styles.card}>
@@ -661,6 +704,19 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { color: "#9ca3af", fontSize: 12 },
   balanceValue: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  pointsValue: { color: "#fff", fontSize: 24, fontWeight: "800" },
+  pointsSub: { color: "#9ca3af", fontSize: 12, lineHeight: 18, marginTop: 6, marginBottom: 12 },
+  pointsRule: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 10,
+    borderTopColor: "#1f1f1f",
+    borderTopWidth: 1,
+  },
+  pointsRuleTitle: { color: "#f3f4f6", fontSize: 12, fontWeight: "700" },
+  pointsRuleValue: { color: "#10b981", fontSize: 12, fontWeight: "800" },
+  pointsRuleBody: { color: "#9ca3af", fontSize: 11, lineHeight: 16, marginTop: 4, marginBottom: 10 },
   txRow: {
     flexDirection: "row",
     alignItems: "center",
