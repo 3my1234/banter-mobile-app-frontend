@@ -44,6 +44,7 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncingWallets, setSyncingWallets] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
+  const [showPointsDetails, setShowPointsDetails] = useState(false);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
@@ -416,39 +417,63 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Banter Points</Text>
-          <Text style={styles.pointsValue}>{formatPoints(banterPointsRaw)} pts</Text>
-          <Text style={styles.pointsSub}>
-            Banter Points are tracked off-chain and may be used to weight future ROL airdrop eligibility.
-          </Text>
-          <View style={styles.pointsRule}>
-            <Text style={styles.pointsRuleTitle}>EARLY_USER</Text>
-            <Text style={styles.pointsRuleValue}>+500</Text>
+          <View style={styles.pointsHeaderRow}>
+            <View style={styles.pointsHeaderCopy}>
+              <Text style={styles.sectionTitle}>Banter Points</Text>
+              <Text style={styles.pointsValue}>{formatPoints(banterPointsRaw)} pts</Text>
+              <Text style={styles.pointsSub}>
+                Your Banter Points track real activity in the app and can help determine your share in a future ROL airdrop.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setShowPointsDetails((current) => !current)}
+              style={styles.pointsToggle}
+            >
+              <Text style={styles.pointsToggleText}>
+                {showPointsDetails ? "Hide" : "View more"}
+              </Text>
+            </Pressable>
           </View>
-          <Text style={styles.pointsRuleBody}>
-            One-time thank-you reward for joining early.
-          </Text>
-          <View style={styles.pointsRule}>
-            <Text style={styles.pointsRuleTitle}>LOGIN</Text>
-            <Text style={styles.pointsRuleValue}>+10</Text>
-          </View>
-          <Text style={styles.pointsRuleBody}>
-            Daily habit reward, awarded once per local day.
-          </Text>
-          <View style={styles.pointsRule}>
-            <Text style={styles.pointsRuleTitle}>PCA_VOTE</Text>
-            <Text style={styles.pointsRuleValue}>+5</Text>
-          </View>
-          <Text style={styles.pointsRuleBody}>
-            Community participation reward. This path is planned next.
-          </Text>
-          <View style={styles.pointsRule}>
-            <Text style={styles.pointsRuleTitle}>FIRST_ROLLEY_STAKE</Text>
-            <Text style={styles.pointsRuleValue}>+75</Text>
-          </View>
-          <Text style={styles.pointsRuleBody}>
-            One-time reward for completing your first Rolley stake.
-          </Text>
+
+          {showPointsDetails ? (
+            <View style={styles.pointsDetailsWrap}>
+              <Text style={styles.pointsDetailLead}>
+                Points are stored in your account, not in your wallet. When the airdrop opens, eligible activity and point history will be used to calculate claim amounts.
+              </Text>
+
+              <View style={styles.pointsRule}>
+                <Text style={styles.pointsRuleTitle}>Joined early</Text>
+                <Text style={styles.pointsRuleValue}>+500</Text>
+              </View>
+              <Text style={styles.pointsRuleBody}>
+                One-time welcome bonus for users who joined during the early access period.
+              </Text>
+
+              <View style={styles.pointsRule}>
+                <Text style={styles.pointsRuleTitle}>Daily check-in</Text>
+                <Text style={styles.pointsRuleValue}>+10</Text>
+              </View>
+              <Text style={styles.pointsRuleBody}>
+                Awarded once per day when you sign in and stay active.
+              </Text>
+
+              <View style={styles.pointsRule}>
+                <Text style={styles.pointsRuleTitle}>PCA participation</Text>
+                <Text style={styles.pointsRuleValue}>+5</Text>
+              </View>
+              <Text style={styles.pointsRuleBody}>
+                Earned when eligible PCA voting rewards are active for a campaign.
+              </Text>
+
+              <View style={styles.pointsRule}>
+                <Text style={styles.pointsRuleTitle}>First Rolley stake</Text>
+                <Text style={styles.pointsRuleValue}>+75</Text>
+              </View>
+              <Text style={styles.pointsRuleBody}>
+                One-time bonus for completing your first Rolley stake.
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -704,8 +729,28 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { color: "#9ca3af", fontSize: 12 },
   balanceValue: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  pointsHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  pointsHeaderCopy: {
+    flex: 1,
+  },
   pointsValue: { color: "#fff", fontSize: 24, fontWeight: "800" },
-  pointsSub: { color: "#9ca3af", fontSize: 12, lineHeight: 18, marginTop: 6, marginBottom: 12 },
+  pointsSub: { color: "#9ca3af", fontSize: 12, lineHeight: 18, marginTop: 6 },
+  pointsToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  pointsToggleText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
+  pointsDetailsWrap: { marginTop: 14 },
+  pointsDetailLead: { color: "#cbd5e1", fontSize: 12, lineHeight: 18, marginBottom: 12 },
   pointsRule: {
     flexDirection: "row",
     justifyContent: "space-between",

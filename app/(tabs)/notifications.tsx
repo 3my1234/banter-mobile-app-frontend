@@ -70,8 +70,8 @@ const resolveAmount = (payload: Record<string, any>, tokenSymbol: string) => {
 };
 
 const toDisplayTitle = (item: NotificationItem) => {
-  if (item.type === "DAILY_POINTS") return "Daily Banter Points Received";
-  if (item.type === "DAILY_ROL") return "Daily Banter Points Received";
+  if (item.type === "DAILY_POINTS") return "Daily Banter Points Added";
+  if (item.type === "DAILY_ROL") return "Legacy Daily Reward";
   if (item.type === "WALLET_RECEIVE") return "Wallet Credit";
   if (item.type === "WALLET_TRANSFER") return "Wallet Transfer";
   if (item.type === "VOTE_PURCHASE") return "Vote Purchase";
@@ -94,10 +94,10 @@ const toDisplayMessage = (item: NotificationItem) => {
 
   const payload = (item.data || {}) as Record<string, any>;
   if (item.type === "DAILY_POINTS") {
-    return "You received your daily Banter Points reward. See Profile > Banter Points for airdrop eligibility details.";
+    return "You received your daily Banter Points reward. Open Profile > Banter Points to see how your points count toward the future airdrop.";
   }
   if (item.type === "DAILY_ROL") {
-    return "Legacy reward entry. Current daily rewards are now issued as Banter Points. See Profile > Banter Points.";
+    return "Legacy reward entry. Daily login rewards now count as Banter Points.";
   }
   if (item.type === "WALLET_RECEIVE") {
     const token = asTrimmed(payload.tokenSymbol) || "TOKEN";
@@ -129,7 +129,7 @@ const buildDailyFallbackNotification = (meUser: any): NotificationItem | null =>
   return {
     id: `local:daily-points:${lastDaily.toISOString().slice(0, 10)}`,
     type: "DAILY_POINTS",
-    title: "Daily Banter Points received",
+    title: "Daily Banter Points added",
     body: "You received your daily Banter Points reward.",
     createdAt: lastDaily.toISOString(),
     readAt: null,
