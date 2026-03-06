@@ -8,6 +8,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "@/components/useColorScheme";
 import { useClientOnlyValue } from "@/components/useClientOnlyValue";
 import { apiFetch } from "@/lib/api";
+import {
+  decrementNotificationUnreadCount,
+  getNotificationUnreadCount,
+  incrementNotificationUnreadCount,
+  setNotificationUnreadCount,
+  subscribeNotificationUnreadCount,
+} from "@/lib/notificationBadge";
 import { getSocket } from "@/lib/socket";
 
 function TabBarIcon(props: {
@@ -77,17 +84,22 @@ function HorizontalTabBar({ state, descriptors, navigation }: BottomTabBarProps)
 
 export default function TabLayout() {
   useColorScheme();
-  const [notificationUnread, setNotificationUnread] = useState(0);
+  const [notificationUnread, setNotificationUnread] = useState(getNotificationUnreadCount());
   const [messageUnread] = useState(0);
 
   const loadNotificationUnread = useCallback(async () => {
     try {
       const response = await apiFetch("/notifications?unreadOnly=1&limit=100");
       const items = Array.isArray(response?.notifications) ? response.notifications : [];
-      setNotificationUnread(items.length);
+      setNotificationUnreadCount(items.length);
     } catch {
       // keep last value
     }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNotificationUnreadCount(setNotificationUnread);
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -100,13 +112,13 @@ export default function TabLayout() {
         if (disposed || !socket) return;
         socket.emit("notifications.subscribe");
         socket.on("notifications.new", () => {
-          setNotificationUnread((prev) => prev + 1);
+          incrementNotificationUnreadCount(1);
         });
         socket.on("notifications.read", () => {
-          setNotificationUnread((prev) => Math.max(0, prev - 1));
+          decrementNotificationUnreadCount(1);
         });
         socket.on("notifications.read_all", () => {
-          setNotificationUnread(0);
+          setNotificationUnreadCount(0);
         });
       } catch {
         // ignore
