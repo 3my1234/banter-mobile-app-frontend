@@ -462,7 +462,7 @@ export default function ProfileScreen() {
                 <Text style={styles.pointsRuleValue}>+5</Text>
               </View>
               <Text style={styles.pointsRuleBody}>
-                Earned when eligible PCA voting rewards are active for a campaign.
+                Earned the first time you vote in PCA on a given day while a campaign is active.
               </Text>
 
               <View style={styles.pointsRule}>
