@@ -151,6 +151,10 @@ export default function Notifications() {
     [items]
   );
 
+  useEffect(() => {
+    setNotificationUnreadCount(unreadCount);
+  }, [unreadCount]);
+
   const loadFallbackDailyRolNotification = useCallback(async () => {
     try {
       const me = await apiFetch("/auth/me");
@@ -158,10 +162,8 @@ export default function Notifications() {
       const fallback = buildDailyFallbackNotification(user);
       const nextItems = fallback ? [fallback] : [];
       setItems(nextItems);
-      setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
     } catch {
       setItems([]);
-      setNotificationUnreadCount(0);
     }
   }, []);
 
@@ -181,15 +183,12 @@ export default function Notifications() {
         if (fallback && !hasDaily) {
           const nextItems = [fallback, ...filteredItems];
           setItems(nextItems);
-          setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
         } else {
           setItems(filteredItems);
-          setNotificationUnreadCount(filteredItems.filter((item) => !item.readAt).length);
         }
       } catch {
         const nextItems = apiItems.filter((item) => item.type !== "DAILY_ROL");
         setItems(nextItems);
-        setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
       }
     } catch (e: any) {
       const message = String(e?.message || "");
@@ -226,30 +225,24 @@ export default function Notifications() {
         const onNew = (payload: NotificationItem) => {
           setItems((prev) => {
             const filtered = prev.filter((item) => item.id !== payload.id);
-            const nextItems = [payload, ...filtered];
-            setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
-            return nextItems;
+            return [payload, ...filtered];
           });
         };
 
         const onRead = (payload: { id: string; readAt: string }) => {
-          setItems((prev) => {
-            const nextItems = prev.map((item) =>
+          setItems((prev) =>
+            prev.map((item) =>
               item.id === payload.id ? { ...item, readAt: payload.readAt } : item
-            );
-            setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
-            return nextItems;
-          });
+            )
+          );
         };
 
         const onReadAll = (payload: { readAt: string }) => {
-          setItems((prev) => {
-            const nextItems = prev.map((item) =>
+          setItems((prev) =>
+            prev.map((item) =>
               item.readAt ? item : { ...item, readAt: payload.readAt }
-            );
-            setNotificationUnreadCount(0);
-            return nextItems;
-          });
+            )
+          );
         };
 
         socket.on("notifications.new", onNew);
@@ -273,24 +266,20 @@ export default function Notifications() {
 
   const markRead = async (id: string) => {
     if (id.startsWith("local:")) {
-      setItems((prev) => {
-        const nextItems = prev.map((item) =>
+      setItems((prev) =>
+        prev.map((item) =>
           item.id === id ? { ...item, readAt: new Date().toISOString() } : item
-        );
-        setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
-        return nextItems;
-      });
+        )
+      );
       return;
     }
     try {
       await apiFetch(`/notifications/${id}/read`, { method: "POST" });
-      setItems((prev) => {
-        const nextItems = prev.map((item) =>
+      setItems((prev) =>
+        prev.map((item) =>
           item.id === id ? { ...item, readAt: new Date().toISOString() } : item
-        );
-        setNotificationUnreadCount(nextItems.filter((item) => !item.readAt).length);
-        return nextItems;
-      });
+        )
+      );
     } catch {
       // Ignore local read errors.
     }
@@ -299,7 +288,6 @@ export default function Notifications() {
   const markAllRead = async () => {
     const now = new Date().toISOString();
     setItems((prev) => prev.map((item) => (item.readAt ? item : { ...item, readAt: now })));
-    setNotificationUnreadCount(0);
     try {
       await apiFetch("/notifications/read-all", { method: "POST" });
     } catch {
