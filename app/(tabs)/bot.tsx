@@ -720,7 +720,7 @@ Tx: ${txHash}`);
               <Text style={styles.market}>{primaryPick.market}</Text>
               <Text style={styles.selection}>{primaryPick.selection}</Text>
               {typeof primaryPick.implied_odds === "number" ? (
-                <Text style={styles.odds}>x{primaryPick.implied_odds.toFixed(3)}</Text>
+                <Text style={styles.odds}>Factor x{primaryPick.implied_odds.toFixed(3)}</Text>
               ) : null}
             </View>
             <Text style={styles.reason}>{toUserRationale(primaryPick.rationale)}</Text>
@@ -779,7 +779,7 @@ Tx: ${txHash}`);
               <Text style={styles.market}>{pick.market}</Text>
               <Text style={styles.selection}>{pick.selection}</Text>
               {typeof pick.implied_odds === "number" ? (
-                <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
+                <Text style={styles.odds}>Factor x{pick.implied_odds.toFixed(3)}</Text>
               ) : null}
             </View>
             <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
@@ -878,7 +878,7 @@ Tx: ${txHash}`);
                 <Text style={styles.market}>{pick.market}</Text>
                 <Text style={styles.selection}>{pick.selection}</Text>
                 {typeof pick.implied_odds === "number" ? (
-                  <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
+                  <Text style={styles.odds}>Factor x{pick.implied_odds.toFixed(3)}</Text>
                 ) : null}
               </View>
               <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
