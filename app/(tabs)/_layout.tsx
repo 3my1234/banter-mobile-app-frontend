@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/components/useColorScheme";
@@ -72,7 +72,11 @@ function HorizontalTabBar({ state, descriptors, navigation }: BottomTabBarProps)
             <Pressable key={route.key} onPress={onPress} style={styles.tabItem}>
               <View style={styles.iconWrap}>
                 {icon}
-                {badgeCount > 0 ? <View style={styles.badge} /> : null}
+                {badgeCount > 0 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{badgeCount > 99 ? "99+" : String(badgeCount)}</Text>
+                  </View>
+                ) : null}
               </View>
             </Pressable>
           );
@@ -236,13 +240,22 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
+    top: 3,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
     backgroundColor: "#ff3b30",
     borderWidth: 1,
     borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    includeFontPadding: false,
   },
 });
