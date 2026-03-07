@@ -237,7 +237,7 @@ export default function RolleyBotScreen() {
       if (trimmedDate) {
         params.set("pick_date", trimmedDate);
       } else {
-        params.set("before_date", formatLocalDate());
+        params.set("before_date", addDaysToDateToken(formatLocalDate(), -1));
       }
       const response = await fetch(buildRolleyUrl(`/api/v1/picks/history?${params.toString()}`));
       if (!response.ok) {
