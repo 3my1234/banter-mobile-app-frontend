@@ -48,6 +48,7 @@ type DailyResponse = {
 type HistoryResponse = {
   sport?: Sport;
   before_date?: string;
+  pick_date?: string;
   picks?: RolleyPick[];
 };
 
@@ -138,7 +139,7 @@ export default function RolleyBotScreen() {
   const [alternatives, setAlternatives] = useState<RolleyPick[]>([]);
   const [historyPicks, setHistoryPicks] = useState<RolleyPick[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  const [historyDate, setHistoryDate] = useState(() => addDaysToDateToken(formatLocalDate(), -1));
+  const [historyDate, setHistoryDate] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
   const [rolBalance, setRolBalance] = useState<number>(0);
@@ -228,9 +229,17 @@ export default function RolleyBotScreen() {
   const loadHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
-      const response = await fetch(
-        buildRolleyUrl(`/api/v1/picks/history?sport=${sport}&pick_date=${historyDate}&limit=12`)
-      );
+      const params = new URLSearchParams({
+        sport,
+        limit: "12",
+      });
+      const trimmedDate = historyDate.trim();
+      if (trimmedDate) {
+        params.set("pick_date", trimmedDate);
+      } else {
+        params.set("before_date", formatLocalDate());
+      }
+      const response = await fetch(buildRolleyUrl(`/api/v1/picks/history?${params.toString()}`));
       if (!response.ok) {
         throw new Error(`History fetch failed (${response.status})`);
       }
@@ -572,7 +581,7 @@ export default function RolleyBotScreen() {
                   value={historyDate}
                   onChangeText={setHistoryDate}
                   keyboardType="numbers-and-punctuation"
-                  placeholder="YYYY-MM-DD"
+                  placeholder="YYYY-MM-DD (optional)"
                   placeholderTextColor="#6b7280"
                   style={styles.input}
                 />
@@ -583,11 +592,13 @@ export default function RolleyBotScreen() {
                 onPress={() => void loadHistory()}
               >
                 <Text style={styles.historyLoadButtonText}>
-                  {historyLoading ? "Loading..." : "Load History"}
+                  {historyLoading ? "Loading..." : historyDate.trim() ? "Load Date" : "Load Recent History"}
                 </Text>
               </Pressable>
               {!historyLoading && historyPicks.length === 0 ? (
-                <Text style={styles.emptySub}>No picks found for that date.</Text>
+                <Text style={styles.emptySub}>
+                  {historyDate.trim() ? "No picks found for that date." : "No previous picks found yet."}
+                </Text>
               ) : null}
             </>
           ) : null}
