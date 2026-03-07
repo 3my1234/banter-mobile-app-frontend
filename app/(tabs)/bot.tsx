@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,9 +32,14 @@ type RolleyPick = {
   rationale: string;
   model_version: string;
   is_primary?: boolean;
+  movement_pick_id?: number | null;
+  movement_tx_hash?: string | null;
+  movement_sync_status?: string | null;
   settlement_outcome?: "PENDING" | "WIN" | "LOSS" | "VOID";
   settlement_notes?: string | null;
+  settled_by?: string | null;
   settled_at?: string | null;
+  settlement_movement_tx_hash?: string | null;
   created_at: string;
 };
 
@@ -76,6 +82,9 @@ type StakePosition = {
 
 const ROLLEY_SERVICE_URL =
   process.env.EXPO_PUBLIC_ROLLEY_SERVICE_URL ?? "https://sportbanter.online/rolley";
+const MOVEMENT_EXPLORER_BASE =
+  process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ?? "https://explorer.movementnetwork.xyz";
+const MOVEMENT_EXPLORER_NETWORK = process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_NETWORK ?? "testnet";
 const STAKE_DAY_OPTIONS = [5, 10, 15, 20, 25, 30] as const;
 
 const buildRolleyUrl = (path: string) => {
@@ -517,6 +526,25 @@ export default function RolleyBotScreen() {
             <Text style={styles.reason}>{toUserRationale(primaryPick.rationale)}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(primaryPick.created_at)}</Text>
             <Text style={styles.foot}>Settled: {formatDateTime(primaryPick.settled_at ?? undefined)}</Text>
+            <View style={styles.chainRow}>
+              <Text style={styles.chainText}>{chainStatusLabel(primaryPick)}</Text>
+              {typeof primaryPick.movement_pick_id === "number" ? (
+                <Text style={styles.chainMeta}>Pick #{primaryPick.movement_pick_id}</Text>
+              ) : null}
+              {primaryPick.settled_by ? <Text style={styles.chainMeta}>By: {primaryPick.settled_by}</Text> : null}
+            </View>
+            <View style={styles.chainLinks}>
+              {primaryPick.movement_tx_hash ? (
+                <Pressable onPress={() => void Linking.openURL(movementTxUrl(primaryPick.movement_tx_hash))}>
+                  <Text style={styles.chainLink}>View Create Tx</Text>
+                </Pressable>
+              ) : null}
+              {primaryPick.settlement_movement_tx_hash ? (
+                <Pressable onPress={() => void Linking.openURL(movementTxUrl(primaryPick.settlement_movement_tx_hash))}>
+                  <Text style={styles.chainLink}>View Settle Tx</Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Text style={styles.stakeNote}>Stake engine uses this primary pick only.</Text>
           </View>
         ) : null}
@@ -551,6 +579,24 @@ export default function RolleyBotScreen() {
             <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
             <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
             <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
+            <View style={styles.chainRow}>
+              <Text style={styles.chainText}>{chainStatusLabel(pick)}</Text>
+              {typeof pick.movement_pick_id === "number" ? (
+                <Text style={styles.chainMeta}>Pick #{pick.movement_pick_id}</Text>
+              ) : null}
+            </View>
+            <View style={styles.chainLinks}>
+              {pick.movement_tx_hash ? (
+                <Pressable onPress={() => void Linking.openURL(movementTxUrl(pick.movement_tx_hash))}>
+                  <Text style={styles.chainLink}>Create Tx</Text>
+                </Pressable>
+              ) : null}
+              {pick.settlement_movement_tx_hash ? (
+                <Pressable onPress={() => void Linking.openURL(movementTxUrl(pick.settlement_movement_tx_hash))}>
+                  <Text style={styles.chainLink}>Settle Tx</Text>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
         ))}
 
@@ -631,6 +677,25 @@ export default function RolleyBotScreen() {
               <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
               <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
               <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
+              <View style={styles.chainRow}>
+                <Text style={styles.chainText}>{chainStatusLabel(pick)}</Text>
+                {typeof pick.movement_pick_id === "number" ? (
+                  <Text style={styles.chainMeta}>Pick #{pick.movement_pick_id}</Text>
+                ) : null}
+                {pick.settled_by ? <Text style={styles.chainMeta}>By: {pick.settled_by}</Text> : null}
+              </View>
+              <View style={styles.chainLinks}>
+                {pick.movement_tx_hash ? (
+                  <Pressable onPress={() => void Linking.openURL(movementTxUrl(pick.movement_tx_hash))}>
+                    <Text style={styles.chainLink}>Create Tx</Text>
+                  </Pressable>
+                ) : null}
+                {pick.settlement_movement_tx_hash ? (
+                  <Pressable onPress={() => void Linking.openURL(movementTxUrl(pick.settlement_movement_tx_hash))}>
+                    <Text style={styles.chainLink}>Settle Tx</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           ))}
       </ScrollView>
@@ -709,6 +774,7 @@ const styles = StyleSheet.create({
   stakeSport: { color: "#f9fafb", fontSize: 12, fontWeight: "700" },
   stakeStatus: { color: "#22c55e", fontSize: 11, fontWeight: "700" },
   stakeLine: { color: "#d1d5db", fontSize: 11, marginTop: 4 },
+  stakeChainNote: { color: "#94a3b8", fontSize: 10, marginTop: 6, lineHeight: 15 },
   withdrawButton: {
     marginTop: 8,
     borderWidth: 1,
@@ -798,6 +864,11 @@ const styles = StyleSheet.create({
   odds: { color: "#9ca3af", fontSize: 11, fontWeight: "600" },
   reason: { color: "#d1d5db", fontSize: 12, lineHeight: 17 },
   foot: { color: "#6b7280", fontSize: 10, marginTop: 2 },
+  chainRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4, alignItems: "center" },
+  chainText: { color: "#93c5fd", fontSize: 10, fontWeight: "700" },
+  chainMeta: { color: "#94a3b8", fontSize: 10 },
+  chainLinks: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 2 },
+  chainLink: { color: "#60a5fa", fontSize: 10, fontWeight: "700" },
   stakeNote: { color: "#9ca3af", fontSize: 11, marginTop: 2 },
   outcomePill: {
     alignSelf: "flex-start",
