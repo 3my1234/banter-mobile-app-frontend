@@ -137,6 +137,9 @@ export default function RolleyBotScreen() {
   const [primaryPick, setPrimaryPick] = useState<RolleyPick | null>(null);
   const [alternatives, setAlternatives] = useState<RolleyPick[]>([]);
   const [historyPicks, setHistoryPicks] = useState<RolleyPick[]>([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [historyDate, setHistoryDate] = useState(() => addDaysToDateToken(formatLocalDate(), -1));
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
   const [rolBalance, setRolBalance] = useState<number>(0);
   const [stakeAmount, setStakeAmount] = useState("1");
@@ -224,9 +227,9 @@ export default function RolleyBotScreen() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const beforeDate = addDaysToDateToken(formatLocalDate(), -1);
+      setHistoryLoading(true);
       const response = await fetch(
-        buildRolleyUrl(`/api/v1/picks/history?sport=${sport}&before_date=${beforeDate}&limit=8`)
+        buildRolleyUrl(`/api/v1/picks/history?sport=${sport}&pick_date=${historyDate}&limit=12`)
       );
       if (!response.ok) {
         throw new Error(`History fetch failed (${response.status})`);
@@ -235,16 +238,14 @@ export default function RolleyBotScreen() {
       setHistoryPicks(Array.isArray(data?.picks) ? data.picks : []);
     } catch {
       setHistoryPicks([]);
+    } finally {
+      setHistoryLoading(false);
     }
-  }, [sport]);
+  }, [historyDate, sport]);
 
   useEffect(() => {
     loadPicks();
   }, [loadPicks]);
-
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
 
   useEffect(() => {
     void fetchUserContext();
@@ -258,13 +259,15 @@ export default function RolleyBotScreen() {
     try {
       setRefreshing(true);
       await loadPicks();
-      await loadHistory();
+      if (historyExpanded) {
+        await loadHistory();
+      }
       await fetchUserContext();
       await loadStakes();
     } finally {
       setRefreshing(false);
     }
-  }, [fetchUserContext, loadHistory, loadPicks, loadStakes]);
+  }, [fetchUserContext, historyExpanded, loadHistory, loadPicks, loadStakes]);
 
   const onCreateStake = useCallback(async () => {
     const amount = Number(stakeAmount);
@@ -542,41 +545,83 @@ export default function RolleyBotScreen() {
           </View>
         ))}
 
-        {historyPicks.length > 0 ? (
-          <View style={styles.card}>
-            <Text style={styles.altTitle}>Previous Picks</Text>
-            <Text style={styles.metaSub}>Recent settled or pending picks from earlier days.</Text>
-          </View>
-        ) : null}
-
-        {historyPicks.map((pick) => (
-          <View key={pick.id} style={styles.pickCard}>
-            <View style={styles.pickHead}>
-              <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
-              <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
+        <View style={styles.card}>
+          <View style={styles.historyHead}>
+            <View>
+              <Text style={styles.altTitle}>Prediction History</Text>
+              <Text style={styles.metaSub}>Open history and load a specific day.</Text>
             </View>
-            <View
-              style={[styles.outcomePill, { backgroundColor: getSettlementUi(pick.settlement_outcome).bg }]}
+            <Pressable
+              style={styles.historyToggle}
+              onPress={() => {
+                const next = !historyExpanded;
+                setHistoryExpanded(next);
+                if (next) {
+                  void loadHistory();
+                }
+              }}
             >
-              <Text style={[styles.outcomeText, { color: getSettlementUi(pick.settlement_outcome).color }]}>
-                {getSettlementUi(pick.settlement_outcome).label}
-              </Text>
-            </View>
-            <Text style={styles.league}>
-              {pick.sport} • {pick.date} • {pick.league}
-            </Text>
-            <View style={styles.marketWrap}>
-              <Text style={styles.market}>{pick.market}</Text>
-              <Text style={styles.selection}>{pick.selection}</Text>
-              {typeof pick.implied_odds === "number" ? (
-                <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
-              ) : null}
-            </View>
-            <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
-            <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
-            <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
+              <Text style={styles.historyToggleText}>{historyExpanded ? "Hide" : "View"}</Text>
+            </Pressable>
           </View>
-        ))}
+
+          {historyExpanded ? (
+            <>
+              <View style={styles.inputRow}>
+                <TextInput
+                  value={historyDate}
+                  onChangeText={setHistoryDate}
+                  keyboardType="numbers-and-punctuation"
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#6b7280"
+                  style={styles.input}
+                />
+              </View>
+              <Pressable
+                style={styles.historyLoadButton}
+                disabled={historyLoading}
+                onPress={() => void loadHistory()}
+              >
+                <Text style={styles.historyLoadButtonText}>
+                  {historyLoading ? "Loading..." : "Load History"}
+                </Text>
+              </Pressable>
+              {!historyLoading && historyPicks.length === 0 ? (
+                <Text style={styles.emptySub}>No picks found for that date.</Text>
+              ) : null}
+            </>
+          ) : null}
+        </View>
+
+        {historyExpanded &&
+          historyPicks.map((pick) => (
+            <View key={pick.id} style={styles.pickCard}>
+              <View style={styles.pickHead}>
+                <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
+                <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
+              </View>
+              <View
+                style={[styles.outcomePill, { backgroundColor: getSettlementUi(pick.settlement_outcome).bg }]}
+              >
+                <Text style={[styles.outcomeText, { color: getSettlementUi(pick.settlement_outcome).color }]}>
+                  {getSettlementUi(pick.settlement_outcome).label}
+                </Text>
+              </View>
+              <Text style={styles.league}>
+                {pick.sport} • {pick.date} • {pick.league}
+              </Text>
+              <View style={styles.marketWrap}>
+                <Text style={styles.market}>{pick.market}</Text>
+                <Text style={styles.selection}>{pick.selection}</Text>
+                {typeof pick.implied_odds === "number" ? (
+                  <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
+                ) : null}
+              </View>
+              <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
+              <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
+              <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
+            </View>
+          ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -678,6 +723,26 @@ const styles = StyleSheet.create({
   error: { color: "#f87171", fontSize: 12 },
   empty: { color: "#e5e7eb", fontSize: 13, fontWeight: "700" },
   emptySub: { color: "#9ca3af", fontSize: 11, marginTop: 3 },
+  historyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  historyToggle: {
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: "rgba(255,107,53,0.12)",
+  },
+  historyToggleText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
+  historyLoadButton: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2c2c2c",
+    backgroundColor: "#111",
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  historyLoadButtonText: { color: "#f3f4f6", fontWeight: "700", fontSize: 12 },
   pickCard: {
     backgroundColor: "#111",
     borderWidth: 1,
