@@ -24,7 +24,13 @@ function TabBarIcon(props: {
   return <FontAwesome size={24} {...props} />;
 }
 
-function HorizontalTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+function HorizontalTabBar({
+  state,
+  descriptors,
+  navigation,
+  notificationUnread,
+  messageUnread,
+}: BottomTabBarProps & { notificationUnread: number; messageUnread: number }) {
   const insets = useSafeAreaInsets();
   const visibleRoutes = useMemo(
     () => state.routes.filter((route) => route.name !== "compose"),
@@ -64,9 +70,11 @@ function HorizontalTabBar({ state, descriptors, navigation }: BottomTabBarProps)
                 })
               : null;
           const badgeCount =
-            typeof options.tabBarBadge === "number" && options.tabBarBadge > 0
-              ? options.tabBarBadge
-              : 0;
+            route.name === "notifications"
+              ? notificationUnread
+              : route.name === "messages"
+                ? messageUnread
+                : 0;
 
           return (
             <Pressable key={route.key} onPress={onPress} style={styles.tabItem}>
@@ -142,7 +150,13 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      tabBar={(props) => <HorizontalTabBar {...props} />}
+      tabBar={(props) => (
+        <HorizontalTabBar
+          {...props}
+          notificationUnread={notificationUnread}
+          messageUnread={messageUnread}
+        />
+      )}
       screenOptions={{
         tabBarShowLabel: false,
         headerShown: useClientOnlyValue(false, true),
@@ -185,7 +199,6 @@ export default function TabLayout() {
         options={{
           title: "Messages",
           tabBarIcon: ({ color }) => <TabBarIcon name="envelope" color={color} />,
-          tabBarBadge: messageUnread > 0 ? messageUnread : undefined,
           headerShown: false,
         }}
       />
@@ -194,7 +207,6 @@ export default function TabLayout() {
         options={{
           title: "Notifications",
           tabBarIcon: ({ color }) => <TabBarIcon name="bell" color={color} />,
-          tabBarBadge: notificationUnread > 0 ? notificationUnread : undefined,
           headerShown: false,
         }}
       />
