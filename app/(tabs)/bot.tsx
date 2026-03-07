@@ -45,6 +45,12 @@ type DailyResponse = {
   picks?: RolleyPick[];
 };
 
+type HistoryResponse = {
+  sport?: Sport;
+  before_date?: string;
+  picks?: RolleyPick[];
+};
+
 type StakeStatus = "ACTIVE" | "LOST" | "MATURED" | "WITHDRAWN";
 
 type StakePosition = {
@@ -130,6 +136,7 @@ export default function RolleyBotScreen() {
   const [picks, setPicks] = useState<RolleyPick[]>([]);
   const [primaryPick, setPrimaryPick] = useState<RolleyPick | null>(null);
   const [alternatives, setAlternatives] = useState<RolleyPick[]>([]);
+  const [historyPicks, setHistoryPicks] = useState<RolleyPick[]>([]);
   const [userId, setUserId] = useState<string>("");
   const [rolBalance, setRolBalance] = useState<number>(0);
   const [stakeAmount, setStakeAmount] = useState("1");
@@ -215,9 +222,29 @@ export default function RolleyBotScreen() {
     }
   }, [sport]);
 
+  const loadHistory = useCallback(async () => {
+    try {
+      const beforeDate = addDaysToDateToken(formatLocalDate(), -1);
+      const response = await fetch(
+        buildRolleyUrl(`/api/v1/picks/history?sport=${sport}&before_date=${beforeDate}&limit=8`)
+      );
+      if (!response.ok) {
+        throw new Error(`History fetch failed (${response.status})`);
+      }
+      const data: HistoryResponse = await response.json();
+      setHistoryPicks(Array.isArray(data?.picks) ? data.picks : []);
+    } catch {
+      setHistoryPicks([]);
+    }
+  }, [sport]);
+
   useEffect(() => {
     loadPicks();
   }, [loadPicks]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   useEffect(() => {
     void fetchUserContext();
@@ -231,12 +258,13 @@ export default function RolleyBotScreen() {
     try {
       setRefreshing(true);
       await loadPicks();
+      await loadHistory();
       await fetchUserContext();
       await loadStakes();
     } finally {
       setRefreshing(false);
     }
-  }, [fetchUserContext, loadPicks, loadStakes]);
+  }, [fetchUserContext, loadHistory, loadPicks, loadStakes]);
 
   const onCreateStake = useCallback(async () => {
     const amount = Number(stakeAmount);
@@ -501,6 +529,42 @@ export default function RolleyBotScreen() {
               </Text>
             </View>
             <Text style={styles.league}>{pick.league}</Text>
+            <View style={styles.marketWrap}>
+              <Text style={styles.market}>{pick.market}</Text>
+              <Text style={styles.selection}>{pick.selection}</Text>
+              {typeof pick.implied_odds === "number" ? (
+                <Text style={styles.odds}>x{pick.implied_odds.toFixed(3)}</Text>
+              ) : null}
+            </View>
+            <Text style={styles.reason}>{toUserRationale(pick.rationale)}</Text>
+            <Text style={styles.foot}>Generated: {formatDateTime(pick.created_at)}</Text>
+            <Text style={styles.foot}>Settled: {formatDateTime(pick.settled_at ?? undefined)}</Text>
+          </View>
+        ))}
+
+        {historyPicks.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.altTitle}>Previous Picks</Text>
+            <Text style={styles.metaSub}>Recent settled or pending picks from earlier days.</Text>
+          </View>
+        ) : null}
+
+        {historyPicks.map((pick) => (
+          <View key={pick.id} style={styles.pickCard}>
+            <View style={styles.pickHead}>
+              <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
+              <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
+            </View>
+            <View
+              style={[styles.outcomePill, { backgroundColor: getSettlementUi(pick.settlement_outcome).bg }]}
+            >
+              <Text style={[styles.outcomeText, { color: getSettlementUi(pick.settlement_outcome).color }]}>
+                {getSettlementUi(pick.settlement_outcome).label}
+              </Text>
+            </View>
+            <Text style={styles.league}>
+              {pick.sport} • {pick.date} • {pick.league}
+            </Text>
             <View style={styles.marketWrap}>
               <Text style={styles.market}>{pick.market}</Text>
               <Text style={styles.selection}>{pick.selection}</Text>
