@@ -92,6 +92,18 @@ type HistoryResponse = {
 
 type StakeStatus = "ACTIVE" | "LOST" | "MATURED" | "WITHDRAWN";
 
+type StakeDailyResult = {
+  id: string;
+  daily_product_id?: string | null;
+  pick_id: string;
+  pick_date: string;
+  outcome: "PENDING" | "WIN" | "LOSS" | "VOID";
+  factor: number;
+  starting_rol: number;
+  ending_rol: number;
+  created_at: string;
+};
+
 type StakePosition = {
   id: string;
   user_id: string;
@@ -99,6 +111,8 @@ type StakePosition = {
   principal_rol: number;
   current_rol: number;
   lock_days: number;
+  days_completed: number;
+  days_remaining: number;
   starts_on: string;
   ends_on: string;
   status: StakeStatus;
@@ -106,10 +120,13 @@ type StakePosition = {
   gross_profit_rol: number;
   platform_fee_rol: number;
   net_payout_rol: number;
+  latest_pick_date?: string | null;
+  latest_outcome?: "PENDING" | "WIN" | "LOSS" | "VOID" | null;
   matured_at?: string | null;
   withdrawn_at?: string | null;
   created_at: string;
   updated_at: string;
+  daily_results: StakeDailyResult[];
 };
 
 const ROLLEY_SERVICE_URL =
@@ -191,6 +208,19 @@ const chainStatusLabel = (pick?: RolleyPick | null) => {
       return "Movement registration failed";
     default:
       return pick.movement_sync_status.replace(/_/g, " ");
+  }
+};
+
+const getStakeStatusTone = (status: StakeStatus) => {
+  switch (status) {
+    case "MATURED":
+      return { color: "#22c55e", bg: "rgba(34,197,94,0.16)" };
+    case "LOST":
+      return { color: "#ef4444", bg: "rgba(239,68,68,0.16)" };
+    case "WITHDRAWN":
+      return { color: "#94a3b8", bg: "rgba(148,163,184,0.16)" };
+    default:
+      return { color: "#f59e0b", bg: "rgba(245,158,11,0.16)" };
   }
 };
 
@@ -535,7 +565,11 @@ export default function RolleyBotScreen() {
               <View key={stake.id} style={styles.stakeCard}>
                 <View style={styles.stakeHead}>
                   <Text style={styles.stakeSport}>{stake.sport}</Text>
-                  <Text style={styles.stakeStatus}>{stake.status}</Text>
+                  <View style={[styles.outcomePill, { backgroundColor: getStakeStatusTone(stake.status).bg }]}>
+                    <Text style={[styles.outcomeText, { color: getStakeStatusTone(stake.status).color }]}>
+                      {stake.status}
+                    </Text>
+                  </View>
                 </View>
                 <Text style={styles.stakeLine}>
                   Principal: {formatRol(stake.principal_rol)} ROL • Current: {formatRol(stake.current_rol)} ROL
@@ -543,9 +577,34 @@ export default function RolleyBotScreen() {
                 <Text style={styles.stakeLine}>
                   Period: {stake.lock_days}d • Ends: {stake.ends_on}
                 </Text>
+                <Text style={styles.stakeLine}>
+                  Progress: {stake.days_completed}/{stake.lock_days} day(s) • Remaining: {stake.days_remaining}
+                </Text>
+                <Text style={styles.stakeLine}>
+                  Total factor: x{stake.total_factor.toFixed(3)} • Fee accrued: {formatRol(stake.platform_fee_rol)} ROL
+                </Text>
+                {stake.latest_pick_date ? (
+                  <Text style={styles.stakeLine}>
+                    Latest result: {stake.latest_pick_date} • {stake.latest_outcome || "PENDING"}
+                  </Text>
+                ) : (
+                  <Text style={styles.stakeLine}>Latest result: waiting for the first daily product to settle.</Text>
+                )}
                 <Text style={styles.stakeChainNote}>
                   Managed rollover: Banter tracks your active position in-app, while Movement publishes pick and settlement proof for transparency.
                 </Text>
+                {stake.daily_results.length > 0 ? (
+                  <View style={styles.dailyTrail}>
+                    {stake.daily_results.slice(-3).map((day) => (
+                      <View key={day.id} style={styles.dailyTrailRow}>
+                        <Text style={styles.dailyTrailDate}>{day.pick_date}</Text>
+                        <Text style={styles.dailyTrailText}>
+                          {day.outcome} • x{day.factor.toFixed(3)} • {formatRol(day.starting_rol)} → {formatRol(day.ending_rol)} ROL
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
                 {stake.status === "MATURED" ? (
                   <Pressable
                     style={styles.withdrawButton}
@@ -879,9 +938,19 @@ const styles = StyleSheet.create({
   },
   stakeHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   stakeSport: { color: "#f9fafb", fontSize: 12, fontWeight: "700" },
-  stakeStatus: { color: "#22c55e", fontSize: 11, fontWeight: "700" },
   stakeLine: { color: "#d1d5db", fontSize: 11, marginTop: 4 },
   stakeChainNote: { color: "#94a3b8", fontSize: 10, marginTop: 6, lineHeight: 15 },
+  dailyTrail: { marginTop: 8, gap: 4 },
+  dailyTrailRow: {
+    borderWidth: 1,
+    borderColor: "#232323",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: "#111",
+  },
+  dailyTrailDate: { color: "#f3f4f6", fontSize: 10, fontWeight: "700" },
+  dailyTrailText: { color: "#cbd5e1", fontSize: 10, marginTop: 2 },
   withdrawButton: {
     marginTop: 8,
     borderWidth: 1,
