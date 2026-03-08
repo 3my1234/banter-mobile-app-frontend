@@ -54,6 +54,38 @@ type DailyResponse = {
   picks?: RolleyPick[];
 };
 
+type DailyProductLeg = {
+  pick_id: string;
+  leg_index: number;
+  is_primary: boolean;
+  market: string;
+  selection: string;
+  confidence: number;
+  implied_odds: number;
+};
+
+type DailyProduct = {
+  id: string;
+  product_date: string;
+  sport: Sport;
+  kind: "SINGLE" | "BASKET";
+  combined_confidence: number;
+  combined_odds: number;
+  settled_factor?: number | null;
+  status: string;
+  outcome: "PENDING" | "WIN" | "LOSS" | "VOID";
+  rationale: string;
+  settled_at?: string | null;
+  created_at: string;
+  legs: DailyProductLeg[];
+};
+
+type DailyProductsResponse = {
+  date: string;
+  sport: Sport;
+  products?: DailyProduct[];
+};
+
 type HistoryResponse = {
   sport?: Sport;
   before_date?: string;
@@ -194,6 +226,7 @@ export default function RolleyBotScreen() {
   const { signRawHash } = useSignRawHash();
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [picks, setPicks] = useState<RolleyPick[]>([]);
+  const [dailyProduct, setDailyProduct] = useState<DailyProduct | null>(null);
   const [primaryPick, setPrimaryPick] = useState<RolleyPick | null>(null);
   const [alternatives, setAlternatives] = useState<RolleyPick[]>([]);
   const [historyPicks, setHistoryPicks] = useState<RolleyPick[]>([]);
@@ -400,13 +433,18 @@ Tx: ${txHash}`);
           : [localToday];
 
       for (const pickDate of uniqueDateCandidates) {
-        const response = await fetch(buildRolleyUrl(`/api/v1/picks/daily?sport=${sport}&pick_date=${pickDate}`));
-        if (!response.ok) {
+        const [dailyResponse, productResponse] = await Promise.all([
+          fetch(buildRolleyUrl(`/api/v1/picks/daily?sport=${sport}&pick_date=${pickDate}`)),
+          fetch(buildRolleyUrl(`/api/v1/products/daily?sport=${sport}&pick_date=${pickDate}`)),
+        ]);
+        if (!dailyResponse.ok) {
           continue;
         }
-        const data: DailyResponse = await response.json();
+        const data: DailyResponse = await dailyResponse.json();
+        const productData: DailyProductsResponse | null = productResponse.ok ? await productResponse.json() : null;
         const { all, primary, alts } = normalizeDaily(data);
         if (all.length || primary) {
+          setDailyProduct(Array.isArray(productData?.products) ? productData!.products![0] ?? null : null);
           setPicks(all);
           setPrimaryPick(primary);
           setAlternatives(alts);
@@ -414,11 +452,13 @@ Tx: ${txHash}`);
         }
       }
 
+      setDailyProduct(null);
       setPicks([]);
       setPrimaryPick(null);
       setAlternatives([]);
     } catch (e: any) {
       setError(e?.message || "Failed to load Rolley picks");
+      setDailyProduct(null);
       setPicks([]);
       setPrimaryPick(null);
       setAlternatives([]);
@@ -560,6 +600,16 @@ Tx: ${txHash}`);
     [loadStakes, userId]
   );
 
+  const productLegPickIds = useMemo(
+    () => new Set((dailyProduct?.legs || []).map((leg) => leg.pick_id)),
+    [dailyProduct]
+  );
+
+  const candidatePicks = useMemo(() => {
+    if (!dailyProduct) return picks;
+    return picks.filter((pick) => !productLegPickIds.has(pick.id));
+  }, [dailyProduct, picks, productLegPickIds]);
+
   const topConfidence = useMemo(() => {
     if (!picks.length) return "-";
     const max = picks.reduce((acc, p) => Math.max(acc, p.confidence || 0), 0);
@@ -693,75 +743,102 @@ Tx: ${txHash}`);
           </View>
         ) : null}
 
-        {primaryPick ? (
+        {dailyProduct ? (
           <View style={styles.primaryCard}>
             <View style={styles.pickHead}>
-              <Text style={styles.primaryLabel}>Primary Pick (used for stake)</Text>
-              <Text style={styles.confidence}>{formatPct(primaryPick.confidence)}</Text>
+              <Text style={styles.primaryLabel}>
+                {dailyProduct.kind === "BASKET" ? "Today's Rollover Basket" : "Today's Rollover Product"}
+              </Text>
+              <Text style={styles.confidence}>{formatPct(dailyProduct.combined_confidence)}</Text>
             </View>
             <View
               style={[
                 styles.outcomePill,
-                { backgroundColor: getSettlementUi(primaryPick.settlement_outcome).bg },
+                { backgroundColor: getSettlementUi(dailyProduct.outcome).bg },
               ]}
             >
               <Text
                 style={[
                   styles.outcomeText,
-                  { color: getSettlementUi(primaryPick.settlement_outcome).color },
+                  { color: getSettlementUi(dailyProduct.outcome).color },
                 ]}
               >
-                {getSettlementUi(primaryPick.settlement_outcome).label}
+                {getSettlementUi(dailyProduct.outcome).label}
               </Text>
             </View>
-            <Text style={styles.match}>{primaryPick.home_team} vs {primaryPick.away_team}</Text>
-            <Text style={styles.league}>{primaryPick.league}</Text>
+            <Text style={styles.match}>
+              {dailyProduct.kind === "BASKET" ? `${dailyProduct.legs.length} legs selected for today` : "1 leg selected for today"}
+            </Text>
+            <Text style={styles.league}>Selected from today's {sport} candidate slate</Text>
             <View style={styles.marketWrap}>
-              <Text style={styles.market}>{primaryPick.market}</Text>
-              <Text style={styles.selection}>{primaryPick.selection}</Text>
-              {typeof primaryPick.implied_odds === "number" ? (
-                <Text style={styles.odds}>Factor x{primaryPick.implied_odds.toFixed(3)}</Text>
-              ) : null}
+              <Text style={styles.market}>{dailyProduct.kind}</Text>
+              <Text style={styles.selection}>Daily factor target</Text>
+              <Text style={styles.odds}>Factor x{dailyProduct.combined_odds.toFixed(3)}</Text>
             </View>
-            <Text style={styles.reason}>{toUserRationale(primaryPick.rationale)}</Text>
-            <Text style={styles.foot}>Generated: {formatDateTime(primaryPick.created_at)}</Text>
-            <Text style={styles.foot}>Settled: {formatDateTime(primaryPick.settled_at ?? undefined)}</Text>
-            <View style={styles.chainRow}>
-              <Text style={styles.chainText}>{chainStatusLabel(primaryPick)}</Text>
-              {typeof primaryPick.movement_pick_id === "number" ? (
-                <Text style={styles.chainMeta}>Pick #{primaryPick.movement_pick_id}</Text>
-              ) : null}
-              {primaryPick.settled_by ? <Text style={styles.chainMeta}>By: {primaryPick.settled_by}</Text> : null}
-            </View>
-            <View style={styles.chainLinks}>
-              {primaryPick.movement_tx_hash ? (
-                <Pressable onPress={() => void Linking.openURL(movementTxUrl(primaryPick.movement_tx_hash))}>
-                  <Text style={styles.chainLink}>View Create Tx</Text>
-                </Pressable>
-              ) : null}
-              {primaryPick.settlement_movement_tx_hash ? (
-                <Pressable onPress={() => void Linking.openURL(movementTxUrl(primaryPick.settlement_movement_tx_hash))}>
-                  <Text style={styles.chainLink}>View Settle Tx</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {renderWalletMovementStatus(primaryPick)}
+            <Text style={styles.reason}>{toUserRationale(dailyProduct.rationale)}</Text>
+            <Text style={styles.foot}>Generated: {formatDateTime(dailyProduct.created_at)}</Text>
+            <Text style={styles.foot}>Settled: {formatDateTime(dailyProduct.settled_at ?? undefined)}</Text>
+            {dailyProduct.legs.map((leg) => {
+              const legPick = picks.find((pick) => pick.id === leg.pick_id);
+              return (
+                <View key={leg.pick_id} style={styles.pickCard}>
+                  <View style={styles.pickHead}>
+                    <Text style={styles.match}>
+                      {legPick ? `${legPick.home_team} vs ${legPick.away_team}` : `Leg ${leg.leg_index + 1}`}
+                    </Text>
+                    <Text style={styles.confidence}>{formatPct(leg.confidence)}</Text>
+                  </View>
+                  {legPick ? <Text style={styles.league}>{legPick.league}</Text> : null}
+                  <View style={styles.marketWrap}>
+                    <Text style={styles.market}>{leg.market}</Text>
+                    <Text style={styles.selection}>{leg.selection}</Text>
+                    <Text style={styles.odds}>Factor x{leg.implied_odds.toFixed(3)}</Text>
+                  </View>
+                  {legPick ? (
+                    <>
+                      <View style={styles.chainRow}>
+                        <Text style={styles.chainText}>{chainStatusLabel(legPick)}</Text>
+                        {typeof legPick.movement_pick_id === "number" ? (
+                          <Text style={styles.chainMeta}>Pick #{legPick.movement_pick_id}</Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.chainLinks}>
+                        {legPick.movement_tx_hash ? (
+                          <Pressable onPress={() => void Linking.openURL(movementTxUrl(legPick.movement_tx_hash))}>
+                            <Text style={styles.chainLink}>View Create Tx</Text>
+                          </Pressable>
+                        ) : null}
+                        {legPick.settlement_movement_tx_hash ? (
+                          <Pressable onPress={() => void Linking.openURL(movementTxUrl(legPick.settlement_movement_tx_hash))}>
+                            <Text style={styles.chainLink}>View Settle Tx</Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                      {renderWalletMovementStatus(legPick)}
+                    </>
+                  ) : null}
+                </View>
+              );
+            })}
             <Pressable style={styles.movementStakeButton} disabled={movementStakeBusy} onPress={() => void onStakeOnMovement()}>
               <Text style={styles.movementStakeButtonText}>
-                {movementStakeBusy ? "Submitting Movement stake..." : "Stake This Pick on Movement"}
+                {movementStakeBusy ? "Submitting Movement stake..." : "Stake Primary Leg on Movement"}
               </Text>
             </Pressable>
-            <Text style={styles.stakeNote}>Stake engine uses this primary pick only. Movement staking uses your Movement wallet, not your in-app ROL balance.</Text>
+            <Text style={styles.stakeNote}>
+              This rollover product is today's final selection. Movement staking still submits against the primary leg while the full rollover contract is being completed.
+            </Text>
           </View>
         ) : null}
 
-        {alternatives.length > 0 ? (
+        {candidatePicks.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.altTitle}>Alternative Picks</Text>
+            <Text style={styles.altTitle}>Candidate Picks</Text>
+            <Text style={styles.metaSub}>These were reasoned candidates for today but are not the final rollover product.</Text>
           </View>
         ) : null}
 
-        {alternatives.map((pick) => (
+        {candidatePicks.map((pick) => (
           <View key={pick.id} style={styles.pickCard}>
             <View style={styles.pickHead}>
               <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
