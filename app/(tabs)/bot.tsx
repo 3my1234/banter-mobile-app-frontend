@@ -15,6 +15,7 @@ import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
 
 type Sport = "SOCCER" | "BASKETBALL";
+type StakeAsset = "USD" | "USDC";
 
 type RolleyPick = {
   id: string;
@@ -99,8 +100,8 @@ type StakeDailyResult = {
   pick_date: string;
   outcome: "PENDING" | "WIN" | "LOSS" | "VOID";
   factor: number;
-  starting_rol: number;
-  ending_rol: number;
+  starting_amount: number;
+  ending_amount: number;
   created_at: string;
 };
 
@@ -108,8 +109,9 @@ type StakePosition = {
   id: string;
   user_id: string;
   sport: Sport;
-  principal_rol: number;
-  current_rol: number;
+  stake_asset: "USD" | "USDC" | "ROL";
+  principal_amount: number;
+  current_amount: number;
   lock_days: number;
   days_completed: number;
   days_remaining: number;
@@ -117,9 +119,9 @@ type StakePosition = {
   ends_on: string;
   status: StakeStatus;
   total_factor: number;
-  gross_profit_rol: number;
-  platform_fee_rol: number;
-  net_payout_rol: number;
+  gross_profit_amount: number;
+  platform_fee_amount: number;
+  net_payout_amount: number;
   latest_pick_date?: string | null;
   latest_outcome?: "PENDING" | "WIN" | "LOSS" | "VOID" | null;
   matured_at?: string | null;
@@ -172,9 +174,11 @@ const addDaysToDateToken = (dateToken: string, days: number) => {
   return formatLocalDate(date);
 };
 
-const formatRol = (value?: number) => {
+const formatAmount = (value?: number, asset: "USD" | "USDC" | "ROL" = "USD") => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "0";
-  return value.toLocaleString(undefined, { maximumFractionDigits: 8 });
+  const maximumFractionDigits = asset === "USD" ? 2 : asset === "USDC" ? 6 : 8;
+  const formatted = value.toLocaleString(undefined, { maximumFractionDigits });
+  return asset === "USD" ? `$${formatted}` : `${formatted} ${asset}`;
 };
 
 const getSettlementUi = (outcome?: RolleyPick["settlement_outcome"]) => {
@@ -235,7 +239,7 @@ export default function RolleyBotScreen() {
   const [historyDate, setHistoryDate] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
-  const [rolBalance, setRolBalance] = useState<number>(0);
+  const [stakeAsset, setStakeAsset] = useState<StakeAsset>("USD");
   const [stakeAmount, setStakeAmount] = useState("1");
   const [stakeDays, setStakeDays] = useState<number>(5);
   const [stakes, setStakes] = useState<StakePosition[]>([]);
@@ -248,12 +252,9 @@ export default function RolleyBotScreen() {
     try {
       const me = await apiFetch("/auth/me");
       const id = me?.user?.id ? String(me.user.id) : "";
-      const raw = Number(me?.user?.rolBalanceRaw || 0);
       setUserId(id);
-      setRolBalance(Number.isFinite(raw) ? raw / 1e8 : 0);
     } catch {
       setUserId("");
-      setRolBalance(0);
     }
   }, []);
 
@@ -390,11 +391,7 @@ export default function RolleyBotScreen() {
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
-      Alert.alert("Stake failed", "Enter a valid stake amount in ROL.");
-      return;
-    }
-    if (amount > rolBalance) {
-      Alert.alert("Stake failed", "Insufficient ROL balance.");
+      Alert.alert("Stake failed", `Enter a valid stake amount in ${stakeAsset}.`);
       return;
     }
 
@@ -406,7 +403,8 @@ export default function RolleyBotScreen() {
         body: JSON.stringify({
           user_id: userId,
           sport,
-          amount_rol: amount,
+          stake_asset: stakeAsset,
+          amount,
           lock_days: stakeDays,
         }),
       });
@@ -419,13 +417,13 @@ export default function RolleyBotScreen() {
         if (reward?.awarded) {
           Alert.alert(
             "Stake created",
-            `Locked ${amount} ROL for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
+            `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
           );
         } else {
-          Alert.alert("Stake created", `Locked ${amount} ROL for ${stakeDays} days.`);
+          Alert.alert("Stake created", `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.`);
         }
       } catch {
-        Alert.alert("Stake created", `Locked ${amount} ROL for ${stakeDays} days.`);
+        Alert.alert("Stake created", `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.`);
       }
       await loadStakes();
     } catch (e: any) {
@@ -433,7 +431,7 @@ export default function RolleyBotScreen() {
     } finally {
       setStakeBusy(false);
     }
-  }, [loadStakes, rolBalance, sport, stakeAmount, stakeDays, userId]);
+  }, [loadStakes, sport, stakeAmount, stakeAsset, stakeDays, userId]);
 
   const onWithdrawStake = useCallback(
     async (stakeId: string) => {
@@ -449,7 +447,7 @@ export default function RolleyBotScreen() {
           throw new Error(text || `Withdraw failed (${response.status})`);
         }
         await loadStakes();
-        Alert.alert("Withdraw successful", "Stake payout moved to your in-app ROL balance.");
+        Alert.alert("Withdraw successful", "Stake payout marked as completed by Banter.");
       } catch (e: any) {
         Alert.alert("Withdraw failed", e?.message || "Failed to withdraw stake");
       } finally {
@@ -525,14 +523,25 @@ export default function RolleyBotScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Start Rollover Position</Text>
-          <Text style={styles.metaSub}>Available ROL: {formatRol(rolBalance)}</Text>
+          <Text style={styles.metaSub}>Choose the asset Banter will receive and manage for your rollover.</Text>
           <Text style={styles.metaSub}>Banter receives this stake, rolls it through the daily AI product for your selected duration, then pays you principal plus profit minus Banter's 10% profit fee.</Text>
+          <View style={styles.durationRow}>
+            {(["USD", "USDC"] as StakeAsset[]).map((asset) => (
+              <Pressable
+                key={asset}
+                style={[styles.durationChip, stakeAsset === asset && styles.durationChipActive]}
+                onPress={() => setStakeAsset(asset)}
+              >
+                <Text style={[styles.durationText, stakeAsset === asset && styles.durationTextActive]}>{asset}</Text>
+              </Pressable>
+            ))}
+          </View>
           <View style={styles.inputRow}>
             <TextInput
               value={stakeAmount}
               onChangeText={setStakeAmount}
               keyboardType="decimal-pad"
-              placeholder="Amount (ROL)"
+              placeholder={`Amount (${stakeAsset})`}
               placeholderTextColor="#6b7280"
               style={styles.input}
             />
@@ -572,7 +581,7 @@ export default function RolleyBotScreen() {
                   </View>
                 </View>
                 <Text style={styles.stakeLine}>
-                  Principal: {formatRol(stake.principal_rol)} ROL • Current: {formatRol(stake.current_rol)} ROL
+                  Asset: {stake.stake_asset} • Principal: {formatAmount(stake.principal_amount, stake.stake_asset)} • Current: {formatAmount(stake.current_amount, stake.stake_asset)}
                 </Text>
                 <Text style={styles.stakeLine}>
                   Period: {stake.lock_days}d • Ends: {stake.ends_on}
@@ -581,7 +590,7 @@ export default function RolleyBotScreen() {
                   Progress: {stake.days_completed}/{stake.lock_days} day(s) • Remaining: {stake.days_remaining}
                 </Text>
                 <Text style={styles.stakeLine}>
-                  Total factor: x{stake.total_factor.toFixed(3)} • Fee accrued: {formatRol(stake.platform_fee_rol)} ROL
+                  Total factor: x{stake.total_factor.toFixed(3)} • Fee accrued: {formatAmount(stake.platform_fee_amount, stake.stake_asset)}
                 </Text>
                 {stake.latest_pick_date ? (
                   <Text style={styles.stakeLine}>
@@ -599,7 +608,7 @@ export default function RolleyBotScreen() {
                       <View key={day.id} style={styles.dailyTrailRow}>
                         <Text style={styles.dailyTrailDate}>{day.pick_date}</Text>
                         <Text style={styles.dailyTrailText}>
-                          {day.outcome} • x{day.factor.toFixed(3)} • {formatRol(day.starting_rol)} → {formatRol(day.ending_rol)} ROL
+                          {day.outcome} • x{day.factor.toFixed(3)} • {formatAmount(day.starting_amount, stake.stake_asset)} → {formatAmount(day.ending_amount, stake.stake_asset)}
                         </Text>
                       </View>
                     ))}
