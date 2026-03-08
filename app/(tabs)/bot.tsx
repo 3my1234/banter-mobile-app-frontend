@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { usePrivy } from "@privy-io/expo";
-import { useCreateWallet, useSignRawHash } from "@privy-io/expo/extended-chains";
 import {
   Alert,
   Linking,
@@ -15,7 +13,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
-import { getMovementWallet, getMovementWalletByAddress, sendMovementTransaction } from "@/lib/privyMovement";
 
 type Sport = "SOCCER" | "BASKETBALL";
 
@@ -93,22 +90,6 @@ type HistoryResponse = {
   picks?: RolleyPick[];
 };
 
-type MovementWalletPickStatus = {
-  movement_pick_id: number;
-  wallet_address: string;
-  pick_status: string;
-  staked_raw: string;
-  staked_rol: number;
-  claimable_raw: string;
-  claimable_rol: number;
-  eligible_to_claim: boolean;
-};
-
-type MovementWalletStatusResponse = {
-  wallet_address: string;
-  statuses?: MovementWalletPickStatus[];
-};
-
 type StakeStatus = "ACTIVE" | "LOST" | "MATURED" | "WITHDRAWN";
 
 type StakePosition = {
@@ -136,8 +117,6 @@ const ROLLEY_SERVICE_URL =
 const MOVEMENT_EXPLORER_BASE =
   process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ?? "https://explorer.movementnetwork.xyz";
 const MOVEMENT_EXPLORER_NETWORK = process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_NETWORK ?? "testnet";
-const MOVEMENT_SETTLEMENT_MODULE_ADDRESS = process.env.EXPO_PUBLIC_MOVEMENT_SETTLEMENT_MODULE_ADDRESS ?? "";
-const MOVEMENT_ROL_DECIMALS = Number(process.env.EXPO_PUBLIC_MOVEMENT_ROL_DECIMALS ?? "8");
 const STAKE_DAY_OPTIONS = [5, 10, 15, 20, 25, 30] as const;
 
 const buildRolleyUrl = (path: string) => {
@@ -199,11 +178,6 @@ const movementTxUrl = (hash?: string | null) => {
   return `${MOVEMENT_EXPLORER_BASE.replace(/\/+$/, "")}/txn/${hash}?network=${MOVEMENT_EXPLORER_NETWORK}`;
 };
 
-const toMovementRolRaw = (amount: number) => {
-  if (!Number.isFinite(amount) || amount <= 0) return "0";
-  return Math.floor(amount * 10 ** MOVEMENT_ROL_DECIMALS).toString();
-};
-
 const chainStatusLabel = (pick?: RolleyPick | null) => {
   if (!pick?.movement_sync_status) return "Not synced on-chain";
   switch (pick.movement_sync_status) {
@@ -221,9 +195,6 @@ const chainStatusLabel = (pick?: RolleyPick | null) => {
 };
 
 export default function RolleyBotScreen() {
-  const { user } = usePrivy();
-  const { createWallet } = useCreateWallet();
-  const { signRawHash } = useSignRawHash();
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [picks, setPicks] = useState<RolleyPick[]>([]);
   const [dailyProduct, setDailyProduct] = useState<DailyProduct | null>(null);
@@ -234,14 +205,11 @@ export default function RolleyBotScreen() {
   const [historyDate, setHistoryDate] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
-  const [movementAddress, setMovementAddress] = useState<string>("");
   const [rolBalance, setRolBalance] = useState<number>(0);
   const [stakeAmount, setStakeAmount] = useState("1");
   const [stakeDays, setStakeDays] = useState<number>(5);
   const [stakes, setStakes] = useState<StakePosition[]>([]);
   const [stakeBusy, setStakeBusy] = useState(false);
-  const [movementStakeBusy, setMovementStakeBusy] = useState(false);
-  const [movementStatusByPickId, setMovementStatusByPickId] = useState<Record<number, MovementWalletPickStatus>>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,151 +220,16 @@ export default function RolleyBotScreen() {
       const id = me?.user?.id ? String(me.user.id) : "";
       const raw = Number(me?.user?.rolBalanceRaw || 0);
       setUserId(id);
-      setMovementAddress(String(me?.user?.movementAddress || ""));
       setRolBalance(Number.isFinite(raw) ? raw / 1e8 : 0);
     } catch {
       setUserId("");
-      setMovementAddress("");
       setRolBalance(0);
     }
   }, []);
 
-  const resolveMovementWallet = useCallback(async () => {
-    let wallet = getMovementWalletByAddress(user, movementAddress) || getMovementWallet(user);
-    if (wallet?.address) {
-      return wallet;
-    }
-    try {
-      await createWallet({ chainType: "movement" });
-    } catch (error) {
-      const message = ((error as Error)?.message || "").toLowerCase();
-      const alreadyExists =
-        message.includes("already has an embedded wallet") ||
-        message.includes("already has an account of the type linked") ||
-        message.includes("already has a wallet");
-      if (!alreadyExists) {
-        await createWallet({ chainType: "aptos" });
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    wallet = getMovementWalletByAddress(user, movementAddress) || getMovementWallet(user);
-    if (!wallet?.address) {
-      throw new Error("Movement wallet not available in this session. Log out and sign in again.");
-    }
-    return wallet;
-  }, [createWallet, movementAddress, user]);
 
-  const loadMovementStatuses = useCallback(async () => {
-    const walletAddress = movementAddress || getMovementWallet(user)?.address || "";
-    const visiblePicks = [
-      ...(primaryPick ? [primaryPick] : []),
-      ...alternatives,
-      ...(historyExpanded ? historyPicks : []),
-    ];
-    const pickIds = Array.from(
-      new Set(
-        visiblePicks
-          .map((pick) => pick.movement_pick_id)
-          .filter((value): value is number => typeof value === "number" && value > 0)
-      )
-    );
 
-    if (!walletAddress || pickIds.length === 0) {
-      setMovementStatusByPickId({});
-      return;
-    }
 
-    try {
-      const params = new URLSearchParams({
-        wallet_address: walletAddress,
-        pick_ids: pickIds.join(","),
-      });
-      const response = await fetch(buildRolleyUrl(`/api/v1/movement/status?${params.toString()}`));
-      if (!response.ok) {
-        throw new Error(`Movement status fetch failed (${response.status})`);
-      }
-      const data: MovementWalletStatusResponse = await response.json();
-      const next: Record<number, MovementWalletPickStatus> = {};
-      for (const item of data.statuses || []) {
-        next[item.movement_pick_id] = item;
-      }
-      setMovementStatusByPickId(next);
-    } catch {
-      setMovementStatusByPickId({});
-    }
-  }, [alternatives, historyExpanded, historyPicks, movementAddress, primaryPick, user]);
-
-  const onStakeOnMovement = useCallback(async () => {
-    if (!primaryPick?.movement_pick_id) {
-      Alert.alert("Movement stake unavailable", "This pick is not registered on Movement yet.");
-      return;
-    }
-    if (!MOVEMENT_SETTLEMENT_MODULE_ADDRESS) {
-      Alert.alert("Movement stake unavailable", "Movement settlement module address is not configured in this build.");
-      return;
-    }
-
-    const amount = Number(stakeAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      Alert.alert("Movement stake failed", "Enter a valid Movement stake amount in ROL.");
-      return;
-    }
-
-    try {
-      setMovementStakeBusy(true);
-      const wallet = await resolveMovementWallet();
-      const publicKey = wallet.publicKey || wallet.public_key;
-      if (!publicKey) {
-        throw new Error("Movement wallet public key not available.");
-      }
-      const walletAddress = String(wallet.address);
-      const txHash = await sendMovementTransaction(
-        {
-          type: "entry_function_payload",
-          function: `${MOVEMENT_SETTLEMENT_MODULE_ADDRESS}::rolley_settlement::stake_on_pick`,
-          type_arguments: [],
-          arguments: [
-            String(primaryPick.movement_pick_id),
-            "1",
-            toMovementRolRaw(amount),
-            String(Math.floor(Date.now() / 1000)),
-          ],
-        },
-        walletAddress,
-        publicKey,
-        signRawHash as any
-      );
-      setMovementAddress(walletAddress);
-      await loadMovementStatuses();
-      Alert.alert("Movement stake submitted", `Your on-chain stake was submitted.
-
-Tx: ${txHash}`);
-    } catch (e: any) {
-      Alert.alert("Movement stake failed", e?.message || "Failed to submit on-chain stake.");
-    } finally {
-      setMovementStakeBusy(false);
-    }
-  }, [loadMovementStatuses, primaryPick, resolveMovementWallet, signRawHash, stakeAmount]);
-
-  const renderWalletMovementStatus = (pick?: RolleyPick | null) => {
-    if (!pick || typeof pick.movement_pick_id !== "number") return null;
-    const status = movementStatusByPickId[pick.movement_pick_id];
-    if (!status) return null;
-    return (
-      <View style={styles.userChainBox}>
-        <Text style={styles.userChainTitle}>Your Movement status</Text>
-        <Text style={styles.userChainLine}>On-chain pick: #{status.movement_pick_id}</Text>
-        <Text style={styles.userChainLine}>Pick state: {status.pick_status}</Text>
-        <Text style={styles.userChainLine}>Stake on-chain: {formatRol(status.staked_rol)} ROL</Text>
-        <Text style={styles.userChainLine}>
-          Claim status: {status.eligible_to_claim ? `Eligible (${formatRol(status.claimable_rol)} ROL)` : "Not claimable yet"}
-        </Text>
-        <Text style={styles.userChainHint}>
-          Claim release is still handled by Rolley after settlement. Your wallet status here is read from Movement.
-        </Text>
-      </View>
-    );
-  };
 
   const loadStakes = useCallback(async () => {
     if (!userId) {
@@ -505,9 +338,6 @@ Tx: ${txHash}`);
     void loadStakes();
   }, [loadStakes]);
 
-  useEffect(() => {
-    void loadMovementStatuses();
-  }, [loadMovementStatuses]);
 
   const onRefresh = useCallback(async () => {
     try {
@@ -518,11 +348,10 @@ Tx: ${txHash}`);
       }
       await fetchUserContext();
       await loadStakes();
-      await loadMovementStatuses();
     } finally {
       setRefreshing(false);
     }
-  }, [fetchUserContext, historyExpanded, loadHistory, loadMovementStatuses, loadPicks, loadStakes]);
+  }, [fetchUserContext, historyExpanded, loadHistory, loadPicks, loadStakes]);
 
   const onCreateStake = useCallback(async () => {
     const amount = Number(stakeAmount);
@@ -665,8 +494,9 @@ Tx: ${txHash}`);
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Stake ROL</Text>
+          <Text style={styles.sectionTitle}>Start Rollover Position</Text>
           <Text style={styles.metaSub}>Available ROL: {formatRol(rolBalance)}</Text>
+          <Text style={styles.metaSub}>Banter receives this stake, rolls it through the daily AI product for your selected duration, then pays you principal plus profit minus Banter's 10% profit fee.</Text>
           <View style={styles.inputRow}>
             <TextInput
               value={stakeAmount}
@@ -691,10 +521,10 @@ Tx: ${txHash}`);
             ))}
           </View>
           <Pressable style={styles.stakeButton} disabled={stakeBusy} onPress={() => void onCreateStake()}>
-            <Text style={styles.stakeButtonText}>{stakeBusy ? "Processing..." : "Stake Now"}</Text>
+            <Text style={styles.stakeButtonText}>{stakeBusy ? "Processing..." : "Start Managed Rollover"}</Text>
           </Pressable>
           <Text style={styles.disclaimer}>
-            Rolley uses safety-first predictions but can still lose. Stake only what you can afford.
+            Your deposit is managed by Banter for the selected rollover period. Movement is used to publish pick and settlement proof, not to hold your stake directly.
           </Text>
         </View>
 
@@ -714,7 +544,7 @@ Tx: ${txHash}`);
                   Period: {stake.lock_days}d • Ends: {stake.ends_on}
                 </Text>
                 <Text style={styles.stakeChainNote}>
-                  Chain status: pick registration and settlement are on Movement. Your personal stake balance is still tracked in-app for now.
+                  Managed rollover: Banter tracks your active position in-app, while Movement publishes pick and settlement proof for transparency.
                 </Text>
                 {stake.status === "MATURED" ? (
                   <Pressable
@@ -814,19 +644,13 @@ Tx: ${txHash}`);
                           </Pressable>
                         ) : null}
                       </View>
-                      {renderWalletMovementStatus(legPick)}
                     </>
                   ) : null}
                 </View>
               );
             })}
-            <Pressable style={styles.movementStakeButton} disabled={movementStakeBusy} onPress={() => void onStakeOnMovement()}>
-              <Text style={styles.movementStakeButtonText}>
-                {movementStakeBusy ? "Submitting Movement stake..." : "Stake Primary Leg on Movement"}
-              </Text>
-            </Pressable>
             <Text style={styles.stakeNote}>
-              This rollover product is today's final selection. Movement staking still submits against the primary leg while the full rollover contract is being completed.
+              This is today's final rollover product. Banter uses it to manage active rollover positions, while Movement stores proof that the pick and its result were published publicly.
             </Text>
           </View>
         ) : null}
@@ -880,7 +704,6 @@ Tx: ${txHash}`);
                 </Pressable>
               ) : null}
             </View>
-            {renderWalletMovementStatus(pick)}
           </View>
         ))}
 
@@ -980,8 +803,7 @@ Tx: ${txHash}`);
                   </Pressable>
                 ) : null}
               </View>
-              {renderWalletMovementStatus(pick)}
-            </View>
+              </View>
           ))}
       </ScrollView>
     </SafeAreaView>
@@ -1046,16 +868,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   stakeButtonText: { color: "#16120c", fontWeight: "800", fontSize: 13 },
-  movementStakeButton: {
-    marginTop: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#3b82f6",
-    backgroundColor: "rgba(59,130,246,0.12)",
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  movementStakeButtonText: { color: "#bfdbfe", fontWeight: "800", fontSize: 12 },
   disclaimer: { color: "#9ca3af", fontSize: 11, marginTop: 8, lineHeight: 16 },
   stakeCard: {
     borderWidth: 1,
