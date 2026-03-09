@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,6 +9,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as WebBrowser from "expo-web-browser";
+import * as ExpoLinking from "expo-linking";
+import { Linking } from "react-native";
 import { Text } from "@/components/Themed";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
@@ -179,6 +181,21 @@ const formatAmount = (value?: number, asset: "USD" | "USDC" | "ROL" = "USD") => 
   const maximumFractionDigits = asset === "USD" ? 2 : asset === "USDC" ? 6 : 8;
   const formatted = value.toLocaleString(undefined, { maximumFractionDigits });
   return asset === "USD" ? `$${formatted}` : `${formatted} ${asset}`;
+};
+
+const pollRolleyFlutterwaveStatus = async (paymentId: string, attempts: number = 15) => {
+  for (let i = 0; i < attempts; i += 1) {
+    const statusData = await apiFetch(`/payments/flutterwave/rolley/status/${paymentId}`);
+    const status = statusData?.payment?.status;
+    if (status === "COMPLETED") {
+      return "COMPLETED";
+    }
+    if (status === "FAILED") {
+      return "FAILED";
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return "PENDING";
 };
 
 const getSettlementUi = (outcome?: RolleyPick["settlement_outcome"]) => {
@@ -397,21 +414,61 @@ export default function RolleyBotScreen() {
 
     try {
       setStakeBusy(true);
-      const response = await fetch(buildRolleyUrl("/api/v1/stakes/create"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          sport,
-          stake_asset: stakeAsset,
-          amount,
-          lock_days: stakeDays,
-        }),
-      });
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || `Stake create failed (${response.status})`);
+      if (stakeAsset === "USD") {
+        const redirectUrl = ExpoLinking.createURL("payments/flutterwave/rolley");
+        const created = await apiFetch("/payments/flutterwave/rolley/create", {
+          method: "POST",
+          body: JSON.stringify({
+            sport,
+            amount,
+            lockDays: stakeDays,
+            redirectUrl,
+          }),
+        });
+
+        const result = await WebBrowser.openAuthSessionAsync(created.paymentUrl, redirectUrl);
+
+        let transactionId: string | undefined;
+        let txRef: string | undefined = created.reference;
+
+        if (result.type === "success" && result.url) {
+          const parsed = ExpoLinking.parse(result.url);
+          transactionId = (parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId) as
+            | string
+            | undefined;
+          txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
+        } else if (result.type === "cancel" || result.type === "dismiss") {
+          const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId, 6);
+          if (finalStatus !== "COMPLETED") {
+            throw new Error("Payment was cancelled.");
+          }
+        }
+
+        if (transactionId || txRef) {
+          const verified = await apiFetch("/payments/flutterwave/rolley/verify", {
+            method: "POST",
+            body: JSON.stringify({
+              paymentId: created.paymentId,
+              transactionId,
+              txRef,
+            }),
+          });
+          if (verified?.payment?.status !== "COMPLETED") {
+            const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId);
+            if (finalStatus !== "COMPLETED") {
+              throw new Error("Payment is still pending verification. Please check again shortly.");
+            }
+          }
+        } else {
+          const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId);
+          if (finalStatus !== "COMPLETED") {
+            throw new Error("Payment is still pending verification. Please check again shortly.");
+          }
+        }
+      } else {
+        throw new Error("USDC rollover funding is not live in-app yet. Use USD for now.");
       }
+
       try {
         const reward = await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
         if (reward?.awarded) {
@@ -562,6 +619,11 @@ export default function RolleyBotScreen() {
           <Pressable style={styles.stakeButton} disabled={stakeBusy} onPress={() => void onCreateStake()}>
             <Text style={styles.stakeButtonText}>{stakeBusy ? "Processing..." : "Start Managed Rollover"}</Text>
           </Pressable>
+          {stakeAsset === "USDC" ? (
+            <Text style={styles.disclaimer}>
+              USDC rollover funding is being finalized. Use USD for the live managed rollover flow right now.
+            </Text>
+          ) : null}
           <Text style={styles.disclaimer}>
             Your deposit is managed by Banter for the selected rollover period. Movement is used to publish pick and settlement proof, not to hold your stake directly.
           </Text>
