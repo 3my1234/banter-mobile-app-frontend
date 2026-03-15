@@ -20,12 +20,15 @@ import { apiFetch } from "@/lib/api";
 import { pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
 import { useFocusEffect } from "@react-navigation/native";
 import { addPendingPost, removePendingPost, updatePendingPost } from "@/lib/uploadQueue";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 const ROAST_PREFIX = "[ROAST]";
 
 export default function ComposeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [mode, setMode] = useState<"banter" | "roast">("banter");
   const [text, setText] = useState("");
   const [media, setMedia] = useState<PickedMedia | null>(null);
@@ -263,11 +266,13 @@ export default function ComposeScreen() {
           ) : null}
 
           <View style={styles.actionsRow}>
-            <Pressable onPress={() => handlePick("image")}>
+            <Pressable style={styles.mediaAction} onPress={() => handlePick("image")}>
               <FontAwesome name="image" size={18} color="#ff6b35" />
+              <Text style={styles.mediaActionText}>Image</Text>
             </Pressable>
-            <Pressable onPress={() => handlePick("video")}>
+            <Pressable style={styles.mediaAction} onPress={() => handlePick("video")}>
               <FontAwesome name="video-camera" size={18} color="#ff6b35" />
+              <Text style={styles.mediaActionText}>Video</Text>
             </Pressable>
           </View>
 
@@ -342,21 +347,22 @@ export default function ComposeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
     zIndex: 2,
     position: "relative",
   },
-  title: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  title: { color: colors.text, fontWeight: "700", fontSize: 16 },
   postBtn: {
     backgroundColor: "#ff6b35",
     paddingHorizontal: 14,
@@ -367,7 +373,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 14 },
   modePill: {
     flexDirection: "row",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     borderRadius: 999,
     padding: 2,
     alignSelf: "flex-start",
@@ -378,9 +384,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   modeActive: { backgroundColor: "#ff6b35" },
-  modeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  modeText: { color: colors.text, fontSize: 12, fontWeight: "600" },
   input: {
-    color: "#fafafa",
+    color: colors.text,
     minHeight: 120,
     textAlignVertical: "top",
     fontSize: 16,
@@ -389,36 +395,48 @@ const styles = StyleSheet.create({
   media: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12 },
   removeMedia: { color: "#ff6b35", fontWeight: "700" },
   actionsRow: { flexDirection: "row", gap: 16, marginTop: 6 },
+  mediaAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  mediaActionText: { color: colors.text, fontWeight: "600", fontSize: 12 },
   tagsSection: { gap: 10 },
-  sectionTitle: { color: "#fff", fontWeight: "700" },
+  sectionTitle: { color: colors.text, fontWeight: "700" },
   leagueRow: { flexDirection: "row", gap: 8 },
   leagueChip: {
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
   leagueChipActive: { backgroundColor: "#ff6b35" },
-  leagueText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  leagueText: { color: colors.text, fontSize: 12, fontWeight: "600" },
   leagueTextActive: { color: "#0d0d0d", fontWeight: "700" },
   tagInput: {
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    color: "#fff",
+    color: colors.text,
   },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tagChip: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
   tagText: { color: "#ff6b35", fontWeight: "700" },
   suggestions: {
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 12,
     overflow: "hidden",
@@ -426,9 +444,9 @@ const styles = StyleSheet.create({
   suggestionItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
-  suggestionText: { color: "#fafafa" },
+  suggestionText: { color: colors.text },
   error: { color: "#ff6b35" },
 });

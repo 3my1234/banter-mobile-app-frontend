@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/components/useColorScheme";
@@ -16,6 +16,7 @@ import {
   subscribeNotificationUnreadCount,
 } from "@/lib/notificationBadge";
 import { getSocket } from "@/lib/socket";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>["name"];
@@ -32,6 +33,8 @@ function HorizontalTabBar({
   messageUnread,
 }: BottomTabBarProps & { notificationUnread: number; messageUnread: number }) {
   const insets = useSafeAreaInsets();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const visibleRoutes = useMemo(
     () => state.routes.filter((route) => route.name !== "compose"),
     [state.routes]
@@ -65,7 +68,7 @@ function HorizontalTabBar({
             typeof options.tabBarIcon === "function"
               ? options.tabBarIcon({
                   focused: isFocused,
-                  color: "#ffffff",
+                  color: themeColors.text,
                   size: 24,
                 })
               : null;
@@ -116,6 +119,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     loadNotificationUnread();
+    const retry = setTimeout(loadNotificationUnread, 1500);
     let socket: any;
     let disposed = false;
     const setup = async () => {
@@ -139,12 +143,25 @@ export default function TabLayout() {
 
     setup();
     return () => {
+      clearTimeout(retry);
       disposed = true;
       if (socket) {
         socket.off("notifications.new");
         socket.off("notifications.read");
         socket.off("notifications.read_all");
       }
+    };
+  }, [loadNotificationUnread]);
+
+  useEffect(() => {
+    const onAppStateChange = (nextState: string) => {
+      if (nextState === "active") {
+        loadNotificationUnread();
+      }
+    };
+    const sub = AppState.addEventListener("change", onAppStateChange);
+    return () => {
+      sub.remove();
     };
   }, [loadNotificationUnread]);
 
@@ -229,19 +246,21 @@ export default function TabLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
   tabBarWrap: {
-    backgroundColor: "#0d0d0d",
-    borderTopColor: "#1f2937",
+    backgroundColor: colors.background,
+    borderTopColor: colors.border,
     borderTopWidth: 1,
     paddingTop: 6,
   },
   tabBarScroll: {
-    paddingHorizontal: 8,
-    gap: 14,
+    paddingHorizontal: 12,
+    gap: 18,
   },
   tabItem: {
     paddingVertical: 6,
+    minWidth: 52,
   },
   iconWrap: {
     width: 44,

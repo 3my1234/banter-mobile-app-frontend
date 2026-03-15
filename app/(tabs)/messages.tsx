@@ -1,10 +1,11 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 type MessageItem = {
   id: string;
@@ -15,6 +16,8 @@ type MessageItem = {
 };
 
 export default function MessagesScreen() {
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -84,25 +87,26 @@ export default function MessagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: {
-    flex: 1,
-    backgroundColor: "#0d0d0d",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  title: { color: "#fafafa", fontSize: 18, fontWeight: "700" },
-  empty: { color: "#9ca3af", marginTop: 8 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomColor: "#1f1f1f",
-    borderBottomWidth: 1,
-  },
-  dotWrap: { width: 14, alignItems: "center" },
-  unreadDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#ff6b35" },
-  sender: { color: "#fafafa", fontSize: 14, fontWeight: "700" },
-  preview: { color: "#9ca3af", marginTop: 2, fontSize: 12 },
-});
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+    },
+    title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+    empty: { color: colors.textMuted, marginTop: 8 },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 12,
+      borderBottomColor: colors.border,
+      borderBottomWidth: 1,
+    },
+    dotWrap: { width: 14, alignItems: "center" },
+    unreadDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#ff6b35" },
+    sender: { color: colors.text, fontSize: 14, fontWeight: "700" },
+    preview: { color: colors.textMuted, marginTop: 2, fontSize: 12 },
+  });

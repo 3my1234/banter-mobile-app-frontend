@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/expo";
 import * as WebBrowser from "expo-web-browser";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -17,6 +18,8 @@ let oauthFlowInProgress = false;
 
 const AuthLoginScreen = () => {
   const router = useRouter();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { user, isReady, getAccessToken } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
   const solanaWalletState = useEmbeddedSolanaWallet();
@@ -450,43 +453,45 @@ const AuthLoginScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  logo: {
-    width: 140,
-    height: 140,
-    marginBottom: 24,
-  },
-  errorText: {
-    color: "#ff6b35",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  mutedText: {
-    color: "#666",
-    marginBottom: 8,
-  },
-  googleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#fff",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-  googleButtonDisabled: {
-    opacity: 0.6,
-  },
-  googleButtonText: {
-    color: "#111",
-    fontWeight: "700",
-  },
-});
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 20,
+      backgroundColor: colors.background,
+    },
+    logo: {
+      width: 140,
+      height: 140,
+      marginBottom: 24,
+    },
+    errorText: {
+      color: "#ff6b35",
+      textAlign: "center",
+      marginBottom: 8,
+    },
+    mutedText: {
+      color: colors.textMuted,
+      marginBottom: 8,
+    },
+    googleButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.text,
+      paddingHorizontal: 18,
+      paddingVertical: 12,
+      borderRadius: 999,
+    },
+    googleButtonDisabled: {
+      opacity: 0.6,
+    },
+    googleButtonText: {
+      color: "#111",
+      fontWeight: "700",
+    },
+  });
 
 export default AuthLoginScreen;

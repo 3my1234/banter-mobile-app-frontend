@@ -1,9 +1,12 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 export default function OAuthRedirectScreen() {
   const router = useRouter();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
 
   useEffect(() => {
     router.replace("/(auth)/login");
@@ -16,11 +19,12 @@ export default function OAuthRedirectScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0d0d0d",
-  },
-});
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.background,
+    },
+  });

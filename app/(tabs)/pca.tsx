@@ -18,6 +18,7 @@ import { Text } from "@/components/Themed";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type Sport = "SOCCER" | "BASKETBALL";
@@ -112,6 +113,8 @@ const resolveNomineeMediaUrls = (url?: string | null) => {
 };
 
 export default function PCA() {
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [sport, setSport] = useState<Sport>("SOCCER");
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -422,6 +425,12 @@ export default function PCA() {
         />
 
         <View style={styles.header}>
+          <View>
+            <Text style={styles.pcaTitle}>People's Choice Award</Text>
+            <Text style={styles.pcaSubtitle}>
+              Finally giving fans worldwide the chance to vote their favorite players for deserved awards.
+            </Text>
+          </View>
           <TouchableOpacity onPress={() => setShowIntro(true)}>
             <Text style={styles.help}>How it works</Text>
           </TouchableOpacity>
@@ -540,37 +549,46 @@ export default function PCA() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d", paddingHorizontal: 14, paddingTop: 10 },
-  header: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", minHeight: 24 },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 14, paddingTop: 10 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 24,
+  },
+  pcaTitle: { color: colors.text, fontSize: 18, fontWeight: "800" },
+  pcaSubtitle: { color: colors.textMuted, fontSize: 12, marginTop: 4, maxWidth: 220 },
   help: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
-  balance: { color: "#f5f5f5", marginTop: 8, fontWeight: "700" },
+  balance: { color: colors.text, marginTop: 8, fontWeight: "700" },
   sportSwitch: { flexDirection: "row", gap: 8, marginTop: 12 },
   sportChip: {
     borderWidth: 1,
-    borderColor: "#343434",
+    borderColor: colors.borderStrong,
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   sportChipActive: { borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.15)" },
-  sportText: { color: "#ccc", fontWeight: "700", fontSize: 12 },
+  sportText: { color: colors.text, fontWeight: "700", fontSize: 12 },
   sportTextActive: { color: "#ff6b35" },
   categoryTabs: { marginTop: 12, maxHeight: 72 },
   categoryTab: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2c2c2c",
+    borderColor: colors.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginRight: 8,
     minWidth: 150,
   },
   categoryTabActive: { borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.1)" },
-  categoryTabTitle: { color: "#fff", fontWeight: "700", fontSize: 12 },
-  categoryTabSub: { color: "#a3a3a3", fontSize: 11, marginTop: 3 },
-  loading: { color: "#9ca3af", marginTop: 14 },
+  categoryTabTitle: { color: colors.text, fontWeight: "700", fontSize: 12 },
+  categoryTabSub: { color: colors.textMuted, fontSize: 11, marginTop: 3 },
+  loading: { color: colors.textMuted, marginTop: 14 },
   errorWrap: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 },
   errorText: { color: "#ff6b35", flex: 1, fontSize: 12 },
   retryText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
@@ -580,22 +598,22 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  categoryTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  categoryTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   categoryState: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
-  categoryDescription: { color: "#ddd", marginTop: 8, fontSize: 12, lineHeight: 18 },
-  categorySub: { color: "#999", marginTop: 4, fontSize: 12 },
+  categoryDescription: { color: colors.textSoft, marginTop: 8, fontSize: 12, lineHeight: 18 },
+  categorySub: { color: colors.textMuted, marginTop: 4, fontSize: 12 },
   listContent: { paddingTop: 10, paddingBottom: 18, gap: 10 },
   nomineeCard: {
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#252525",
+    borderColor: colors.border,
     borderRadius: 14,
     padding: 12,
     gap: 8,
   },
   nomineeTop: { flexDirection: "row", alignItems: "center", gap: 12 },
-  nomineeName: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
-  nomineeMeta: { color: "#9ca3af", marginTop: 3, fontSize: 11 },
+  nomineeName: { color: colors.text, fontWeight: "700", fontSize: 14 },
+  nomineeMeta: { color: colors.textMuted, marginTop: 3, fontSize: 11 },
   nomineeVotes: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
   mediaGrid: { flexDirection: "row", gap: 8 },
   mediaTap: { flex: 1 },
@@ -604,9 +622,9 @@ const styles = StyleSheet.create({
     minHeight: 160,
     maxHeight: 220,
     borderRadius: 10,
-    backgroundColor: "#101010",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2b2b2b",
+    borderColor: colors.border,
   },
   mediaCardSingle: {
     flex: 0,
@@ -615,24 +633,24 @@ const styles = StyleSheet.create({
   mediaError: { color: "#fca5a5", fontSize: 11 },
   statsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   statChip: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 5,
   },
-  statText: { color: "#d4d4d4", fontSize: 11 },
+  statText: { color: colors.textSoft, fontSize: 11 },
   voteRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   stepper: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.borderStrong,
     borderRadius: 10,
     overflow: "hidden",
   },
   stepBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
-  stepText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  voteAmount: { color: "#fff", width: 40, textAlign: "center", fontWeight: "700" },
+  stepText: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  voteAmount: { color: colors.text, width: 40, textAlign: "center", fontWeight: "700" },
   voteBtn: {
     backgroundColor: "#ff6b35",
     borderRadius: 10,
@@ -643,14 +661,14 @@ const styles = StyleSheet.create({
   voteBtnText: { color: "#0d0d0d", fontWeight: "700" },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.overlayStrong,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
   },
-  modalCard: { width: "100%", backgroundColor: "#121212", borderRadius: 14, padding: 16, gap: 10 },
-  modalTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  modalText: { color: "#ddd", fontSize: 13, lineHeight: 19 },
+  modalCard: { width: "100%", backgroundColor: colors.surface, borderRadius: 14, padding: 16, gap: 10 },
+  modalTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  modalText: { color: colors.textSoft, fontSize: 13, lineHeight: 19 },
   modalBtn: {
     marginTop: 8,
     backgroundColor: "#ff6b35",
@@ -661,7 +679,7 @@ const styles = StyleSheet.create({
   modalBtnText: { color: "#111", fontWeight: "700" },
   previewBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.95)",
+    backgroundColor: colors.overlayStrong,
   },
   previewClose: {
     position: "absolute",
@@ -673,9 +691,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(17,17,17,0.88)",
+    backgroundColor: colors.surface,
   },
-  previewCloseText: { color: "#fff", fontSize: 24, lineHeight: 24 },
+  previewCloseText: { color: colors.text, fontSize: 24, lineHeight: 24 },
   previewBody: {
     flex: 1,
     alignItems: "center",

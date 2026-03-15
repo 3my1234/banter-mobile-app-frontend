@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -18,10 +18,13 @@ import {
   setFollowStatus,
   subscribeFollowStatus,
 } from "@/lib/followStore";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 export default function UserProfileScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [userPosts, setUserPosts] = useState<any[]>([]);
@@ -286,17 +289,18 @@ export default function UserProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, gap: 12 },
-  card: { backgroundColor: "#111", borderRadius: 12, padding: 12 },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#fff", marginBottom: 8 },
-  muted: { color: "#999", marginTop: 8, fontSize: 12 },
+  card: { backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 12 },
+  sectionTitle: { fontSize: 14, fontWeight: "700", color: colors.text, marginBottom: 8 },
+  muted: { color: colors.textMuted, marginTop: 8, fontSize: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   bannerWrap: { borderRadius: 16, overflow: "hidden" },
   banner: { width: "100%", height: 140 },
-  bannerPlaceholder: { width: "100%", height: 140, backgroundColor: "#1f1f1f" },
+  bannerPlaceholder: { width: "100%", height: 140, backgroundColor: colors.surfaceAlt },
   profileHeader: {
     marginTop: -32,
     flexDirection: "row",
@@ -309,7 +313,7 @@ const styles = StyleSheet.create({
     borderRadius: 44,
     borderWidth: 2,
     borderColor: "#ff6b35",
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
   },
   followBtn: {
     backgroundColor: "#ff6b35",
@@ -317,13 +321,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
   },
-  followingBtn: { backgroundColor: "#1f1f1f" },
-  followBtnText: { color: "#fff", fontWeight: "700" },
-  displayName: { fontSize: 20, fontWeight: "700", color: "#fff" },
-  username: { color: "#9ca3af", fontSize: 12 },
-  bio: { color: "#e5e7eb", marginTop: 6, lineHeight: 18, fontSize: 12 },
+  followingBtn: { backgroundColor: colors.surfaceAlt },
+  followBtnText: { color: colors.text, fontWeight: "700" },
+  displayName: { fontSize: 20, fontWeight: "700", color: colors.text },
+  username: { color: colors.textMuted, fontSize: 12 },
+  bio: { color: colors.textSoft, marginTop: 6, lineHeight: 18, fontSize: 12 },
   followStats: { flexDirection: "row", gap: 16, marginTop: 8 },
-  statText: { color: "#9ca3af", fontSize: 12 },
+  statText: { color: colors.textMuted, fontSize: 12 },
   profileTabsRow: {
     flexDirection: "row",
     gap: 10,
@@ -333,31 +337,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
   },
   profileTabActive: {
     backgroundColor: "rgba(255,107,53,0.2)",
     borderWidth: 1,
     borderColor: "rgba(255,107,53,0.5)",
   },
-  profileTabText: { color: "#9ca3af", fontWeight: "700", fontSize: 12 },
+  profileTabText: { color: colors.textMuted, fontWeight: "700", fontSize: 12 },
   profileTabTextActive: { color: "#ff6b35" },
   postRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     paddingVertical: 8,
-    borderBottomColor: "#1f1f1f",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
-  postText: { color: "#fafafa", fontSize: 12 },
+  postText: { color: colors.text, fontSize: 12 },
   postMediaWrap: { width: 48, height: 48, borderRadius: 10, overflow: "hidden" },
   postMedia: { width: "100%", height: "100%" },
   postMediaPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 10,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },

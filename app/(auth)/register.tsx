@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Button, StyleSheet } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -16,6 +17,8 @@ type PendingRegistration = {
 
 const RegisterScreen = () => {
   const router = useRouter();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [pending, setPending] = useState<PendingRegistration | null>(null);
   const [displayName, setDisplayName] = useState<string>("");
   const [username, setUsername] = useState<string>("");
@@ -102,34 +105,35 @@ const RegisterScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#0d0d0d",
-  },
-  title: {
-    color: "#fafafa",
-    fontSize: 22,
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  input: {
-    backgroundColor: "#1a1a1a",
-    borderColor: "#333333",
-    borderWidth: 1,
-    borderRadius: 12,
-    color: "#fafafa",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  errorText: {
-    color: "#ff6b35",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-});
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: "center",
+      padding: 24,
+      backgroundColor: colors.background,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 22,
+      marginBottom: 16,
+      textAlign: "center",
+    },
+    input: {
+      backgroundColor: colors.surface,
+      borderColor: colors.borderStrong,
+      borderWidth: 1,
+      borderRadius: 12,
+      color: colors.text,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+    },
+    errorText: {
+      color: "#ff6b35",
+      textAlign: "center",
+      marginBottom: 8,
+    },
+  });
 
 export default RegisterScreen;

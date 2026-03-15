@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
+import { useAppThemeColors } from "@/components/theme";
 
 export default function Index() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const themeColors = useAppThemeColors();
+  const containerStyle = useMemo(
+    () => ({ backgroundColor: themeColors.background }),
+    [themeColors]
+  );
 
   useEffect(() => {
     const run = async () => {
@@ -35,7 +41,7 @@ export default function Index() {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0d0d0d",
+        ...containerStyle,
       }}
     >
       <ActivityIndicator />

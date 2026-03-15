@@ -3,14 +3,12 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   Share,
   StyleSheet,
-  ScrollView,
   TextInput,
   View,
 } from "react-native";
@@ -28,6 +26,7 @@ import { normalizeMediaUrl } from "@/lib/media";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import { getSocket } from "@/lib/socket";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 const ROAST_PREFIX = "[ROAST]";
 
@@ -69,6 +68,7 @@ type Post = {
   reactionCount?: number;
   shareCount?: number;
   reactionBreakdown?: Record<string, number>;
+  userReaction?: string | null;
   repostCount?: number;
   repostOf?: RepostOf | null;
   createdAt: string;
@@ -99,6 +99,8 @@ export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,7 +111,6 @@ export default function PostDetail() {
   const [showMedia, setShowMedia] = useState(false);
   const [savingMedia, setSavingMedia] = useState(false);
   const [detailAspect, setDetailAspect] = useState<number | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [showRepostModal, setShowRepostModal] = useState(false);
   const [quoteText, setQuoteText] = useState("");
 
@@ -187,6 +188,35 @@ export default function PostDetail() {
   const handleReaction = async (type: "LOVE" | "ANGRY") => {
     if (!post) return;
     try {
+      const currentReaction = post.userReaction ?? null;
+      const nextReaction = currentReaction === type ? null : type;
+      const breakdown = { ...(post.reactionBreakdown || {}) } as Record<
+        string,
+        number
+      >;
+      let reactionCount = post.reactionCount || 0;
+
+      if (currentReaction === type) {
+        reactionCount = Math.max(0, reactionCount - 1);
+        breakdown[type] = Math.max(0, (breakdown[type] || 0) - 1);
+      } else if (!currentReaction) {
+        reactionCount += 1;
+        breakdown[type] = (breakdown[type] || 0) + 1;
+      } else {
+        breakdown[currentReaction] = Math.max(0, (breakdown[currentReaction] || 0) - 1);
+        breakdown[type] = (breakdown[type] || 0) + 1;
+      }
+
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              reactionCount,
+              reactionBreakdown: breakdown,
+              userReaction: nextReaction,
+            }
+          : prev
+      );
       const data = await apiFetch("/reactions", {
         method: "POST",
         body: JSON.stringify({ postId: post.id, type }),
@@ -199,6 +229,16 @@ export default function PostDetail() {
       if (data?.reactionBreakdown) {
         setPost((prev) =>
           prev ? { ...prev, reactionBreakdown: data.reactionBreakdown } : prev
+        );
+      }
+      if (data?.reaction || data?.reaction === null) {
+        setPost((prev) =>
+          prev
+            ? {
+                ...prev,
+                userReaction: data.reaction ? data.reaction.type : null,
+              }
+            : prev
         );
       }
     } catch (e: any) {
@@ -322,6 +362,7 @@ export default function PostDetail() {
 
   const mediaUrl = normalizeMediaUrl(post?.mediaUrl);
   const avatarUrl = normalizeMediaUrl(post?.user?.avatarUrl);
+  const repostAvatarUrl = normalizeMediaUrl(post?.repostOf?.user?.avatarUrl);
   const displayName = post?.user?.displayName || post?.user?.username || "Banter";
   const handle = post?.user?.username ? `@${post.user.username}` : "@banter";
   const createdAt = post?.createdAt ? formatRelativeTime(post.createdAt) : "";
@@ -348,21 +389,6 @@ export default function PostDetail() {
       () => setDetailAspect(16 / 9)
     );
   }, [mediaUrl, mediaType]);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -556,16 +582,29 @@ socket.off("comment-deleted");
             ) : null}
             {isRepost && original ? (
               <View style={styles.repostCard}>
-                <Text style={styles.repostAuthor}>
-                  {original.user?.displayName ||
-                    original.user?.username ||
-                    "Banter"}{" "}
-                  <Text style={styles.handle}>
-                    {original.user?.username
-                      ? `@${original.user.username}`
-                      : "@banter"}
+                <View style={styles.repostHeader}>
+                  {repostAvatarUrl ? (
+                    <ExpoImage
+                      source={{ uri: repostAvatarUrl }}
+                      style={styles.repostAvatar}
+                      contentFit="cover"
+                      transition={180}
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <View style={styles.repostAvatar} />
+                  )}
+                  <Text style={styles.repostAuthor}>
+                    {original.user?.displayName ||
+                      original.user?.username ||
+                      "Banter"}{" "}
+                    <Text style={styles.handle}>
+                      {original.user?.username
+                        ? `@${original.user.username}`
+                        : "@banter"}
+                    </Text>
                   </Text>
-                </Text>
+                </View>
                 <Text style={styles.repostBody}>
                   {stripRoastPrefix(original.content || "")}
                 </Text>
@@ -607,19 +646,27 @@ socket.off("comment-deleted");
             )}
             <View style={styles.metaRow}>
               <View style={styles.metaItem}>
-                <FontAwesome name="comment-o" size={14} color="#9ca3af" />
+                <FontAwesome name="comment-o" size={16} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
               </View>
               <Pressable style={styles.metaItem} onPress={openRepostModal}>
-                <FontAwesome name="retweet" size={14} color="#9ca3af" />
+                <FontAwesome name="retweet" size={16} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable style={styles.metaItem} onPress={() => handleReaction("LOVE")}>
-                <FontAwesome name="heart" size={14} color="#9ca3af" />
+                <FontAwesome
+                  name="heart"
+                  size={16}
+                  color={post.userReaction === "LOVE" ? "#ef4444" : "#9ca3af"}
+                />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.LOVE ?? 0}</Text>
               </Pressable>
               <Pressable style={styles.metaItem} onPress={() => handleReaction("ANGRY")}>
-                <FontAwesome name="thumbs-down" size={14} color="#9ca3af" />
+                <FontAwesome
+                  name="thumbs-down"
+                  size={16}
+                  color={post.userReaction === "ANGRY" ? "#f59e0b" : "#9ca3af"}
+                />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.ANGRY ?? 0}</Text>
               </Pressable>
               <Pressable
@@ -648,7 +695,7 @@ socket.off("comment-deleted");
                   }
                 }}
               >
-                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <FontAwesome name="share-alt" size={16} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.shareCount ?? 0}</Text>
               </Pressable>
             </View>
@@ -656,7 +703,7 @@ socket.off("comment-deleted");
         </View>
       </View>
     );
-  }, [post, avatarUrl, displayName, handle, createdAt, isRoast, mediaUrl, mediaType, detailAspect, comments.length]);
+  }, [post, avatarUrl, repostAvatarUrl, displayName, handle, createdAt, isRoast, mediaUrl, mediaType, detailAspect, comments.length]);
 
   const saveMedia = async () => {
     if (!mediaUrl) return;
@@ -760,7 +807,7 @@ socket.off("comment-deleted");
             loadComments();
           }}
           contentContainerStyle={{
-            paddingBottom: 140 + insets.bottom + keyboardHeight,
+            paddingBottom: 140 + insets.bottom,
           }}
           keyboardShouldPersistTaps="handled"
         />
@@ -768,7 +815,7 @@ socket.off("comment-deleted");
         <View
           style={[
             styles.commentComposer,
-            { paddingBottom: 8 + insets.bottom, bottom: keyboardHeight },
+            { paddingBottom: 8 + insets.bottom },
           ]}
         >
           <TextInput
@@ -791,19 +838,13 @@ socket.off("comment-deleted");
       {mediaUrl && mediaType !== "video" ? (
         <Modal transparent visible={showMedia} animationType="fade">
           <View style={styles.modalBackdrop}>
-            <ScrollView
-              maximumZoomScale={3}
-              minimumZoomScale={1}
-              contentContainerStyle={styles.modalScroll}
-            >
-              <ExpoImage
+            <View style={styles.modalMediaWrap}>
+              <RNImage
                 source={{ uri: mediaUrl }}
-                style={styles.modalMedia}
-                contentFit="contain"
-                contentPosition="center"
-                cachePolicy="memory-disk"
+                style={styles.modalMediaImage}
+                resizeMode="contain"
               />
-            </ScrollView>
+            </View>
           </View>
           <View style={[styles.modalActions, { paddingBottom: 12 + insets.bottom }]}>
             <Pressable style={styles.modalBtn} onPress={() => setShowMedia(false)}>
@@ -1000,39 +1041,47 @@ socket.off("comment-deleted");
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   headerBar: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   headerSpacer: { width: 18 },
-  headerTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  postCard: { padding: 16, borderBottomColor: "#1d1d1d", borderBottomWidth: 1 },
+  headerTitle: { color: colors.text, fontWeight: "700", fontSize: 16 },
+  postCard: { padding: 16, borderBottomColor: colors.border, borderBottomWidth: 1 },
   row: { flexDirection: "row", gap: 12 },
-  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#1f1f1f" },
-  name: { color: "#fafafa", fontWeight: "700" },
-  handle: { color: "#888", fontWeight: "400" },
-  body: { color: "#fafafa", marginTop: 4, lineHeight: 20 },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
+  name: { color: colors.text, fontWeight: "700" },
+  handle: { color: colors.textMuted, fontWeight: "400" },
+  body: { color: colors.text, marginTop: 4, lineHeight: 20 },
   mediaWrapper: {
     marginTop: 8,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
   },
   media: { width: "100%" },
   mediaDownload: {
     position: "absolute",
     right: 8,
     top: 8,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: colors.overlay,
     padding: 6,
     borderRadius: 999,
   },
@@ -1051,32 +1100,48 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  voteBtnText: { color: "#fafafa", fontWeight: "700" },
+  voteBtnText: { color: colors.text, fontWeight: "700" },
   metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
-  metaText: { color: "#9ca3af", fontSize: 12 },
+  metaText: { color: colors.textMuted, fontSize: 12 },
   repostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostCard: {
     marginTop: 8,
     padding: 10,
     borderRadius: 12,
-    backgroundColor: "#151515",
-    borderColor: "#1f1f1f",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
   },
-  repostAuthor: { color: "#fafafa", fontWeight: "700" },
-  repostBody: { color: "#d1d5db", marginTop: 4 },
+  repostHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  repostAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
+  repostAuthor: { color: colors.text, fontWeight: "700" },
+  repostBody: { color: colors.textSoft, marginTop: 4 },
   commentRow: {
     flexDirection: "row",
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
-  commentAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#1f1f1f" },
-  commentName: { color: "#fafafa", fontWeight: "700" },
-  commentText: { color: "#d1d5db", marginTop: 2 },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
+  commentName: { color: colors.text, fontWeight: "700" },
+  commentText: { color: colors.textSoft, marginTop: 2 },
   commentComposer: {
     position: "absolute",
     left: 0,
@@ -1085,18 +1150,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
-    backgroundColor: "#0d0d0d",
-    borderTopColor: "#1d1d1d",
+    backgroundColor: colors.background,
+    borderTopColor: colors.border,
     borderTopWidth: 1,
     gap: 10,
   },
   commentInput: {
     flex: 1,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    color: "#fff",
+    color: colors.text,
   },
   commentSend: {
     backgroundColor: "#ff6b35",
@@ -1105,17 +1170,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   commentSendText: { color: "#0d0d0d", fontWeight: "700" },
-  muted: { color: "#888", marginTop: 8 },
+  muted: { color: colors.textMuted, marginTop: 8 },
   error: { color: "#ff6b35", paddingHorizontal: 16, paddingTop: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.95)",
-    alignItems: "center",
+    backgroundColor: colors.overlay,
+    alignItems: "stretch",
     justifyContent: "center",
   },
-  modalScroll: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-  modalMedia: { width: "96%", height: "80%" },
+  modalMediaWrap: { flex: 1, alignSelf: "stretch", padding: 16, paddingBottom: 96 },
+  modalMediaImage: { width: "100%", height: "100%" },
   modalActions: {
     position: "absolute",
     left: 0,
@@ -1127,12 +1192,12 @@ const styles = StyleSheet.create({
   },
   modalBtn: {
     flex: 1,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: "center",
   },
-  modalBtnText: { color: "#fff", fontWeight: "700" },
+  modalBtnText: { color: colors.text, fontWeight: "700" },
   modalBtnPrimary: {
     flex: 1,
     backgroundColor: "#ff6b35",
@@ -1143,37 +1208,37 @@ const styles = StyleSheet.create({
   modalBtnPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
   repostBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.overlayStrong,
   },
   repostSheet: {
     position: "absolute",
     left: 16,
     right: 16,
     top: "25%",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 16,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
   },
-  repostTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  repostTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   repostInput: {
     marginTop: 12,
     minHeight: 80,
     borderRadius: 12,
-    backgroundColor: "#0d0d0d",
-    color: "#fff",
+    backgroundColor: colors.input,
+    color: colors.text,
     padding: 12,
   },
   repostActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   repostBtn: {
     flex: 1,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: "center",
   },
-  repostBtnText: { color: "#fff", fontWeight: "700" },
+  repostBtnText: { color: colors.text, fontWeight: "700" },
   repostBtnPrimary: {
     flex: 1,
     backgroundColor: "#ff6b35",
@@ -1185,16 +1250,16 @@ const styles = StyleSheet.create({
 
   actionBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.overlayStrong,
   },
   actionSheet: {
     position: "absolute",
     left: 16,
     right: 16,
     top: "30%",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     borderRadius: 16,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
     paddingVertical: 8,
   },
@@ -1202,37 +1267,37 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  actionText: { color: "#fff", fontWeight: "700" },
+  actionText: { color: colors.text, fontWeight: "700" },
   actionDelete: { color: "#f97316", fontWeight: "700" },
   editSheet: {
     position: "absolute",
     left: 16,
     right: 16,
     top: "25%",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 16,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
   },
-  editTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  editTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   editInput: {
     marginTop: 12,
     minHeight: 80,
     borderRadius: 12,
-    backgroundColor: "#0d0d0d",
-    color: "#fff",
+    backgroundColor: colors.input,
+    color: colors.text,
     padding: 12,
   },
   editActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   editBtn: {
     flex: 1,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: "center",
   },
-  editBtnText: { color: "#fff", fontWeight: "700" },
+  editBtnText: { color: colors.text, fontWeight: "700" },
   editBtnPrimary: {
     flex: 1,
     backgroundColor: "#ff6b35",

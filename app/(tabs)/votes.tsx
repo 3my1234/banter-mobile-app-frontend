@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -17,6 +17,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import * as Clipboard from "expo-clipboard";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 type Bundle = {
   id: string;
@@ -28,6 +29,8 @@ type Bundle = {
 type PaymentMethod = "SOLANA" | "CARD";
 
 export default function Votes() {
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -431,22 +434,23 @@ export default function Votes() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, gap: 12 },
-  title: { color: "#fafafa", fontSize: 22, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 22, fontWeight: "700" },
   balanceCard: {
-    backgroundColor: "#1a1a1a",
-    borderColor: "#333",
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
   },
-  balanceLabel: { color: "#888" },
-  balanceValue: { color: "#fafafa", fontSize: 24, fontWeight: "700" },
-  section: { color: "#fafafa", fontSize: 16, fontWeight: "700", marginTop: 8 },
-  muted: { color: "#888", fontSize: 12 },
+  balanceLabel: { color: colors.textMuted },
+  balanceValue: { color: colors.text, fontSize: 24, fontWeight: "700" },
+  section: { color: colors.text, fontSize: 16, fontWeight: "700", marginTop: 8 },
+  muted: { color: colors.textMuted, fontSize: 12 },
   choiceRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -454,11 +458,11 @@ const styles = StyleSheet.create({
   },
   choiceChip: {
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.borderStrong,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
     minWidth: 72,
     alignItems: "center",
   },
@@ -466,8 +470,8 @@ const styles = StyleSheet.create({
     borderColor: "#ff6b35",
     backgroundColor: "rgba(255,107,53,0.12)",
   },
-  choiceText: { color: "#fafafa", fontWeight: "700", fontSize: 14 },
-  choiceSub: { color: "#9ca3af", fontSize: 12, marginTop: 2 },
+  choiceText: { color: colors.text, fontWeight: "700", fontSize: 14 },
+  choiceSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
   choiceTextActive: { color: "#ff6b35" },
   methodRow: {
     flexDirection: "row",
@@ -476,19 +480,19 @@ const styles = StyleSheet.create({
   },
   methodChip: {
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.borderStrong,
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
   },
   methodChipActive: {
     borderColor: "#ff6b35",
     backgroundColor: "rgba(255,107,53,0.12)",
   },
-  methodText: { color: "#fafafa", fontWeight: "700", fontSize: 12 },
+  methodText: { color: colors.text, fontWeight: "700", fontSize: 12 },
   methodTextActive: { color: "#ff6b35" },
-  cardNote: { color: "#9ca3af", fontSize: 12, marginTop: 6 },
+  cardNote: { color: colors.textMuted, fontSize: 12, marginTop: 6 },
   payBtn: {
     backgroundColor: "#ff6b35",
     paddingVertical: 12,
@@ -500,34 +504,34 @@ const styles = StyleSheet.create({
   payText: { color: "#0d0d0d", fontWeight: "700", fontSize: 16 },
   guideCard: {
     borderWidth: 1,
-    borderColor: "#262626",
+    borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: "#121212",
+    backgroundColor: colors.surface,
     padding: 12,
   },
   guideLabel: { color: "#ff6b35", fontWeight: "700", marginTop: 8 },
-  guideStep: { color: "#cbd5f5", marginTop: 4, fontSize: 12 },
+  guideStep: { color: colors.textSoft, marginTop: 4, fontSize: 12 },
   guideLink: { color: "#ff6b35", marginTop: 8, fontSize: 12, fontWeight: "700" },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: colors.overlay,
   },
   solanaSheet: {
     position: "absolute",
     left: 16,
     right: 16,
     top: "22%",
-    backgroundColor: "#141414",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
   },
-  metaSub: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
+  metaSub: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
   copyRow: {
     marginTop: 10,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 10,
     flexDirection: "row",
@@ -535,16 +539,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
-  copyText: { color: "#e2e8f0", fontSize: 12, flex: 1 },
+  copyText: { color: colors.text, fontSize: 12, flex: 1 },
   copyCta: { color: "#ff6b35", fontWeight: "700" },
   input: {
     marginTop: 12,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#fafafa",
+    color: colors.text,
   },
   verifyButton: {
     marginTop: 12,
@@ -554,5 +558,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   verifyButtonText: { color: "#0d0d0d", fontWeight: "700" },
-  disclaimer: { color: "#9ca3af", fontSize: 11, marginTop: 10 },
+  disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 10 },
 });

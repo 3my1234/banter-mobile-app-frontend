@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
@@ -116,6 +117,12 @@ export default function HomeFeed() {
   const { height: windowHeight } = useWindowDimensions();
   const banterHeight = Math.max(360, windowHeight);
   const tabBarHeight = useBottomTabBarHeight();
+  const postMediaHeight = Math.min(Math.max(windowHeight * 0.45, 260), 460);
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(
+    () => createStyles(themeColors, postMediaHeight),
+    [themeColors, postMediaHeight]
+  );
   const [posts, setPosts] = useState<Post[]>([]);
   const [banters, setBanters] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1056,13 +1063,10 @@ export default function HomeFeed() {
   ) => {
     if (media.type === "video") {
       return (
-        <View style={styles.mediaWrapper}>
+        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
           <Video
             source={{ uri: media.uri }}
-            style={[
-              styles.media,
-              media.ratio ? { aspectRatio: media.ratio } : { aspectRatio: 16 / 9 },
-            ]}
+            style={[styles.mediaFill, styles.media]}
             resizeMode={ResizeMode.COVER}
             shouldPlay={false}
             useNativeControls
@@ -1080,7 +1084,12 @@ export default function HomeFeed() {
     }
 
     return (
-      <View style={styles.mediaWrapper}>
+      <View
+        style={[
+          styles.mediaWrapper,
+          media.type === "video" ? styles.mediaFrame : null,
+        ]}
+      >
         <ExpoImage
           source={{ uri: media.uri }}
           style={[
@@ -1786,12 +1795,7 @@ export default function HomeFeed() {
                 </Text>
               </Pressable>
             </View>
-            <Pressable
-              onPress={() => router.push("/(tabs)/profile")}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <FontAwesome name="cog" size={18} color="#fff" />
-            </Pressable>
+            {/* Settings button removed from Home to avoid duplicate entry points. */}
           </View>
 
           <View
@@ -2302,9 +2306,10 @@ export default function HomeFeed() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: colors.background },
   topBar: {
     paddingTop: 6,
     paddingBottom: 8,
@@ -2312,20 +2317,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   topBarOverlay: {
     backgroundColor: "transparent",
     borderBottomWidth: 0,
   },
-  brand: { color: "#fff", fontWeight: "700", fontSize: 18 },
+  brand: { color: colors.text, fontWeight: "700", fontSize: 18 },
   brandSpacer: { width: 60 },
   avatarSmall: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
   },
@@ -2346,14 +2351,14 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
   },
-  mainTab: { color: "#777", fontWeight: "700", fontSize: 16 },
+  mainTab: { color: colors.textSubtle, fontWeight: "700", fontSize: 16 },
   mainTabActive: { color: "#ff6b35" },
   subTabs: {
     flexDirection: "row",
     gap: 18,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
     justifyContent: "center",
   },
@@ -2362,13 +2367,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   tabOverlayText: {
-    color: "rgba(255,255,255,0.85)",
-    textShadowColor: "rgba(0,0,0,0.6)",
+    color: colors.text,
+    textShadowColor: colors.overlay,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
     fontWeight: "600",
   },
-  tab: { color: "#999", fontWeight: "600" },
+  tab: { color: colors.textSubtle, fontWeight: "600" },
   tabActive: { color: "#ff6b35" },
   card: { flexDirection: "row", paddingVertical: 12, paddingHorizontal: 16 },
   row: { flexDirection: "row", gap: 12, flex: 1 },
@@ -2377,16 +2382,16 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
   },
-  name: { color: "#fafafa", fontWeight: "700" },
-  handle: { color: "#888", fontWeight: "400" },
-  body: { color: "#fafafa", marginTop: 4, lineHeight: 20 },
+  name: { color: colors.text, fontWeight: "700" },
+  handle: { color: colors.textMuted, fontWeight: "400" },
+  body: { color: colors.text, marginTop: 4, lineHeight: 20 },
   tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
   tagChip: {
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
@@ -2394,7 +2399,7 @@ const styles = StyleSheet.create({
   tagText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
   actions: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   actionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
-  actionText: { color: "#9ca3af", fontSize: 13 },
+  actionText: { color: colors.textMuted, fontSize: 13 },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -2415,14 +2420,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   pendingText: { color: "#ffb08a", fontSize: 11, fontWeight: "700" },
-  separator: { height: 1, backgroundColor: "#1d1d1d" },
+  separator: { height: 1, backgroundColor: colors.border },
   mediaWrapper: {
     marginTop: 8,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
+  },
+  mediaFrame: {
+    height: mediaHeight,
+    width: "100%",
+  },
+  mediaFill: {
+    width: "100%",
+    height: "100%",
   },
   media: { width: "100%", alignSelf: "center" },
   mediaDownload: {
@@ -2452,14 +2465,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  voteBtnText: { color: "#fafafa", fontWeight: "700" },
-  muted: { color: "#888", marginTop: 8 },
+  voteBtnText: { color: colors.text, fontWeight: "700" },
+  muted: { color: colors.textMuted, marginTop: 8 },
   errorToast: {
     position: "absolute",
     top: "45%",
     left: 24,
     right: 24,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: colors.overlayStrong,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 12,
@@ -2493,8 +2506,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 10,
     borderRadius: 12,
-    backgroundColor: "#151515",
-    borderColor: "#1f1f1f",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
   },
   repostHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -2502,18 +2515,18 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
   },
-  repostAuthor: { color: "#fafafa", fontWeight: "700" },
-  repostBody: { color: "#d1d5db", marginTop: 4 },
+  repostAuthor: { color: colors.text, fontWeight: "700" },
+  repostBody: { color: colors.textMuted, marginTop: 4 },
   banterCard: {
     marginHorizontal: 0,
     marginTop: 0,
     borderRadius: 0,
     overflow: "hidden",
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
   },
   banterCardShrunk: {
     transform: [{ scale: 0.92 }, { translateY: -8 }],
@@ -2561,7 +2574,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "#0d0d0d",
+    borderColor: colors.background,
   },
   banterAvatarPlusText: {
     color: "#0d0d0d",
@@ -2639,7 +2652,7 @@ const styles = StyleSheet.create({
     width: "54%",
   },
     banterAction: { alignItems: "center", gap: 3 },
-    banterActionText: { color: "#fff", fontSize: 12 },
+    banterActionText: { color: colors.text, fontSize: 12 },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,
@@ -2670,37 +2683,37 @@ const styles = StyleSheet.create({
   banterRepostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.overlayStrong,
   },
   repostSheet: {
     position: "absolute",
     left: 16,
     right: 16,
     top: "25%",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 16,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
   },
-  repostTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  repostTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
   repostInput: {
     marginTop: 12,
     minHeight: 80,
     borderRadius: 12,
-    backgroundColor: "#0d0d0d",
-    color: "#fff",
+    backgroundColor: colors.input,
+    color: colors.text,
     padding: 12,
   },
   repostActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   repostBtn: {
     flex: 1,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surfaceAlt,
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: "center",
   },
-  repostBtnText: { color: "#fff", fontWeight: "700" },
+  repostBtnText: { color: colors.text, fontWeight: "700" },
   repostBtnPrimary: {
     flex: 1,
     backgroundColor: "#ff6b35",
@@ -2712,7 +2725,7 @@ const styles = StyleSheet.create({
   commentModal: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: colors.overlay,
   },
   commentBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -2724,10 +2737,10 @@ const styles = StyleSheet.create({
   commentSheet: {
     position: "relative",
     height: "80%",
-    backgroundColor: "#0d0d0d",
+    backgroundColor: colors.background,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
     padding: 16,
   },
@@ -2740,36 +2753,36 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  commentCountText: { color: "#9ca3af", fontSize: 12 },
-  commentTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  commentCountText: { color: colors.textMuted, fontSize: 12 },
+  commentTitle: { color: colors.text, fontWeight: "700", fontSize: 16 },
   commentLoading: { paddingVertical: 16, alignItems: "center" },
   commentRow: {
     position: "relative",
     flexDirection: "row",
     gap: 10,
     paddingVertical: 10,
-    borderBottomColor: "#1f1f1f",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   commentAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
   },
-  commentName: { color: "#fff", fontWeight: "700" },
-  commentText: { color: "#cbd5f5", marginTop: 2 },
+  commentName: { color: colors.text, fontWeight: "700" },
+  commentText: { color: colors.textSoft, marginTop: 2 },
   commentMetaRow: {
     flexDirection: "row",
     gap: 12,
     marginTop: 6,
     alignItems: "center",
   },
-  commentMetaText: { color: "#9ca3af", fontSize: 12 },
+  commentMetaText: { color: colors.textMuted, fontSize: 12 },
   commentReplyBtn: { paddingVertical: 2 },
-  commentReplyText: { color: "#9ca3af", fontSize: 12, fontWeight: "600" },
+  commentReplyText: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
   commentRepliesToggle: {
     marginTop: 6,
   },
@@ -2777,7 +2790,7 @@ const styles = StyleSheet.create({
   commentRepliesWrap: {
     marginTop: 8,
     paddingLeft: 8,
-    borderLeftColor: "#1f1f1f",
+    borderLeftColor: colors.border,
     borderLeftWidth: 1,
     gap: 8,
   },
@@ -2789,12 +2802,12 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: "#1f1f1f",
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
   },
-  replyName: { color: "#e5e7eb", fontWeight: "600", fontSize: 12 },
-  replyText: { color: "#cbd5f5", marginTop: 2, fontSize: 12 },
+  replyName: { color: colors.text, fontWeight: "600", fontSize: 12 },
+  replyText: { color: colors.textSoft, marginTop: 2, fontSize: 12 },
   commentComposer: {
     flexDirection: "row",
     alignItems: "center",
@@ -2802,12 +2815,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 8,
     paddingBottom: 8,
-    borderTopColor: "#1f1f1f",
+    borderTopColor: colors.border,
     borderTopWidth: 1,
     position: "absolute",
     left: 16,
     right: 16,
-    backgroundColor: "rgba(13,13,13,0.92)",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     paddingHorizontal: 12,
     zIndex: 30,
@@ -2824,11 +2837,11 @@ const styles = StyleSheet.create({
   },
   commentInput: {
     flex: 1,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    color: "#fff",
+    color: colors.text,
   },
   commentSend: {
     backgroundColor: "#ff6b35",
@@ -2842,11 +2855,11 @@ const styles = StyleSheet.create({
     right: 10,
     flexDirection: "row",
     gap: 8,
-    backgroundColor: "#111",
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderColor: "#1f1f1f",
+    borderColor: colors.border,
     borderWidth: 1,
     zIndex: 20,
     elevation: 20,
@@ -2861,30 +2874,30 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
-  commentReactionEmojiText: { color: "#fff", fontSize: 14 },
+  commentReactionEmojiText: { color: colors.text, fontSize: 14 },
   commentReactionBadge: {
     marginTop: 6,
     alignSelf: "flex-start",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
   },
-  commentReactionBadgeText: { color: "#fff", fontSize: 12 },
+  commentReactionBadgeText: { color: colors.text, fontSize: 12 },
   commentActionBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
   },
   commentDeleteBtn: {
     backgroundColor: "#3f1d1d",
   },
-  commentActionText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  commentActionText: { color: colors.text, fontSize: 12, fontWeight: "600" },
   commentActionInline: {
     flexDirection: "row",
     gap: 6,
@@ -2894,5 +2907,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignSelf: "flex-start",
   },
-  commentCancelText: { color: "#9ca3af", fontSize: 12 },
+  commentCancelText: { color: colors.textMuted, fontSize: 12 },
 });

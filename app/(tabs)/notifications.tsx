@@ -9,6 +9,7 @@ import {
 } from "@/lib/notificationBadge";
 import { getSocket } from "@/lib/socket";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 type NotificationItem = {
   id: string;
@@ -140,6 +141,8 @@ const buildDailyFallbackNotification = (meUser: any): NotificationItem | null =>
 };
 
 export default function Notifications() {
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -386,45 +389,46 @@ export default function Notifications() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
-  container: { flex: 1, backgroundColor: "#0d0d0d", paddingHorizontal: 12 },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 12 },
   header: {
     marginTop: 6,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  title: { color: "#fafafa", fontSize: 18, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 18, fontWeight: "700" },
   markAll: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
   markAllDisabled: { opacity: 0.4 },
-  subtle: { color: "#888", fontSize: 12, marginTop: 4 },
+  subtle: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
   error: { color: "#ff6b35", marginTop: 8, fontSize: 12 },
   item: { flexDirection: "row", gap: 10, paddingVertical: 10, alignItems: "flex-start" },
   dot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   dotUnread: { backgroundColor: "#ff6b35" },
-  dotRead: { backgroundColor: "#353535" },
-  itemTitle: { color: "#fafafa", fontSize: 14, fontWeight: "700" },
-  text: { color: "#c8c8c8", fontSize: 13, marginTop: 2 },
-  time: { color: "#777", fontSize: 11, marginTop: 2 },
-  sep: { height: 1, backgroundColor: "#1d1d1d" },
+  dotRead: { backgroundColor: colors.borderStrong },
+  itemTitle: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  text: { color: colors.textSoft, fontSize: 13, marginTop: 2 },
+  time: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  sep: { height: 1, backgroundColor: colors.border },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
+    backgroundColor: colors.overlayStrong,
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   modalCard: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     maxHeight: "80%",
     padding: 14,
   },
-  modalTitle: { color: "#fafafa", fontSize: 18, fontWeight: "700" },
-  modalMessage: { color: "#d5d5d5", fontSize: 14, marginTop: 10, lineHeight: 20 },
-  modalMeta: { color: "#8f8f8f", fontSize: 12, marginTop: 8 },
+  modalTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  modalMessage: { color: colors.textSoft, fontSize: 14, marginTop: 10, lineHeight: 20 },
+  modalMeta: { color: colors.textMuted, fontSize: 12, marginTop: 8 },
   closeButton: {
     marginTop: 14,
     backgroundColor: "#ff6b35",

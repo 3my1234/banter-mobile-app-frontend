@@ -1,9 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 export default function FlutterwaveRedirectScreen() {
   const router = useRouter();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
 
   useEffect(() => {
     router.replace("/(tabs)/votes");
@@ -16,11 +19,12 @@ export default function FlutterwaveRedirectScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0d0d0d",
-  },
-});
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.background,
+    },
+  });

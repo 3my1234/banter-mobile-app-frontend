@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,10 +16,13 @@ import { Image as ExpoImage } from "expo-image";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl, pickMedia, presignUpload, uploadToS3 } from "@/lib/media";
+import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 export default function EditProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const themeColors = useAppThemeColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,19 +276,20 @@ export default function EditProfile() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d0d" },
+const createStyles = (colors: AppThemeColors) =>
+  StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomColor: "#1d1d1d",
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   headerSpacer: { width: 18 },
-  headerTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  headerTitle: { color: colors.text, fontWeight: "700", fontSize: 16 },
   saveBtn: {
     backgroundColor: "#ff6b35",
     paddingHorizontal: 14,
@@ -296,7 +300,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 14 },
   bannerWrap: { borderRadius: 16, overflow: "hidden" },
   banner: { width: "100%", height: 140 },
-  bannerPlaceholder: { width: "100%", height: 140, backgroundColor: "#1f1f1f" },
+  bannerPlaceholder: { width: "100%", height: 140, backgroundColor: colors.surfaceAlt },
   editBadge: {
     position: "absolute",
     right: 12,
@@ -313,9 +317,9 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    borderWidth: 3,
-    borderColor: "#0d0d0d",
-    backgroundColor: "#1f1f1f",
+    borderWidth: 2,
+    borderColor: "#ff6b35",
+    backgroundColor: colors.surface,
   },
   avatarEdit: {
     position: "absolute",
@@ -329,17 +333,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   field: { gap: 6 },
-  label: { color: "#fff", fontWeight: "600" },
+  label: { color: colors.text, fontWeight: "600" },
   input: {
-    backgroundColor: "#151515",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#fff",
+    color: colors.text,
   },
   inputMultiline: { minHeight: 80, textAlignVertical: "top" },
   error: { color: "#ff6b35" },
-  muted: { color: "#999", marginTop: 8 },
+  muted: { color: colors.textMuted, marginTop: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });
 
