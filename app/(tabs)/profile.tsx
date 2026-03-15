@@ -5,6 +5,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   TouchableOpacity,
   View as RNView,
 } from "react-native";
@@ -23,12 +24,14 @@ import * as WebBrowser from "expo-web-browser";
 import { usePrivy } from "@privy-io/expo";
 import { disconnectSocket } from "@/lib/socket";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
+import { useThemePreference } from "@/components/theme";
 
 type Session = { token: string; email?: string };
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { logout: privyLogout } = usePrivy();
+  const { resolvedTheme, setPreference } = useThemePreference();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -42,12 +45,25 @@ export default function ProfileScreen() {
   const [balances, setBalances] = useState<Record<string, any> | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [profileTab, setProfileTab] = useState<"posts" | "banter" | "comments">("posts");
   const [syncingWallets, setSyncingWallets] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
   const [showPointsDetails, setShowPointsDetails] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileLocked, setProfileLocked] = useState(false);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
+  const isDark = resolvedTheme === "dark";
+  const screenBg = isDark ? "#0d0d0d" : "#e0e0e0";
+  const textPrimaryStyle = { color: isDark ? "#fff" : "#111" };
+  const textSoftStyle = { color: isDark ? "#e5e7eb" : "#374151" };
+  const textMutedStyle = { color: isDark ? "#9ca3af" : "#4b5563" };
+  const cardStyle = {
+    backgroundColor: isDark ? "#111" : "#f7f7f7",
+    borderColor: isDark ? "#1f1f1f" : "#d1d5db",
+    borderWidth: 1,
+  };
   const detectMediaType = (uri?: string | null, fallback?: string | null) => {
     if (fallback) return fallback;
     if (!uri) return undefined;
@@ -170,10 +186,10 @@ export default function ProfileScreen() {
   );
 
   useEffect(() => {
-  const fetchPosts = async () => {
-    if (!me?.id) return;
-    try {
-      const data = await apiFetch(`/users/${me.id}/posts`);
+    const fetchPosts = async () => {
+      if (!me?.id) return;
+      try {
+        const data = await apiFetch(`/users/${me.id}/posts`);
       setUserPosts(data.posts || []);
       } catch {
         setUserPosts([]);
@@ -181,6 +197,10 @@ export default function ProfileScreen() {
     };
     fetchPosts();
   }, [me]);
+
+  useEffect(() => {
+    setProfileLocked(!!me?.profileLocked);
+  }, [me?.profileLocked]);
 
   const handleRefresh = async () => {
     try {
@@ -208,6 +228,31 @@ export default function ProfileScreen() {
     setSession(null);
     setMe(null);
     router.replace("/(auth)/login");
+  };
+
+  const updateProfileLock = async (nextLocked: boolean) => {
+    setProfileLocked(nextLocked);
+    setMe((prev: any) => (prev ? { ...prev, profileLocked: nextLocked } : prev));
+    try {
+      await apiFetch(
+        "/auth/me",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ profileLocked: nextLocked }),
+        },
+        true
+      );
+    } catch (e: any) {
+      setProfileLocked((prev) => !prev);
+      setMe((prev: any) =>
+        prev ? { ...prev, profileLocked: !nextLocked } : prev
+      );
+      showToast(e?.message || "Failed to update profile lock");
+    }
+  };
+
+  const toggleTheme = async (useDark: boolean) => {
+    await setPreference(useDark ? "dark" : "light");
   };
 
   const uploadAvatar = async () => {
@@ -270,16 +315,16 @@ export default function ProfileScreen() {
 
   const Row = ({ label, value }: { label: string; value?: string }) => (
     <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value ?? "-"}</Text>
+      <Text style={[styles.label, textMutedStyle]}>{label}</Text>
+      <Text style={[styles.value, textSoftStyle]}>{value ?? "-"}</Text>
     </View>
   );
 
   const WalletRow = ({ label, value }: { label: string; value?: string }) => (
     <Pressable style={styles.walletRow} onPress={() => handleCopy(label, value)}>
       <View style={styles.walletInfo}>
-        <Text style={styles.walletLabel}>{label}</Text>
-        <Text style={styles.walletValue} numberOfLines={1}>
+        <Text style={[styles.walletLabel, textMutedStyle]}>{label}</Text>
+        <Text style={[styles.walletValue, textSoftStyle]} numberOfLines={1}>
           {formatAddress(value)}
         </Text>
       </View>
@@ -298,8 +343,8 @@ export default function ProfileScreen() {
   if (sessionLoaded && !session?.token) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>You're logged out</Text>
-        <Text style={styles.muted}>Redirecting to login…</Text>
+        <Text style={[styles.title, textPrimaryStyle]}>You're logged out</Text>
+        <Text style={[styles.muted, textMutedStyle]}>Redirecting to login…</Text>
       </View>
     );
   }
@@ -320,10 +365,10 @@ export default function ProfileScreen() {
       : { balance: rolFallbackRaw, decimals: 8 };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: screenBg }]} edges={["top"]}>
       <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading profile..." : "Refreshing..."} />
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: screenBg }]}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -365,63 +410,71 @@ export default function ProfileScreen() {
               <RNView style={styles.avatarLarge} />
             )}
           </Pressable>
-          <Pressable style={styles.editBtn} onPress={() => router.push("/edit-profile")}>
-            <Text style={styles.editBtnText}>Edit profile</Text>
-          </Pressable>
+          <RNView style={styles.profileActions}>
+            <Pressable style={styles.editBtn} onPress={() => router.push("/edit-profile")}>
+              <Text style={styles.editBtnText}>Edit profile</Text>
+            </Pressable>
+            <Pressable
+              style={styles.settingsBtn}
+              onPress={() => setSettingsOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <FontAwesome name="cog" size={16} color="#0d0d0d" />
+            </Pressable>
+          </RNView>
         </RNView>
 
-        <Text style={styles.displayName}>{displayName}</Text>
-        <Text style={styles.username}>{username}</Text>
-        <Text style={styles.bio}>{bio}</Text>
+        <Text style={[styles.displayName, textPrimaryStyle]}>{displayName}</Text>
+        <Text style={[styles.username, textMutedStyle]}>{username}</Text>
+        <Text style={[styles.bio, textSoftStyle]}>{bio}</Text>
 
-        <View style={styles.card}>
+        <View style={[styles.card, cardStyle]}>
           <View style={styles.walletHeader}>
-            <Text style={styles.sectionTitle}>Wallets</Text>
+            <Text style={[styles.sectionTitle, textPrimaryStyle]}>Wallets</Text>
             {copiedWallet ? (
-              <Text style={styles.copiedText}>Copied {copiedWallet}</Text>
+              <Text style={[styles.copiedText, textMutedStyle]}>Copied {copiedWallet}</Text>
             ) : null}
           </View>
           <WalletRow label="Solana" value={me?.solanaAddress} />
-          <WalletRow label="Movement" value={me?.movementAddress} />
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Balances</Text>
+        <View style={[styles.card, cardStyle]}>
+          <Text style={[styles.sectionTitle, textPrimaryStyle]}>Balances</Text>
           <View style={styles.balanceRow}>
-            <Text style={styles.balanceLabel}>SOL</Text>
-            <Text style={styles.balanceValue}>
+            <Text style={[styles.balanceLabel, textMutedStyle]}>SOL (gas)</Text>
+            <Text style={[styles.balanceValue, textSoftStyle]}>
               {solBalance
                 ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
           <View style={styles.balanceRow}>
-            <Text style={styles.balanceLabel}>USDC</Text>
-            <Text style={styles.balanceValue}>
+            <Text style={[styles.balanceLabel, textMutedStyle]}>USDC (Solana)</Text>
+            <Text style={[styles.balanceValue, textSoftStyle]}>
               {usdcBalance
                 ? `${formatTokenAmount(usdcBalance.balance, usdcBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
           <View style={styles.balanceRow}>
-            <Text style={styles.balanceLabel}>ROL</Text>
-            <Text style={styles.balanceValue}>
+            <Text style={[styles.balanceLabel, textMutedStyle]}>ROL</Text>
+            <Text style={[styles.balanceValue, textSoftStyle]}>
               {rolBalance
                 ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
           {syncingWallets ? (
-            <Text style={styles.muted}>Syncing wallets...</Text>
+            <Text style={[styles.muted, textMutedStyle]}>Syncing wallets...</Text>
           ) : null}
         </View>
 
-        <View style={styles.card}>
+        <View style={[styles.card, cardStyle]}>
           <View style={styles.pointsHeaderRow}>
             <View style={styles.pointsHeaderCopy}>
-              <Text style={styles.sectionTitle}>Banter Points</Text>
-              <Text style={styles.pointsValue}>{formatPoints(banterPointsRaw)} pts</Text>
-              <Text style={styles.pointsSub}>
+              <Text style={[styles.sectionTitle, textPrimaryStyle]}>Banter Points</Text>
+              <Text style={[styles.pointsValue, textPrimaryStyle]}>{formatPoints(banterPointsRaw)} pts</Text>
+              <Text style={[styles.pointsSub, textMutedStyle]}>
                 Your Banter Points track real activity in the app and can help determine your share in a future ROL airdrop.
               </Text>
             </View>
@@ -437,49 +490,49 @@ export default function ProfileScreen() {
 
           {showPointsDetails ? (
             <View style={styles.pointsDetailsWrap}>
-              <Text style={styles.pointsDetailLead}>
+              <Text style={[styles.pointsDetailLead, textMutedStyle]}>
                 Points are stored in your account, not in your wallet. When the airdrop opens, eligible activity and point history will be used to calculate claim amounts.
               </Text>
 
               <View style={styles.pointsRule}>
-                <Text style={styles.pointsRuleTitle}>Joined early</Text>
+                <Text style={[styles.pointsRuleTitle, textPrimaryStyle]}>Joined early</Text>
                 <Text style={styles.pointsRuleValue}>+500</Text>
               </View>
-              <Text style={styles.pointsRuleBody}>
+              <Text style={[styles.pointsRuleBody, textMutedStyle]}>
                 One-time welcome bonus for users who joined during the early access period.
               </Text>
 
               <View style={styles.pointsRule}>
-                <Text style={styles.pointsRuleTitle}>Daily check-in</Text>
+                <Text style={[styles.pointsRuleTitle, textPrimaryStyle]}>Daily check-in</Text>
                 <Text style={styles.pointsRuleValue}>+10</Text>
               </View>
-              <Text style={styles.pointsRuleBody}>
+              <Text style={[styles.pointsRuleBody, textMutedStyle]}>
                 Awarded once per day when you sign in and stay active.
               </Text>
 
               <View style={styles.pointsRule}>
-                <Text style={styles.pointsRuleTitle}>PCA participation</Text>
+                <Text style={[styles.pointsRuleTitle, textPrimaryStyle]}>PCA participation</Text>
                 <Text style={styles.pointsRuleValue}>+5</Text>
               </View>
-              <Text style={styles.pointsRuleBody}>
+              <Text style={[styles.pointsRuleBody, textMutedStyle]}>
                 Earned the first time you vote in PCA on a given day while a campaign is active.
               </Text>
 
               <View style={styles.pointsRule}>
-                <Text style={styles.pointsRuleTitle}>First Rolley stake</Text>
+                <Text style={[styles.pointsRuleTitle, textPrimaryStyle]}>First Rolley stake</Text>
                 <Text style={styles.pointsRuleValue}>+75</Text>
               </View>
-              <Text style={styles.pointsRuleBody}>
+              <Text style={[styles.pointsRuleBody, textMutedStyle]}>
                 One-time bonus for completing your first Rolley stake.
               </Text>
             </View>
           ) : null}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Transactions</Text>
+        <View style={[styles.card, cardStyle]}>
+          <Text style={[styles.sectionTitle, textPrimaryStyle]}>Transactions</Text>
           {transactions.length === 0 ? (
-            <Text style={styles.muted}>No transactions yet.</Text>
+            <Text style={[styles.muted, textMutedStyle]}>No transactions yet.</Text>
           ) : (
             <ScrollView
               style={styles.txList}
@@ -520,13 +573,13 @@ export default function ProfileScreen() {
                       <FontAwesome name={icon} size={12} color="#0d0d0d" />
                     </RNView>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.txTitle}>{title}</Text>
-                      <Text style={styles.txMeta} numberOfLines={1}>
+                      <Text style={[styles.txTitle, textPrimaryStyle]}>{title}</Text>
+                      <Text style={[styles.txMeta, textMutedStyle]} numberOfLines={1}>
                         {tx.txHash ? tx.txHash.slice(0, 12) + "..." : "On-chain"}
                       </Text>
                     </View>
                     <RNView style={styles.txRight}>
-                      <Text style={styles.txAmount}>
+                      <Text style={[styles.txAmount, textSoftStyle]}>
                         {isDeposit ? "+" : "-"} {amount} {symbol}
                       </Text>
                       {canOpen ? (
@@ -546,48 +599,109 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Your posts</Text>
-          {userPosts.length === 0 ? (
-            <Text style={styles.muted}>Posts will appear here.</Text>
+        <View style={[styles.card, cardStyle]}>
+          <Text style={[styles.sectionTitle, textPrimaryStyle]}>Your activity</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.profileTabsRow}
+          >
+            <Pressable
+              style={[styles.profileTab, profileTab === "posts" && styles.profileTabActive]}
+              onPress={() => setProfileTab("posts")}
+            >
+              <Text
+                style={[
+                  styles.profileTabText,
+                  profileTab === "posts" && styles.profileTabTextActive,
+                ]}
+              >
+                Posts
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.profileTab, profileTab === "banter" && styles.profileTabActive]}
+              onPress={() => setProfileTab("banter")}
+            >
+              <Text
+                style={[
+                  styles.profileTabText,
+                  profileTab === "banter" && styles.profileTabTextActive,
+                ]}
+              >
+                Banter
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.profileTab, profileTab === "comments" && styles.profileTabActive]}
+              onPress={() => setProfileTab("comments")}
+            >
+              <Text
+                style={[
+                  styles.profileTabText,
+                  profileTab === "comments" && styles.profileTabTextActive,
+                ]}
+              >
+                Comments/Replies
+              </Text>
+            </Pressable>
+          </ScrollView>
+
+          {profileTab === "comments" ? (
+            <Text style={[styles.muted, textMutedStyle]}>Your comments and replies will appear here.</Text>
           ) : (
-            userPosts.map((post) => {
-              const mediaUrl = normalizeMediaUrl(post.mediaUrl);
-              const mediaType = detectMediaType(mediaUrl, post.mediaType);
-              return (
-                <Pressable
-                  key={post.id}
-                  style={styles.postRow}
-                  onPress={() => router.push(`/post/${post.id}`)}
-                >
-                  {mediaUrl ? (
-                    <RNView style={styles.postMediaWrap}>
-                      <ExpoImage
-                        source={{ uri: mediaUrl }}
-                        style={styles.postMedia}
-                        contentFit="cover"
-                        transition={120}
-                        cachePolicy="memory-disk"
-                      />
-                      {mediaType === "video" ? (
-                        <RNView style={styles.postMediaBadge}>
-                          <FontAwesome name="play" size={10} color="#fff" />
-                        </RNView>
-                      ) : null}
-                    </RNView>
-                  ) : (
-                    <RNView style={styles.postMediaPlaceholder}>
-                      <FontAwesome name="file-text-o" size={14} color="#6b7280" />
-                    </RNView>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.postText} numberOfLines={2}>
-                      {post.content || "No text"}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })
+            (() => {
+              const filtered =
+                profileTab === "posts"
+                  ? userPosts.filter((p) => !p.isRoast)
+                  : userPosts.filter((p) => p.isRoast);
+              if (filtered.length === 0) {
+                return (
+                  <Text style={[styles.muted, textMutedStyle]}>
+                    {profileTab === "posts"
+                      ? "Posts will appear here."
+                      : "Banter will appear here."}
+                  </Text>
+                );
+              }
+              return filtered.map((post) => {
+                const mediaUrl = normalizeMediaUrl(post.mediaUrl);
+                const mediaType = detectMediaType(mediaUrl, post.mediaType);
+                return (
+                  <Pressable
+                    key={post.id}
+                    style={styles.postRow}
+                    onPress={() => router.push(`/post/${post.id}`)}
+                  >
+                    {mediaUrl ? (
+                      <RNView style={styles.postMediaWrap}>
+                        <ExpoImage
+                          source={{ uri: mediaUrl }}
+                          style={styles.postMedia}
+                          contentFit="cover"
+                          transition={120}
+                          cachePolicy="memory-disk"
+                        />
+                        {mediaType === "video" ? (
+                          <RNView style={styles.postMediaBadge}>
+                            <FontAwesome name="play" size={10} color="#fff" />
+                          </RNView>
+                        ) : null}
+                      </RNView>
+                    ) : (
+                      <RNView style={styles.postMediaPlaceholder}>
+                        <FontAwesome name="file-text-o" size={14} color="#6b7280" />
+                      </RNView>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.postText, textSoftStyle]} numberOfLines={2}>
+                        {post.content || "No text"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              });
+            })()
           )}
         </View>
 
@@ -623,6 +737,43 @@ export default function ProfileScreen() {
           ) : null}
         </Pressable>
       </Modal>
+
+      <Modal visible={settingsOpen} transparent animationType="fade">
+        <Pressable style={styles.modalBackdrop} onPress={() => setSettingsOpen(false)} />
+        <RNView style={styles.settingsSheet}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+
+          <RNView style={styles.settingsRow}>
+            <RNView>
+              <Text style={styles.settingsLabel}>Lock profile</Text>
+              <Text style={styles.settingsSub}>
+                Hide your posts and banter from other users.
+              </Text>
+            </RNView>
+            <Switch
+              value={profileLocked}
+              onValueChange={updateProfileLock}
+              thumbColor={profileLocked ? "#ff6b35" : "#9ca3af"}
+              trackColor={{ false: "#2a2a2a", true: "rgba(255,107,53,0.35)" }}
+            />
+          </RNView>
+
+          <RNView style={styles.settingsRow}>
+            <RNView>
+              <Text style={styles.settingsLabel}>Theme</Text>
+              <Text style={styles.settingsSub}>
+                {isDark ? "Dark mode" : "Light mode"}
+              </Text>
+            </RNView>
+            <Switch
+              value={isDark}
+              onValueChange={toggleTheme}
+              thumbColor={isDark ? "#ff6b35" : "#9ca3af"}
+              trackColor={{ false: "#2a2a2a", true: "rgba(255,107,53,0.35)" }}
+            />
+          </RNView>
+        </RNView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -634,6 +785,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: "700", color: "#fff" },
   sectionTitle: { fontSize: 14, fontWeight: "700", color: "#fff", marginBottom: 8 },
   card: { backgroundColor: "#111", borderRadius: 12, padding: 12 },
+  profileTabsRow: { gap: 8, paddingBottom: 10 },
+  profileTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#0d0d0d",
+    borderColor: "#1f1f1f",
+    borderWidth: 1,
+  },
+  profileTabActive: { backgroundColor: "#ff6b35", borderColor: "#ff6b35" },
+  profileTabText: { color: "#9ca3af", fontWeight: "700", fontSize: 12 },
+  profileTabTextActive: { color: "#0d0d0d" },
   walletHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -665,6 +828,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoutText: { color: "#ff6b35", fontWeight: "700" },
+  settingsSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "22%",
+    backgroundColor: "#151515",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    gap: 16,
+  },
+  settingsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  settingsLabel: { color: "#fafafa", fontWeight: "700" },
+  settingsSub: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
   postRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -701,22 +884,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    position: "relative",
+    zIndex: 2,
   },
+  profileActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   avatarLarge: {
     width: 88,
     height: 88,
     borderRadius: 44,
-    borderWidth: 3,
-    borderColor: "#0d0d0d",
+    borderWidth: 2,
+    borderColor: "#ff6b35",
     backgroundColor: "#1f1f1f",
   },
   editBtn: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "#ff6b35",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
   },
-  editBtnText: { color: "#ff6b35", fontWeight: "700" },
+  editBtnText: { color: "#0d0d0d", fontWeight: "700" },
+  settingsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ff6b35",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   displayName: { fontSize: 20, fontWeight: "700", color: "#fff" },
   username: { color: "#9ca3af", fontSize: 12 },
   bio: { color: "#e5e7eb", marginTop: 6, lineHeight: 18, fontSize: 12 },

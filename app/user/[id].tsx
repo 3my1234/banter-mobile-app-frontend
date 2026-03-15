@@ -13,6 +13,11 @@ import { normalizeMediaUrl } from "@/lib/media";
 import { Image as ExpoImage } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
+import {
+  getFollowStatus,
+  setFollowStatus,
+  subscribeFollowStatus,
+} from "@/lib/followStore";
 
 export default function UserProfileScreen() {
   const router = useRouter();
@@ -22,6 +27,8 @@ export default function UserProfileScreen() {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [profileTab, setProfileTab] = useState<"posts" | "banter">("posts");
+  const [profileLocked, setProfileLocked] = useState(false);
 
   const detectMediaType = (uri?: string | null, fallback?: string | null) => {
     if (fallback) return fallback;
@@ -38,8 +45,15 @@ export default function UserProfileScreen() {
       const data = await apiFetch(`/users/${id}`);
       setProfile(data.user);
       setFollowing(!!data.isFollowing);
-      const posts = await apiFetch(`/users/${id}/posts`);
-      setUserPosts(posts.posts || []);
+      setFollowStatus(String(id), !!data.isFollowing);
+      const locked = !!data.user?.profileLocked && !data.isFollowing;
+      setProfileLocked(locked);
+      if (!locked) {
+        const posts = await apiFetch(`/users/${id}/posts`);
+        setUserPosts(posts.posts || []);
+      } else {
+        setUserPosts([]);
+      }
     } catch {
       setProfile(null);
       setUserPosts([]);
@@ -52,6 +66,20 @@ export default function UserProfileScreen() {
     loadProfile();
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+    const cached = getFollowStatus(String(id));
+    if (typeof cached === "boolean") {
+      setFollowing(cached);
+    }
+    const unsubscribe = subscribeFollowStatus((userId, isFollowing) => {
+      if (String(userId) === String(id)) {
+        setFollowing(isFollowing);
+      }
+    });
+    return unsubscribe;
+  }, [id]);
+
   const toggleFollow = async () => {
     if (!id || followLoading) return;
     try {
@@ -59,12 +87,14 @@ export default function UserProfileScreen() {
       if (following) {
         await apiFetch(`/users/${id}/follow`, { method: "DELETE" });
         setFollowing(false);
+        setFollowStatus(String(id), false);
         setProfile((prev: any) =>
           prev ? { ...prev, followersCount: Math.max(0, prev.followersCount - 1) } : prev
         );
       } else {
         await apiFetch(`/users/${id}/follow`, { method: "POST" });
         setFollowing(true);
+        setFollowStatus(String(id), true);
         setProfile((prev: any) =>
           prev ? { ...prev, followersCount: (prev.followersCount || 0) + 1 } : prev
         );
@@ -90,6 +120,26 @@ export default function UserProfileScreen() {
       <SafeAreaView style={styles.safe}>
         <RNView style={styles.center}>
           <Text style={styles.muted}>User not found.</Text>
+        </RNView>
+      </SafeAreaView>
+    );
+  }
+
+  if (profileLocked && !following) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <RNView style={styles.center}>
+          <Text style={styles.muted}>This profile is locked.</Text>
+          <Text style={styles.muted}>Follow the user to view their posts.</Text>
+          <Pressable
+            onPress={toggleFollow}
+            style={[styles.followBtn, followLoading && styles.followingBtn]}
+            disabled={followLoading}
+          >
+            <Text style={styles.followBtnText}>
+              {followLoading ? "Loading..." : "Follow"}
+            </Text>
+          </Pressable>
         </RNView>
       </SafeAreaView>
     );
@@ -150,11 +200,49 @@ export default function UserProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Posts</Text>
-          {userPosts.length === 0 ? (
-            <Text style={styles.muted}>No posts yet.</Text>
-          ) : (
-            userPosts.map((post) => {
+          <Text style={styles.sectionTitle}>Activity</Text>
+          <RNView style={styles.profileTabsRow}>
+            <Pressable
+              style={[styles.profileTab, profileTab === "posts" && styles.profileTabActive]}
+              onPress={() => setProfileTab("posts")}
+            >
+              <Text
+                style={[
+                  styles.profileTabText,
+                  profileTab === "posts" && styles.profileTabTextActive,
+                ]}
+              >
+                Posts
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.profileTab, profileTab === "banter" && styles.profileTabActive]}
+              onPress={() => setProfileTab("banter")}
+            >
+              <Text
+                style={[
+                  styles.profileTabText,
+                  profileTab === "banter" && styles.profileTabTextActive,
+                ]}
+              >
+                Banter
+              </Text>
+            </Pressable>
+          </RNView>
+
+          {(() => {
+            const filtered =
+              profileTab === "posts"
+                ? userPosts.filter((p) => !p.isRoast)
+                : userPosts.filter((p) => p.isRoast);
+            if (filtered.length === 0) {
+              return (
+                <Text style={styles.muted}>
+                  {profileTab === "posts" ? "No posts yet." : "No banter yet."}
+                </Text>
+              );
+            }
+            return filtered.map((post) => {
               const mediaUrl = normalizeMediaUrl(post.mediaUrl);
               const mediaType = detectMediaType(mediaUrl, post.mediaType);
               return (
@@ -190,8 +278,8 @@ export default function UserProfileScreen() {
                   </View>
                 </Pressable>
               );
-            })
-          )}
+            });
+          })()}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -219,8 +307,8 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    borderWidth: 3,
-    borderColor: "#0d0d0d",
+    borderWidth: 2,
+    borderColor: "#ff6b35",
     backgroundColor: "#1f1f1f",
   },
   followBtn: {
@@ -236,6 +324,24 @@ const styles = StyleSheet.create({
   bio: { color: "#e5e7eb", marginTop: 6, lineHeight: 18, fontSize: 12 },
   followStats: { flexDirection: "row", gap: 16, marginTop: 8 },
   statText: { color: "#9ca3af", fontSize: 12 },
+  profileTabsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 8,
+  },
+  profileTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#1a1a1a",
+  },
+  profileTabActive: {
+    backgroundColor: "rgba(255,107,53,0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255,107,53,0.5)",
+  },
+  profileTabText: { color: "#9ca3af", fontWeight: "700", fontSize: 12 },
+  profileTabTextActive: { color: "#ff6b35" },
   postRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -30,6 +30,11 @@ import { apiFetch } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
 import { PendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
+import {
+  getFollowStatus,
+  setFollowStatus,
+  subscribeFollowStatus,
+} from "@/lib/followStore";
 import { useFocusEffect } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
@@ -71,6 +76,7 @@ type Post = {
   reactionCount?: number;
   shareCount?: number;
   reactionBreakdown?: Record<string, number>;
+  userReaction?: string | null;
   repostCount?: number;
   repostOf?: RepostOf | null;
   raw?: any;
@@ -108,6 +114,7 @@ export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const banterHeight = Math.max(360, windowHeight);
   const tabBarHeight = useBottomTabBarHeight();
   const [posts, setPosts] = useState<Post[]>([]);
   const [banters, setBanters] = useState<Post[]>([]);
@@ -129,6 +136,17 @@ export default function HomeFeed() {
   const [banterCommentText, setBanterCommentText] = useState("");
   const [banterCommentLoading, setBanterCommentLoading] = useState(false);
   const [banterCommentSubmitting, setBanterCommentSubmitting] = useState(false);
+  const [videoProgress, setVideoProgress] = useState<
+    Record<string, { position: number; duration: number }>
+  >({});
+  const [seekingVideoId, setSeekingVideoId] = useState<string | null>(null);
+  const [seekBarWidthById, setSeekBarWidthById] = useState<Record<string, number>>(
+    {}
+  );
+  const [seekFractionById, setSeekFractionById] = useState<Record<string, number>>(
+    {}
+  );
+  const [isSeeking, setIsSeeking] = useState(false);
   const [commentReactions, setCommentReactions] = useState<Record<string, string>>(
     {}
   );
@@ -147,17 +165,37 @@ export default function HomeFeed() {
     {}
   );
   const [pendingPosts, setPendingPosts] = useState<PendingPost[]>([]);
+  const [followedUserIds, setFollowedUserIds] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [followLoadingById, setFollowLoadingById] = useState<Record<string, boolean>>(
+    {}
+  );
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({});
   const heartbeatScale = useRef(new Animated.Value(1)).current;
+  const pendingCountRef = useRef(0);
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
   const videoRefs = useRef<Map<string, Video>>(new Map());
+  const lastSeekRef = useRef<Record<string, number>>({});
   const pauseAllVideos = useCallback(() => {
     videoRefs.current.forEach((ref) => {
       ref.pauseAsync().catch(() => {});
     });
+  }, []);
+  const resumeBanterVideo = useCallback((id?: string | null) => {
+    if (!id) return;
+    const ref = videoRefs.current.get(id);
+    if (!ref) return;
+    ref
+      .getStatusAsync()
+      .then((status) => {
+        if (!status.isLoaded || status.isPlaying) return;
+        ref.playAsync().catch(() => {});
+      })
+      .catch(() => {});
   }, []);
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: Post; isViewable: boolean }> }) => {
@@ -198,10 +236,24 @@ export default function HomeFeed() {
       reactionCount: post.reactionCount ?? 0,
       shareCount: post.shareCount ?? 0,
       reactionBreakdown: post.reactionBreakdown || {},
+      userReaction: post.userReaction ?? null,
       repostCount: post.repostCount ?? 0,
       repostOf: post.repostOf || null,
       raw: post,
     } as Post;
+  };
+
+  const pullFollowingFrom = (items: Post[]) => {
+    const next: Record<string, boolean> = {};
+    items.forEach((p) => {
+      const userId = p.raw?.user?.id || p.raw?.userId;
+      const isFollowing = p.raw?.user?.isFollowing ?? p.raw?.isFollowing;
+      if (userId && typeof isFollowing === "boolean") {
+        next[userId] = isFollowing;
+        setFollowStatus(userId, isFollowing);
+      }
+    });
+    return next;
   };
 
   const loadPosts = useCallback(async (type: "posts" | "banter", feed: string) => {
@@ -211,9 +263,11 @@ export default function HomeFeed() {
       const mapped = (data.posts || []).map(mapPost);
       if (type === "posts") {
         setPosts(mapped);
+        setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
       } else {
         setBanters(mapped);
         setActiveBanterId(mapped[0]?.id || null);
+        setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
       }
     } catch (e: any) {
       setError(e.message);
@@ -245,6 +299,40 @@ export default function HomeFeed() {
     loadMe();
   }, [loadPosts, loadMe, mainTab, postTab, banterTab]);
 
+  const applyReactionOptimistic = useCallback(
+    (
+      items: Post[],
+      postId: string,
+      type: "LOVE" | "ANGRY",
+      currentReaction: string | null
+    ) =>
+      items.map((p) => {
+        if (p.id !== postId) return p;
+        const nextReaction = currentReaction === type ? null : type;
+        const breakdown = { ...(p.reactionBreakdown || {}) } as Record<string, number>;
+        let reactionCount = p.reactionCount || 0;
+
+        if (currentReaction === type) {
+          reactionCount = Math.max(0, reactionCount - 1);
+          breakdown[type] = Math.max(0, (breakdown[type] || 0) - 1);
+        } else if (!currentReaction) {
+          reactionCount += 1;
+          breakdown[type] = (breakdown[type] || 0) + 1;
+        } else {
+          breakdown[currentReaction] = Math.max(0, (breakdown[currentReaction] || 0) - 1);
+          breakdown[type] = (breakdown[type] || 0) + 1;
+        }
+
+        return {
+          ...p,
+          reactionCount,
+          reactionBreakdown: breakdown,
+          userReaction: nextReaction,
+        };
+      }),
+    []
+  );
+
   React.useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (event) => {
       setKeyboardHeight(event.endCoordinates?.height || 0);
@@ -264,6 +352,18 @@ export default function HomeFeed() {
     });
     return unsubscribe;
   }, []);
+
+  React.useEffect(() => {
+    const prevCount = pendingCountRef.current;
+    pendingCountRef.current = pendingPosts.length;
+    if (prevCount > 0 && pendingPosts.length === 0) {
+      if (mainTab === "posts") {
+        loadPosts("posts", postTab);
+      } else {
+        loadPosts("banter", banterTab);
+      }
+    }
+  }, [pendingPosts, mainTab, postTab, banterTab, loadPosts]);
 
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -301,6 +401,13 @@ export default function HomeFeed() {
       }
     });
   }, [activeBanterId, mainTab]);
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeFollowStatus((userId, isFollowing) => {
+      setFollowedUserIds((prev) => ({ ...prev, [userId]: isFollowing }));
+    });
+    return unsubscribe;
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -356,37 +463,40 @@ export default function HomeFeed() {
     }
   };
 
+  const handleFollowUser = async (userId: string) => {
+    if (!userId || followLoadingById[userId]) return;
+    try {
+      setFollowLoadingById((prev) => ({ ...prev, [userId]: true }));
+      const isFollowing = !!followedUserIds[userId] || !!getFollowStatus(userId);
+      if (isFollowing) {
+        await apiFetch(`/users/${userId}/follow`, { method: "DELETE" });
+        setFollowedUserIds((prev) => ({ ...prev, [userId]: false }));
+        setFollowStatus(userId, false);
+      } else {
+        setFollowedUserIds((prev) => ({ ...prev, [userId]: true }));
+        setFollowStatus(userId, true);
+        await apiFetch(`/users/${userId}/follow`, { method: "POST" });
+      }
+    } catch {
+      setFollowedUserIds((prev) => ({ ...prev, [userId]: false }));
+      setFollowStatus(userId, false);
+    } finally {
+      setFollowLoadingById((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
   const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
     try {
-      const prevPosts = posts;
-      const prevBanters = banters;
+      const currentReaction =
+        posts.find((p) => p.id === postId)?.userReaction ??
+        banters.find((p) => p.id === postId)?.userReaction ??
+        null;
+
       setPosts((current) =>
-        current.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                reactionCount: (p.reactionCount || 0) + 1,
-                reactionBreakdown: {
-                  ...p.reactionBreakdown,
-                  [type]: (p.reactionBreakdown?.[type] || 0) + 1,
-                },
-              }
-            : p
-        )
+        applyReactionOptimistic(current, postId, type, currentReaction)
       );
       setBanters((current) =>
-        current.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                reactionCount: (p.reactionCount || 0) + 1,
-                reactionBreakdown: {
-                  ...p.reactionBreakdown,
-                  [type]: (p.reactionBreakdown?.[type] || 0) + 1,
-                },
-              }
-            : p
-        )
+        applyReactionOptimistic(current, postId, type, currentReaction)
       );
       const data = await apiFetch("/reactions", {
         method: "POST",
@@ -394,6 +504,9 @@ export default function HomeFeed() {
       });
       const reactionCount = data?.reactionCount;
       const reactionBreakdown = data?.reactionBreakdown;
+      const serverReaction =
+        data?.reaction?.type ??
+        (data?.reaction === null ? null : currentReaction);
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId
@@ -402,6 +515,7 @@ export default function HomeFeed() {
                 reactionCount:
                   typeof reactionCount === "number" ? reactionCount : p.reactionCount,
                 reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
+                userReaction: serverReaction ?? p.userReaction,
               }
             : p
         )
@@ -414,6 +528,7 @@ export default function HomeFeed() {
                 reactionCount:
                   typeof reactionCount === "number" ? reactionCount : p.reactionCount,
                 reactionBreakdown: reactionBreakdown || p.reactionBreakdown,
+                userReaction: serverReaction ?? p.userReaction,
               }
             : p
         )
@@ -622,20 +737,32 @@ export default function HomeFeed() {
 
   const visiblePosts = useMemo(() => {
     const normalPending = pendingPostItems.filter(
-      (pending) => pending.media?.type !== "video"
+      (pending) => !pending.raw?.isRoast
     );
     return [...normalPending, ...posts];
   }, [pendingPostItems, posts]);
 
   const visibleBanters = useMemo(() => {
     const videoPending = pendingPostItems.filter(
-      (pending) => pending.media?.type === "video"
+      (pending) => pending.raw?.isRoast
     );
     return [...videoPending, ...banters];
   }, [pendingPostItems, banters]);
   const activeBanterIndex = useMemo(
-    () => banters.findIndex((banter) => banter.id === activeBanterId),
-    [banters, activeBanterId]
+    () => visibleBanters.findIndex((banter) => banter.id === activeBanterId),
+    [visibleBanters, activeBanterId]
+  );
+  const handleBanterScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+      if (mainTab !== "banter") return;
+      const offsetY = event?.nativeEvent?.contentOffset?.y || 0;
+      const index = Math.round(offsetY / banterHeight);
+      const next = visibleBanters[index];
+      if (next?.id && next.id !== activeBanterId) {
+        setActiveBanterId(next.id);
+      }
+    },
+    [activeBanterId, banterHeight, mainTab, visibleBanters]
   );
 
   const handleShare = async (item: Post) => {
@@ -723,10 +850,17 @@ export default function HomeFeed() {
     setCommentEditText("");
     setReplyTarget(null);
     setBanterCommentLoading(true);
-    setActiveBanterId(null);
     try {
       const data = await apiFetch(`/comments/${item.id}?page=1&limit=50&includeReplies=1`);
-      setBanterComments(data.comments || []);
+      const comments = data.comments || [];
+      setBanterComments(comments);
+      const initialReactions: Record<string, string> = {};
+      comments.forEach((comment: any) => {
+        if (comment?.userReaction) {
+          initialReactions[comment.id] = comment.userReaction;
+        }
+      });
+      setCommentReactions(initialReactions);
     } catch {
       setBanterComments([]);
     } finally {
@@ -735,6 +869,7 @@ export default function HomeFeed() {
   };
 
   const closeBanterComments = () => {
+    const nextId = banterCommentTarget?.id ?? null;
     if (banterCommentTarget?.id) {
       setActiveBanterId(banterCommentTarget.id);
       setCommentDrafts((prev) => ({
@@ -750,7 +885,25 @@ export default function HomeFeed() {
     setReactionTargetId(null);
     setReplyTarget(null);
     commentSheetY.setValue(0);
+    if (nextId) {
+      setTimeout(() => resumeBanterVideo(nextId), 80);
+    }
   };
+
+  React.useEffect(() => {
+    if (mainTab !== "banter") return;
+    if (banterCommentTarget) return;
+    if (!activeBanterId) return;
+    const ref = videoRefs.current.get(activeBanterId);
+    if (!ref) return;
+    ref
+      .getStatusAsync()
+      .then((status) => {
+        if (!status.isLoaded || status.isPlaying) return;
+        ref.playAsync().catch(() => {});
+      })
+      .catch(() => {});
+  }, [banterCommentTarget, activeBanterId, mainTab]);
 
   const submitBanterComment = async () => {
     if (!banterCommentTarget) return;
@@ -810,18 +963,66 @@ export default function HomeFeed() {
   const loadReplies = async (commentId: string) => {
     try {
       const data = await apiFetch(`/comments/replies/${commentId}?page=1&limit=20`);
+      const replies = data.replies || [];
       setRepliesByComment((prev) => ({
         ...prev,
-        [commentId]: data.replies || [],
+        [commentId]: replies,
       }));
+      setCommentReactions((prev) => {
+        const next = { ...prev };
+        replies.forEach((reply: any) => {
+          if (reply?.userReaction) {
+            next[reply.id] = reply.userReaction;
+          }
+        });
+        return next;
+      });
     } catch (e: any) {
       setError(e.message);
     }
   };
 
-  const handleCommentEmoji = (commentId: string, emoji: string) => {
-    setCommentReactions((prev) => ({ ...prev, [commentId]: emoji }));
+  const handleCommentEmoji = async (commentId: string, emoji: string) => {
+    const prevEmoji = commentReactions[commentId] || null;
+    const nextEmoji = prevEmoji === emoji ? null : emoji;
+    setCommentReactions((prev) => {
+      const next = { ...prev };
+      if (nextEmoji) {
+        next[commentId] = nextEmoji;
+      } else {
+        delete next[commentId];
+      }
+      return next;
+    });
     setReactionTargetId(null);
+    try {
+      const data = await apiFetch(`/comments/${commentId}/reactions`, {
+        method: "POST",
+        body: JSON.stringify({ emoji }),
+      });
+      const serverEmoji =
+        data?.reaction?.emoji ?? (data?.reaction === null ? null : nextEmoji);
+      setCommentReactions((prev) => {
+        const next = { ...prev };
+        if (serverEmoji) {
+          next[commentId] = serverEmoji;
+        } else {
+          delete next[commentId];
+        }
+        return next;
+      });
+    } catch (e: any) {
+      setCommentReactions((prev) => {
+        const next = { ...prev };
+        if (prevEmoji) {
+          next[commentId] = prevEmoji;
+        } else {
+          delete next[commentId];
+        }
+        return next;
+      });
+      showToast(e?.message || "Failed to react to comment");
+    }
   };
 
   const handleCommentPress = (commentId: string) => {
@@ -899,11 +1100,17 @@ export default function HomeFeed() {
     const isRoast = item.type === "roast";
     const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
+    const isFollowing = ownerId
+      ? followedUserIds[ownerId] ?? getFollowStatus(ownerId) ?? false
+      : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
+    const loveActive = item.userReaction === "LOVE";
+    const dislikeActive = item.userReaction === "ANGRY";
     const isRepost = !!item.repostOf;
     const original = item.repostOf;
     const originalMediaUrl = normalizeMediaUrl(original?.mediaUrl);
+    const repostAvatarUrl = normalizeMediaUrl(original?.user?.avatarUrl);
     const originalMediaType =
       normalizeMediaType(original?.mediaType) || detectMediaType(originalMediaUrl);
     const originalMedia = originalMediaUrl
@@ -915,7 +1122,16 @@ export default function HomeFeed() {
       : null;
 
     return (
-      <Pressable style={styles.card} onPress={() => router.push(`/post/${item.id}`)}>
+      <Pressable
+        style={styles.card}
+        onPress={() => {
+          if (item.raw?.pending) {
+            showToast("Still uploading. Please wait.");
+            return;
+          }
+          router.push(`/post/${item.id}`);
+        }}
+      >
         <View style={styles.row}>
           <Pressable
             style={styles.avatarWrap}
@@ -980,16 +1196,29 @@ export default function HomeFeed() {
             {item.media ? renderMedia(item.media, true) : null}
             {isRepost ? (
               <View style={styles.repostCard}>
-                <Text style={styles.repostAuthor}>
-                  {original?.user?.displayName ||
-                    original?.user?.username ||
-                    "Banter"}{" "}
-                  <Text style={styles.handle}>
-                    {original?.user?.username
-                      ? `@${original.user.username}`
-                      : "@banter"}
+                <View style={styles.repostHeader}>
+                  {repostAvatarUrl ? (
+                    <ExpoImage
+                      source={{ uri: repostAvatarUrl }}
+                      style={styles.repostAvatar}
+                      contentFit="cover"
+                      transition={180}
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <View style={styles.repostAvatar} />
+                  )}
+                  <Text style={styles.repostAuthor}>
+                    {original?.user?.displayName ||
+                      original?.user?.username ||
+                      "Banter"}{" "}
+                    <Text style={styles.handle}>
+                      {original?.user?.username
+                        ? `@${original.user.username}`
+                        : "@banter"}
+                    </Text>
                   </Text>
-                </Text>
+                </View>
                 <Text style={styles.repostBody}>
                   {stripRoastPrefix(original?.content || "")}
                 </Text>
@@ -1020,7 +1249,7 @@ export default function HomeFeed() {
                 style={styles.actionItem}
                 onPress={() => openBanterComments(item)}
               >
-                <FontAwesome name="comment-o" size={14} color="#9ca3af" />
+                <FontAwesome name="comment-o" size={16} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.commentCount ?? 0}</Text>
               </Pressable>
               {item.raw?.pending ? (
@@ -1036,25 +1265,33 @@ export default function HomeFeed() {
                 style={styles.actionItem}
                 onPress={() => openRepostModal(item)}
               >
-                <FontAwesome name="retweet" size={14} color="#9ca3af" />
+                <FontAwesome name="retweet" size={16} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable
                 style={styles.actionItem}
                 onPress={() => handleReaction(item.id, "LOVE")}
               >
-                <FontAwesome name="heart" size={14} color="#9ca3af" />
+                <FontAwesome
+                  name="heart"
+                  size={16}
+                  color={loveActive ? "#ef4444" : "#9ca3af"}
+                />
                 <Text style={styles.actionText}>{loveCount}</Text>
               </Pressable>
               <Pressable
                 style={styles.actionItem}
                 onPress={() => handleReaction(item.id, "ANGRY")}
               >
-                <FontAwesome name="thumbs-down" size={14} color="#9ca3af" />
+                <FontAwesome
+                  name="thumbs-down"
+                  size={16}
+                  color={dislikeActive ? "#f59e0b" : "#9ca3af"}
+                />
                 <Text style={styles.actionText}>{dislikeCount}</Text>
               </Pressable>
               <Pressable style={styles.actionItem} onPress={() => handleShare(item)}>
-                <FontAwesome name="share-alt" size={14} color="#9ca3af" />
+                <FontAwesome name="share-alt" size={16} color="#9ca3af" />
                 <Text style={styles.actionText}>{item.shareCount ?? 0}</Text>
               </Pressable>
             </View>
@@ -1067,37 +1304,50 @@ export default function HomeFeed() {
   const renderBanterItem = ({ item, index }: { item: Post; index: number }) => {
     const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
+    const isFollowing = ownerId
+      ? followedUserIds[ownerId] ?? getFollowStatus(ownerId) ?? false
+      : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
+    const loveActive = item.userReaction === "LOVE";
+    const dislikeActive = item.userReaction === "ANGRY";
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const banterHeight = Math.max(360, windowHeight);
-    const stayDropBottom = 12 + insets.bottom + 36;
-    const sideActionsBottom = stayDropBottom + 120;
-    const metaBottom = stayDropBottom + 150;
+    const controlsPad = isVideo ? 56 : 0;
+    const stayDropBottom = 12 + insets.bottom + 20 + controlsPad + (isVideo ? 30 : 0);
+    const sideActionsBottom = stayDropBottom + 96;
+    const metaBottom = stayDropBottom + 120;
+    const banterActionIconSize = 30;
     const isSheetOpen = !!banterCommentTarget;
+    const seekBarThumbSize = 12;
+    const seekBarWidth = seekBarWidthById[item.id] ?? 0;
     const preloadAhead = 4;
     const preloadBehind = 1;
-    const poolAhead = 4;
-    const poolBehind = 1;
     const withinWindow =
       activeBanterIndex === -1
         ? index === 0
         : index >= activeBanterIndex - preloadBehind &&
           index <= activeBanterIndex + preloadAhead;
-    const withinPool =
-      activeBanterIndex === -1
-        ? index <= poolAhead
-        : index >= activeBanterIndex - poolBehind &&
-          index <= activeBanterIndex + poolAhead;
-    const shouldPrewarm = withinWindow && !withinPool;
+    const showSeekBar = false;
 
-    const captionParts = [
-      item.text?.trim() || "",
-      ...(item.tags || []).map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
-    ].filter(Boolean);
-    const caption = captionParts.join(" ");
+      const captionParts = [
+        item.text?.trim() || "",
+        ...(item.tags || []).map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)),
+      ].filter(Boolean);
+      const caption = captionParts.join(" ");
+      const progress = videoProgress[item.id];
+      const progressDuration = progress?.duration ?? 0;
+      const progressPosition = progress?.position ?? 0;
+      const fallbackFraction = seekFractionById[item.id];
+      const computedProgress =
+        progressDuration > 0 ? Math.min(1, progressPosition / progressDuration) : 0;
+      const progressValue =
+        seekingVideoId === item.id
+          ? fallbackFraction ?? computedProgress
+          : progressDuration > 0
+          ? computedProgress
+          : fallbackFraction ?? 0;
 
     return (
       <View
@@ -1107,10 +1357,10 @@ export default function HomeFeed() {
           isSheetOpen && activeBanterId === item.id && styles.banterCardShrunk,
         ]}
       >
-        <View style={styles.banterMedia}>
+        <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
           {media ? (
             isVideo ? (
-              withinPool ? (
+              withinWindow ? (
                 <Video
                   key={`${item.id}-${media.uri}`}
                   source={{ uri: media.uri }}
@@ -1121,6 +1371,16 @@ export default function HomeFeed() {
                   useNativeControls={false}
                   isMuted={false}
                   volume={1.0}
+                  onPlaybackStatusUpdate={(status) => {
+                    if (!status.isLoaded) return;
+                    if (seekingVideoId === item.id) return;
+                    const nextPosition = status.positionMillis ?? 0;
+                    const nextDuration = status.durationMillis ?? 0;
+                    setVideoProgress((prev) => ({
+                      ...prev,
+                      [item.id]: { position: nextPosition, duration: nextDuration },
+                    }));
+                  }}
                   ref={(ref) => {
                     if (ref) {
                       videoRefs.current.set(item.id, ref);
@@ -1129,37 +1389,6 @@ export default function HomeFeed() {
                     }
                   }}
                 />
-              ) : withinWindow ? (
-                <View style={styles.banterVideoPlaceholder}>
-                  {shouldPrewarm ? (
-                    <View style={styles.banterPrewarm}>
-                      <Video
-                        source={{ uri: media.uri }}
-                        style={styles.banterPrewarmVideo}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay={false}
-                        isLooping
-                        useNativeControls={false}
-                        isMuted
-                        volume={0.0}
-                      />
-                    </View>
-                  ) : null}
-                  <Animated.View
-                    style={[
-                      styles.banterLoadingIcon,
-                      { transform: [{ scale: heartbeatScale }] },
-                    ]}
-                  >
-                    <ExpoImage
-                      source={require("../../assets/images/banter-logo.jpg")}
-                      style={styles.banterLoadingImage}
-                      contentFit="cover"
-                      transition={120}
-                    />
-                  </Animated.View>
-                  <Text style={styles.banterLoadingText}>Loading…</Text>
-                </View>
               ) : (
                 <View style={styles.banterPlaceholder} />
               )
@@ -1176,14 +1405,45 @@ export default function HomeFeed() {
             <View style={styles.banterPlaceholder} />
           )}
         </View>
-        <View style={styles.banterOverlay}>
+        <View style={styles.banterOverlay} pointerEvents="box-none">
           <View style={[styles.banterMeta, { paddingBottom: metaBottom }]}>
             {isRepost ? (
               <Text style={styles.banterRepostLabel}>
                 {item.repostOf?.isRoast ? "Rebantered" : "Reposted"} by {item.handle}
               </Text>
             ) : null}
-            <Text style={styles.banterUser}>{item.handle}</Text>
+            <View style={styles.banterUserRow}>
+              <Pressable
+                style={styles.banterAvatarWrap}
+                onPress={() => ownerId && router.push(`/user/${ownerId}`)}
+              >
+                {item.avatarUrl ? (
+                  <ExpoImage
+                    source={{ uri: item.avatarUrl }}
+                    style={styles.banterAvatar}
+                    contentFit="cover"
+                    transition={180}
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <View style={styles.banterAvatar} />
+                )}
+                {!isMine && !isFollowing ? (
+                  <Pressable
+                    style={[
+                      styles.banterAvatarPlus,
+                      followLoadingById[ownerId] && styles.banterAvatarPlusLoading,
+                    ]}
+                    onPress={() => ownerId && !isFollowing && handleFollowUser(ownerId)}
+                    hitSlop={10}
+                    disabled={followLoadingById[ownerId] || isFollowing}
+                  >
+                    <Text style={styles.banterAvatarPlusText}>+</Text>
+                  </Pressable>
+                ) : null}
+              </Pressable>
+              <Text style={styles.banterUser}>{item.handle}</Text>
+            </View>
             {item.raw?.pending ? (
               <View style={styles.pendingPillBanter}>
                 <Text style={styles.pendingText}>
@@ -1205,7 +1465,7 @@ export default function HomeFeed() {
                 style={styles.banterAction}
                 onPress={() => deletePost(item.id, "banter")}
               >
-                <FontAwesome name="trash" size={20} color="#fff" />
+                <FontAwesome name="trash" size={banterActionIconSize} color="#fff" />
                 <Text style={styles.banterActionText}>Delete</Text>
               </Pressable>
             ) : null}
@@ -1213,48 +1473,253 @@ export default function HomeFeed() {
               style={styles.banterAction}
               onPress={() => openBanterComments(item)}
             >
-              <FontAwesome name="comment-o" size={20} color="#fff" />
+              <FontAwesome name="comment-o" size={banterActionIconSize} color="#fff" />
               <Text style={styles.banterActionText}>{item.commentCount ?? 0}</Text>
             </Pressable>
             <Pressable style={styles.banterAction} onPress={() => openRepostModal(item)}>
-              <FontAwesome name="retweet" size={20} color="#fff" />
+              <FontAwesome name="retweet" size={banterActionIconSize} color="#fff" />
               <Text style={styles.banterActionText}>{item.repostCount ?? 0}</Text>
             </Pressable>
             <Pressable
               style={styles.banterAction}
               onPress={() => handleReaction(item.id, "LOVE")}
             >
-              <FontAwesome name="heart" size={20} color="#fff" />
+              <FontAwesome
+                name="heart"
+                size={banterActionIconSize}
+                color={loveActive ? "#ef4444" : "#fff"}
+              />
               <Text style={styles.banterActionText}>{loveCount}</Text>
             </Pressable>
             <Pressable
               style={styles.banterAction}
               onPress={() => handleReaction(item.id, "ANGRY")}
             >
-              <FontAwesome name="thumbs-down" size={20} color="#fff" />
+              <FontAwesome
+                name="thumbs-down"
+                size={banterActionIconSize}
+                color={dislikeActive ? "#f59e0b" : "#fff"}
+              />
               <Text style={styles.banterActionText}>{dislikeCount}</Text>
             </Pressable>
             <Pressable style={styles.banterAction} onPress={() => handleShare(item)}>
-              <FontAwesome name="share-alt" size={20} color="#fff" />
+              <FontAwesome name="share-alt" size={banterActionIconSize} color="#fff" />
               <Text style={styles.banterActionText}>{item.shareCount ?? 0}</Text>
             </Pressable>
           </View>
-          <View style={[styles.banterStayDropWrap, { bottom: stayDropBottom }]}>
-            <View style={styles.banterGauge}>
+          {showSeekBar ? (
+            <View
+              style={[styles.banterSeekBarWrap, { bottom: stayDropBottom + 54 }]}
+              pointerEvents="box-only"
+              onStartShouldSetResponderCapture={() => true}
+              onMoveShouldSetResponderCapture={() => true}
+              onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
+              onResponderTerminationRequest={() => false}
+              onResponderGrant={(evt) => {
+                if (!seekBarWidth) return;
+                setIsSeeking(true);
+                if (activeBanterId !== item.id) {
+                  setActiveBanterId(item.id);
+                }
+                const ref = videoRefs.current.get(item.id);
+                if (ref) {
+                  ref.pauseAsync().catch(() => {});
+                }
+                setSeekingVideoId(item.id);
+                const fraction = Math.max(
+                  0,
+                  Math.min(1, evt.nativeEvent.locationX / seekBarWidth)
+                );
+                setSeekFractionById((prev) => ({ ...prev, [item.id]: fraction }));
+                if (progressDuration) {
+                  const nextPosition = fraction * progressDuration;
+                  setVideoProgress((prev) => ({
+                    ...prev,
+                    [item.id]: { position: nextPosition, duration: progressDuration },
+                  }));
+                  if (ref) {
+                    ref
+                      .setStatusAsync({ positionMillis: nextPosition, shouldPlay: false })
+                      .catch(() => {});
+                  }
+                  return;
+                }
+                if (!ref) return;
+                ref.getStatusAsync().then((status) => {
+                  if (!status.isLoaded || !status.durationMillis) return;
+                  const nextPosition = fraction * status.durationMillis;
+                  setVideoProgress((prev) => ({
+                    ...prev,
+                    [item.id]: {
+                      position: nextPosition,
+                      duration: status.durationMillis ?? prev[item.id]?.duration ?? 0,
+                    },
+                  }));
+                  ref
+                    .setStatusAsync({ positionMillis: nextPosition, shouldPlay: false })
+                    .catch(() => {});
+                });
+              }}
+              onResponderMove={(evt) => {
+                if (!seekBarWidth) return;
+                const fraction = Math.max(
+                  0,
+                  Math.min(1, evt.nativeEvent.locationX / seekBarWidth)
+                );
+                setSeekFractionById((prev) => ({ ...prev, [item.id]: fraction }));
+                if (progressDuration) {
+                  const nextPosition = fraction * progressDuration;
+                  setVideoProgress((prev) => ({
+                    ...prev,
+                    [item.id]: { position: nextPosition, duration: progressDuration },
+                  }));
+                }
+                const now = Date.now();
+                const lastSeek = lastSeekRef.current[item.id] ?? 0;
+                if (now - lastSeek > 80) {
+                  const ref = videoRefs.current.get(item.id);
+                  if (!ref) return;
+                  if (progressDuration) {
+                    const nextPosition = fraction * progressDuration;
+                    ref
+                      .setStatusAsync({ positionMillis: nextPosition, shouldPlay: false })
+                      .catch(() => {});
+                  } else {
+                    ref.getStatusAsync().then((status) => {
+                      if (!status.isLoaded || !status.durationMillis) return;
+                      const nextPosition = fraction * status.durationMillis;
+                      setVideoProgress((prev) => ({
+                        ...prev,
+                        [item.id]: {
+                          position: nextPosition,
+                          duration: status.durationMillis ?? prev[item.id]?.duration ?? 0,
+                        },
+                      }));
+                      ref
+                        .setStatusAsync({ positionMillis: nextPosition, shouldPlay: false })
+                        .catch(() => {});
+                    });
+                  }
+                  lastSeekRef.current[item.id] = now;
+                }
+              }}
+              onResponderRelease={(evt) => {
+                if (!seekBarWidth) {
+                  setSeekingVideoId(null);
+                  setIsSeeking(false);
+                  return;
+                }
+                const ref = videoRefs.current.get(item.id);
+                const fraction = Math.max(
+                  0,
+                  Math.min(1, evt.nativeEvent.locationX / seekBarWidth)
+                );
+                setSeekFractionById((prev) => ({ ...prev, [item.id]: fraction }));
+                const finishPlay = (nextPosition: number, duration: number) => {
+                  setVideoProgress((prev) => ({
+                    ...prev,
+                    [item.id]: { position: nextPosition, duration },
+                  }));
+                  setSeekingVideoId(null);
+                  setIsSeeking(false);
+                  if (!ref) return;
+                  ref
+                    .setStatusAsync({ positionMillis: nextPosition, shouldPlay: true })
+                    .catch(() => {
+                      ref.playAsync().catch(() => {});
+                    });
+                };
+                if (ref) {
+                  if (progressDuration) {
+                    finishPlay(fraction * progressDuration, progressDuration);
+                  } else {
+                    ref.getStatusAsync().then((status) => {
+                      if (!status.isLoaded || !status.durationMillis) {
+                        setSeekingVideoId(null);
+                        ref.playAsync().catch(() => {});
+                        return;
+                      }
+                      finishPlay(fraction * status.durationMillis, status.durationMillis);
+                    });
+                  }
+                } else {
+                  setSeekingVideoId(null);
+                  setIsSeeking(false);
+                }
+              }}
+              onResponderTerminate={() => {
+                const ref = videoRefs.current.get(item.id);
+                if (ref) {
+                  ref.playAsync().catch(() => {});
+                }
+                setSeekingVideoId(null);
+                setIsSeeking(false);
+              }}
+            >
+              <View
+                style={styles.banterSeekBar}
+                onLayout={(event) => {
+                  const width = event?.nativeEvent?.layout?.width;
+                  if (!width) return;
+                  setSeekBarWidthById((prev) => ({
+                    ...prev,
+                    [item.id]: width,
+                  }));
+                }}
+              >
+                <View
+                  style={[styles.banterSeekBarFill, { width: `${progressValue * 100}%` }]}
+                />
+                <View
+                  style={[
+                    styles.banterSeekBarThumb,
+                    {
+                      width: seekBarThumbSize,
+                      height: seekBarThumbSize,
+                      borderRadius: seekBarThumbSize / 2,
+                      left: Math.max(
+                        0,
+                        Math.min(
+                          seekBarWidth - seekBarThumbSize,
+                          progressValue * seekBarWidth - seekBarThumbSize / 2
+                        )
+                      ),
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : null}
+          <View
+            style={[
+              styles.banterStayDropWrap,
+              { bottom: stayDropBottom },
+              isVideo && styles.banterStayDropWrapCompact,
+            ]}
+            pointerEvents="auto"
+          >
+            <View style={[styles.banterGauge, isVideo && styles.banterGaugeCompact]}>
               <VoteGauge stayVotes={item.stayVotes} dropVotes={item.dropVotes} />
             </View>
             <View style={styles.banterStayDropRow}>
               <Pressable
-                style={styles.banterStayBtn}
+                style={[styles.banterStayBtn, isVideo && styles.banterStayBtnCompact]}
                 onPress={() => handleVote(item.id, "STAY")}
+                hitSlop={10}
               >
-                <Text style={styles.banterStayText}>Stay</Text>
+                <Text style={[styles.banterStayText, isVideo && styles.banterStayTextCompact]}>
+                  Stay
+                </Text>
               </Pressable>
               <Pressable
-                style={styles.banterDropBtn}
+                style={[styles.banterDropBtn, isVideo && styles.banterStayBtnCompact]}
                 onPress={() => handleVote(item.id, "DROP")}
+                hitSlop={10}
               >
-                <Text style={styles.banterStayText}>Drop</Text>
+                <Text style={[styles.banterStayText, isVideo && styles.banterStayTextCompact]}>
+                  Drop
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1321,7 +1786,12 @@ export default function HomeFeed() {
                 </Text>
               </Pressable>
             </View>
-            <FontAwesome name="cog" size={18} color="#fff" />
+            <Pressable
+              onPress={() => router.push("/(tabs)/profile")}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <FontAwesome name="cog" size={18} color="#fff" />
+            </Pressable>
           </View>
 
           <View
@@ -1416,36 +1886,40 @@ export default function HomeFeed() {
             onViewableItemsChanged={onViewableItemsChanged}
           />
         ) : (
-          <FlashList
-            data={visibleBanters}
-            keyExtractor={(item) => item.id}
-            renderItem={renderBanterItem}
-            pagingEnabled
-            decelerationRate="fast"
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 0 }}
-            snapToInterval={windowHeight}
-            snapToAlignment="start"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor="transparent"
-                colors={["transparent"]}
-                progressBackgroundColor="transparent"
-              />
-            }
-            estimatedItemSize={windowHeight}
-            drawDistance={windowHeight * 2}
-            viewabilityConfig={viewabilityConfig.current}
-            onViewableItemsChanged={onViewableItemsChanged}
-            onMomentumScrollEnd={(event) => {
-              const offsetY = event.nativeEvent.contentOffset.y || 0;
-              const index = Math.round(offsetY / windowHeight);
-              const next = banters[index];
-              if (next?.id) setActiveBanterId(next.id);
-            }}
-          />
+            <FlashList
+              data={visibleBanters}
+              keyExtractor={(item) => item.id}
+              renderItem={renderBanterItem}
+              extraData={{ followedUserIds, followLoadingById, meId }}
+              pagingEnabled
+              decelerationRate="fast"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 0 }}
+              snapToInterval={banterHeight}
+              snapToAlignment="start"
+              onScroll={handleBanterScroll}
+              scrollEventThrottle={16}
+              scrollEnabled={!isSeeking}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor="transparent"
+                  colors={["transparent"]}
+                  progressBackgroundColor="transparent"
+                />
+              }
+              estimatedItemSize={banterHeight}
+              drawDistance={windowHeight * 2}
+              viewabilityConfig={viewabilityConfig.current}
+              onViewableItemsChanged={onViewableItemsChanged}
+              onMomentumScrollEnd={(event) => {
+                const offsetY = event.nativeEvent.contentOffset.y || 0;
+                const index = Math.round(offsetY / banterHeight);
+                const next = visibleBanters[index];
+                if (next?.id) setActiveBanterId(next.id);
+              }}
+            />
         )}
 
         {mainTab === "posts" ? (
@@ -1852,6 +2326,8 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
   },
   mainTabs: {
     flexDirection: "row",
@@ -1902,6 +2378,8 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
   },
   name: { color: "#fafafa", fontWeight: "700" },
   handle: { color: "#888", fontWeight: "400" },
@@ -1916,7 +2394,7 @@ const styles = StyleSheet.create({
   tagText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
   actions: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
   actionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
-  actionText: { color: "#9ca3af", fontSize: 12 },
+  actionText: { color: "#9ca3af", fontSize: 13 },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -2019,6 +2497,15 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
     borderWidth: 1,
   },
+  repostHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  repostAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
   repostAuthor: { color: "#fafafa", fontWeight: "700" },
   repostBody: { color: "#d1d5db", marginTop: 4 },
   banterCard: {
@@ -2034,43 +2521,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   banterMedia: { flex: 1 },
-  banterVideoPlaceholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0d0d0d",
-    gap: 8,
-  },
-  banterLoadingIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(15,15,15,0.6)",
-    borderWidth: 2,
-    borderColor: "rgba(255,107,53,0.55)",
-  },
-  banterLoadingImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  banterLoadingText: {
-    color: "#ffb08a",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  banterPrewarm: {
-    position: "absolute",
-    inset: 0,
-    opacity: 0.01,
-  },
-  banterPrewarmVideo: {
-    width: "100%",
-    height: "100%",
-  },
   banterMediaFill: { width: "100%", height: "100%" },
   banterPlaceholder: { flex: 1, backgroundColor: "#0f172a" },
   banterOverlay: {
@@ -2084,6 +2534,43 @@ const styles = StyleSheet.create({
   banterMeta: {
     paddingHorizontal: 16,
     paddingBottom: 90,
+  },
+  banterUserRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  banterAvatarWrap: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  banterAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
+  banterAvatarPlus: {
+    position: "absolute",
+    bottom: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#ff6b35",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#0d0d0d",
+  },
+  banterAvatarPlusText: {
+    color: "#0d0d0d",
+    fontWeight: "800",
+    fontSize: 14,
+    lineHeight: 14,
+  },
+  banterAvatarPlusLoading: {
+    opacity: 0.6,
   },
   banterUser: {
     color: "rgba(255,255,255,0.95)",
@@ -2108,19 +2595,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
-  banterStayDropWrap: {
+  banterSeekBarWrap: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 20,
-    alignItems: "center",
-    gap: 10,
+    left: 12,
+    right: 12,
+    height: 24,
+    justifyContent: "center",
+    zIndex: 6,
+  },
+  banterSeekBar: {
+    width: "100%",
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden",
+  },
+  banterSeekBarFill: {
+    height: "100%",
+    backgroundColor: "rgba(255,255,255,0.95)",
+  },
+  banterSeekBarThumb: {
+    position: "absolute",
+    top: -4,
+    backgroundColor: "#fff",
+  },
+  banterStayDropWrap: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      bottom: 20,
+      alignItems: "center",
+      gap: 6,
+      zIndex: 8,
+      elevation: 8,
+    },
+  banterStayDropWrapCompact: {
+    gap: 4,
   },
   banterGauge: {
-    width: "72%",
+    width: "62%",
   },
-  banterAction: { alignItems: "center", gap: 4 },
-  banterActionText: { color: "#fff", fontSize: 12 },
+  banterGaugeCompact: {
+    width: "54%",
+  },
+    banterAction: { alignItems: "center", gap: 3 },
+    banterActionText: { color: "#fff", fontSize: 12 },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,
@@ -2129,18 +2648,25 @@ const styles = StyleSheet.create({
   banterStayBtn: {
     flex: 1,
     backgroundColor: "#ff6b35",
-    paddingVertical: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 999,
     alignItems: "center",
+  },
+  banterStayBtnCompact: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
   },
   banterDropBtn: {
     flex: 1,
     backgroundColor: "#1e3a8a",
-    paddingVertical: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 999,
     alignItems: "center",
   },
-  banterStayText: { color: "#fff", fontWeight: "700" },
+  banterStayText: { color: "#fff", fontWeight: "700", fontSize: 12 },
+  banterStayTextCompact: { fontSize: 11 },
   banterRepostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostBackdrop: {
     flex: 1,
@@ -2230,6 +2756,8 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
   },
   commentName: { color: "#fff", fontWeight: "700" },
   commentText: { color: "#cbd5f5", marginTop: 2 },
@@ -2262,6 +2790,8 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     backgroundColor: "#1f1f1f",
+    borderWidth: 1,
+    borderColor: "#ff6b35",
   },
   replyName: { color: "#e5e7eb", fontWeight: "600", fontSize: 12 },
   replyText: { color: "#cbd5f5", marginTop: 2, fontSize: 12 },

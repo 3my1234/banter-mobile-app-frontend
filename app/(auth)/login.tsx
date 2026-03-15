@@ -4,7 +4,6 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { useCreateWallet } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
@@ -21,7 +20,6 @@ const AuthLoginScreen = () => {
   const { user, isReady, getAccessToken } = usePrivy();
   const { login, state: oauthState } = useLoginWithOAuth();
   const solanaWalletState = useEmbeddedSolanaWallet();
-  const { createWallet } = useCreateWallet();
 
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -124,9 +122,7 @@ const AuthLoginScreen = () => {
 
   const ensureWallets = (accounts: any[]) => {
     const solanaAddress = findWalletAddress(accounts, "solana");
-    const movementAddress =
-      findWalletAddress(accounts, "movement") || findWalletAddress(accounts, "aptos");
-    return { solanaAddress, movementAddress };
+    return { solanaAddress };
   };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,12 +140,11 @@ const AuthLoginScreen = () => {
     let latestUser = initialUser;
     for (let i = 0; i < maxAttempts; i += 1) {
       const accounts = getLinkedAccounts(userRef.current || latestUser);
-      const { solanaAddress, movementAddress } = ensureWallets(accounts);
-      if (solanaAddress && movementAddress) {
+      const { solanaAddress } = ensureWallets(accounts);
+      if (solanaAddress) {
         return {
           latestUser: userRef.current || latestUser,
           solanaAddress,
-          movementAddress,
         };
       }
       await sleep(250);
@@ -158,7 +153,6 @@ const AuthLoginScreen = () => {
     return {
       latestUser: userRef.current || latestUser,
       solanaAddress: undefined,
-      movementAddress: undefined,
     };
   };
 
@@ -188,7 +182,7 @@ const AuthLoginScreen = () => {
     let token = initialToken;
     let verified = currentVerified;
     for (let i = 0; i < maxAttempts; i += 1) {
-      if (verified?.user?.solanaAddress && verified?.user?.movementAddress) {
+      if (verified?.user?.solanaAddress) {
         return verified;
       }
       await sleep(500);
@@ -230,16 +224,15 @@ const AuthLoginScreen = () => {
       // 2) Provision missing wallets once per Privy user to avoid duplicates.
       if (
         !walletProvisionAttemptedUserIds.has(activeUserId) &&
-        (!verified?.user?.solanaAddress || !verified?.user?.movementAddress)
+        !verified?.user?.solanaAddress
       ) {
         let latestUser = userRef.current || activeUser;
         const waited = await waitForWalletAddresses(latestUser);
         latestUser = waited.latestUser;
         let solanaAddress = waited.solanaAddress;
-        let movementAddress = waited.movementAddress;
 
         // If wallets appeared after hydration delay, just resync backend.
-        if (solanaAddress && movementAddress) {
+        if (solanaAddress) {
           const refreshedToken = (await getPrivyTokenWithRetry()) || privyToken;
           verified = await verifyPrivyWithRetry(refreshedToken);
         } else {
@@ -262,32 +255,6 @@ const AuthLoginScreen = () => {
             }
           }
 
-          if (!movementAddress) {
-            try {
-              await createWallet({ chainType: "movement" });
-            } catch (error) {
-              const message = ((error as Error)?.message || "").toLowerCase();
-              const alreadyExists =
-                message.includes("already has an embedded wallet") ||
-                message.includes("already has an account of the type linked") ||
-                message.includes("already has a wallet");
-              if (!alreadyExists) {
-                try {
-                  await createWallet({ chainType: "aptos" });
-                } catch (fallbackError) {
-                  const fallbackMsg = ((fallbackError as Error)?.message || "").toLowerCase();
-                  const fallbackAlreadyExists =
-                    fallbackMsg.includes("already has an embedded wallet") ||
-                    fallbackMsg.includes("already has an account of the type linked") ||
-                    fallbackMsg.includes("already has a wallet");
-                  if (!fallbackAlreadyExists) {
-                    throw fallbackError;
-                  }
-                }
-              }
-            }
-          }
-
           // Give Privy time to hydrate linkedAccounts after wallet creation.
           await waitForWalletAddresses(userRef.current || latestUser, 12);
 
@@ -299,7 +266,7 @@ const AuthLoginScreen = () => {
 
       // 4) Privy wallet indexing can lag briefly after OAuth callback.
       // Retry backend sync until both wallets are visible (or timeout).
-      if (!verified?.user?.solanaAddress || !verified?.user?.movementAddress) {
+      if (!verified?.user?.solanaAddress) {
         verified = await waitForBackendWallets(privyToken, verified);
       }
 
@@ -309,8 +276,10 @@ const AuthLoginScreen = () => {
         JSON.stringify({ token: verified.token, email: sessionEmail })
       );
       if (process.env.EXPO_PUBLIC_DEBUG_AUTH === "1") {
-        console.log("[AUTH DEBUG] Stored JWT:", verified.token);
-        console.log("[AUTH DEBUG] Session email:", sessionEmail);
+        if (__DEV__) {
+          console.log("[AUTH DEBUG] Stored JWT:", verified.token);
+          console.log("[AUTH DEBUG] Session email:", sessionEmail);
+        }
       }
       setRedirecting(true);
       router.replace("/(tabs)");
@@ -441,9 +410,9 @@ const AuthLoginScreen = () => {
           source={require("../../assets/images/banter-logo.jpg")}
           style={styles.logo}
         />
-        {oauthState?.status ? (
+        {/* {oauthState?.status ? (
           <Text style={styles.mutedText}>OAuth: {oauthState.status}</Text>
-        ) : null}
+        ) : null} */}
         <ActivityIndicator color="#ff6b35" />
         <Text style={styles.errorText}>Finalizing sign in...</Text>
       </View>
@@ -456,9 +425,9 @@ const AuthLoginScreen = () => {
         source={require("../../assets/images/banter-logo.jpg")}
         style={styles.logo}
       />
-      {oauthState?.status ? (
+      {/* {oauthState?.status ? (
         <Text style={styles.mutedText}>OAuth: {oauthState.status}</Text>
-      ) : null}
+      ) : null} */}
       {loginError ? <Text style={styles.errorText}>{loginError}</Text> : null}
       <Pressable
         style={[styles.googleButton, loginLoading && styles.googleButtonDisabled]}

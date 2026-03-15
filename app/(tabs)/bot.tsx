@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +16,7 @@ import { Linking } from "react-native";
 import { Text } from "@/components/Themed";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
+import * as Clipboard from "expo-clipboard";
 
 type Sport = "SOCCER" | "BASKETBALL";
 type StakeAsset = "USD" | "USDC";
@@ -261,6 +263,9 @@ export default function RolleyBotScreen() {
   const [stakeDays, setStakeDays] = useState<number>(5);
   const [stakes, setStakes] = useState<StakePosition[]>([]);
   const [stakeBusy, setStakeBusy] = useState(false);
+  const [solanaPayment, setSolanaPayment] = useState<any | null>(null);
+  const [solanaTxHash, setSolanaTxHash] = useState("");
+  const [solanaVerifying, setSolanaVerifying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -390,12 +395,11 @@ export default function RolleyBotScreen() {
   const onRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      await loadPicks();
+      const tasks = [loadPicks(), fetchUserContext(), loadStakes()];
       if (historyExpanded) {
-        await loadHistory();
+        tasks.push(loadHistory());
       }
-      await fetchUserContext();
-      await loadStakes();
+      await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
@@ -466,7 +470,17 @@ export default function RolleyBotScreen() {
           }
         }
       } else {
-        throw new Error("USDC rollover funding is not live in-app yet. Use USD for now.");
+        const created = await apiFetch("/payments/solana/rolley/create", {
+          method: "POST",
+          body: JSON.stringify({
+            sport,
+            amount,
+            lockDays: stakeDays,
+          }),
+        });
+        setSolanaPayment(created);
+        setSolanaTxHash("");
+        return;
       }
 
       try {
@@ -489,6 +503,52 @@ export default function RolleyBotScreen() {
       setStakeBusy(false);
     }
   }, [loadStakes, sport, stakeAmount, stakeAsset, stakeDays, userId]);
+
+  const verifySolanaPayment = useCallback(async () => {
+    if (!solanaPayment?.paymentId || !solanaTxHash.trim()) {
+      Alert.alert("Verify payment", "Paste the Solana transaction hash first.");
+      return;
+    }
+    try {
+      setSolanaVerifying(true);
+      const verified = await apiFetch("/payments/solana/rolley/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          paymentId: solanaPayment.paymentId,
+          txHash: solanaTxHash.trim(),
+        }),
+      });
+      if (verified?.payment?.status !== "COMPLETED") {
+        throw new Error("Payment is still pending. Please try again shortly.");
+      }
+      setSolanaPayment(null);
+      setSolanaTxHash("");
+      try {
+        const reward = await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
+        if (reward?.awarded) {
+          Alert.alert(
+            "Stake created",
+            `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
+          );
+        } else {
+          Alert.alert(
+            "Stake created",
+            `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.`
+          );
+        }
+      } catch {
+        Alert.alert(
+          "Stake created",
+          `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.`
+        );
+      }
+      await loadStakes();
+    } catch (e: any) {
+      Alert.alert("Verify failed", e?.message || "Failed to verify payment");
+    } finally {
+      setSolanaVerifying(false);
+    }
+  }, [loadStakes, solanaPayment, solanaTxHash, stakeAmount, stakeAsset, stakeDays]);
 
   const onWithdrawStake = useCallback(
     async (stakeId: string) => {
@@ -621,12 +681,21 @@ export default function RolleyBotScreen() {
           </Pressable>
           {stakeAsset === "USDC" ? (
             <Text style={styles.disclaimer}>
-              USDC rollover funding is being finalized. Use USD for the live managed rollover flow right now.
+              USDC uses a manual Solana transfer. Tap "Start Managed Rollover" to get the deposit address,
+              then paste the Solana tx hash to verify.
             </Text>
           ) : null}
           <Text style={styles.disclaimer}>
             Your deposit is managed by Banter for the selected rollover period. Movement is used to publish pick and settlement proof, not to hold your stake directly.
           </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Wallet payment guide</Text>
+          <Text style={styles.guideLabel}>USDC (Solana)</Text>
+          <Text style={styles.guideStep}>1. Tap "Start Managed Rollover" to generate the address and memo.</Text>
+          <Text style={styles.guideStep}>2. Send the exact USDC amount to the address and include the memo.</Text>
+          <Text style={styles.guideStep}>3. Paste the transaction hash in the app and tap Verify.</Text>
         </View>
 
         {stakes.length > 0 ? (
@@ -796,7 +865,14 @@ export default function RolleyBotScreen() {
           <View key={pick.id} style={styles.pickCard}>
             <View style={styles.pickHead}>
               <Text style={styles.match}>{pick.home_team} vs {pick.away_team}</Text>
-              <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
+              <View style={styles.pickMeta}>
+                {pick.is_primary ? (
+                  <View style={styles.primaryBadge}>
+                    <Text style={styles.primaryBadgeText}>Primary</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.confidence}>{formatPct(pick.confidence)}</Text>
+              </View>
             </View>
             <View
               style={[styles.outcomePill, { backgroundColor: getSettlementUi(pick.settlement_outcome).bg }]}
@@ -936,6 +1012,65 @@ export default function RolleyBotScreen() {
               </View>
           ))}
       </ScrollView>
+
+      {solanaPayment ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable style={styles.modalBackdrop} onPress={() => setSolanaPayment(null)} />
+          <View style={styles.solanaSheet}>
+            <Text style={styles.sectionTitle}>Send USDC (Solana)</Text>
+            <Text style={styles.metaSub}>
+              Send exactly {formatAmount(solanaPayment.amount, "USDC")} to:
+            </Text>
+            <Pressable
+              style={styles.copyRow}
+              onPress={async () => {
+                if (solanaPayment.toAddress) {
+                  await Clipboard.setStringAsync(solanaPayment.toAddress);
+                  Alert.alert("Copied", "Solana address copied.");
+                }
+              }}
+            >
+              <Text style={styles.copyText} numberOfLines={1}>
+                {solanaPayment.toAddress}
+              </Text>
+              <Text style={styles.copyCta}>Copy</Text>
+            </Pressable>
+            {solanaPayment.memo ? (
+              <Pressable
+                style={styles.copyRow}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(String(solanaPayment.memo));
+                  Alert.alert("Copied", "Memo code copied.");
+                }}
+              >
+                <Text style={styles.copyText}>Memo: {solanaPayment.memo}</Text>
+                <Text style={styles.copyCta}>Copy</Text>
+              </Pressable>
+            ) : null}
+            <TextInput
+              value={solanaTxHash}
+              onChangeText={setSolanaTxHash}
+              placeholder="Paste Solana transaction hash"
+              placeholderTextColor="#6b7280"
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable
+              style={styles.stakeButton}
+              onPress={() => void verifySolanaPayment()}
+              disabled={solanaVerifying}
+            >
+              <Text style={styles.stakeButtonText}>
+                {solanaVerifying ? "Verifying..." : "Verify Payment"}
+              </Text>
+            </Pressable>
+            <Text style={styles.disclaimer}>
+              You must include the memo code in the transfer. Payments without the memo cannot be verified.
+            </Text>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -999,6 +1134,8 @@ const styles = StyleSheet.create({
   },
   stakeButtonText: { color: "#16120c", fontWeight: "800", fontSize: 13 },
   disclaimer: { color: "#9ca3af", fontSize: 11, marginTop: 8, lineHeight: 16 },
+  guideLabel: { color: "#f9fafb", fontSize: 12, fontWeight: "700", marginTop: 10 },
+  guideStep: { color: "#cbd5e1", fontSize: 11, marginTop: 4, lineHeight: 16 },
   stakeCard: {
     borderWidth: 1,
     borderColor: "#2a2a2a",
@@ -1047,6 +1184,35 @@ const styles = StyleSheet.create({
   error: { color: "#f87171", fontSize: 12 },
   empty: { color: "#e5e7eb", fontSize: 13, fontWeight: "700" },
   emptySub: { color: "#9ca3af", fontSize: 11, marginTop: 3 },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  solanaSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "20%",
+    backgroundColor: "#111",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    padding: 16,
+  },
+  copyRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2c2c2c",
+    backgroundColor: "#0b0b0b",
+  },
+  copyText: { color: "#f3f4f6", fontSize: 12, flex: 1 },
+  copyCta: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
   historyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
   historyToggle: {
     borderWidth: 1,
@@ -1094,6 +1260,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   pickHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  pickMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
+  primaryBadge: {
+    backgroundColor: "rgba(16,185,129,0.15)",
+    borderColor: "rgba(16,185,129,0.4)",
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+  },
+  primaryBadgeText: { color: "#34d399", fontSize: 11, fontWeight: "700" },
   match: { color: "#fafafa", fontSize: 14, fontWeight: "700", flex: 1 },
   confidence: { color: "#22c55e", fontSize: 13, fontWeight: "700" },
   league: { color: "#9ca3af", fontSize: 12 },

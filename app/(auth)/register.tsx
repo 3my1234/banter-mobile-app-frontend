@@ -10,7 +10,7 @@ const API_BASE_URL =
 type PendingRegistration = {
   email: string;
   solanaAddress: string;
-  movementAddress: string;
+  movementAddress?: string;
   userInfo: any;
 };
 
@@ -54,7 +54,7 @@ const RegisterScreen = () => {
           displayName: displayName.trim(),
           username: username.trim(),
           solanaAddress: pending.solanaAddress,
-          movementAddress: pending.movementAddress,
+          ...(pending.movementAddress ? { movementAddress: pending.movementAddress } : {}),
         }),
       });
       if (!res.ok) {

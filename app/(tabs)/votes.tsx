@@ -1,33 +1,21 @@
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
-import {
-  createAssociatedTokenAccountInstruction,
-  createTransferCheckedInstruction,
-  getAssociatedTokenAddress,
-} from "@solana/spl-token";
-import { usePrivy } from "@privy-io/expo";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { useCreateWallet, useSignRawHash } from "@privy-io/expo/extended-chains";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
-import {
-  getMovementWalletByAddress,
-  sendMovementTransaction,
-} from "@/lib/privyMovement";
-import * as SecureStore from "expo-secure-store";
-import { API_BASE_URL } from "@/lib/api";
-import { Buffer } from "buffer";
+import * as Clipboard from "expo-clipboard";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 
 type Bundle = {
@@ -37,13 +25,9 @@ type Bundle = {
   currency: string;
 };
 
-type PaymentMethod = "SOLANA" | "MOVEMENT" | "CARD";
+type PaymentMethod = "SOLANA" | "CARD";
 
 export default function Votes() {
-  const { user, getAccessToken } = usePrivy();
-  const solanaWallet = useEmbeddedSolanaWallet();
-  const { createWallet } = useCreateWallet();
-  const { signRawHash } = useSignRawHash();
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -51,6 +35,12 @@ export default function Votes() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [solanaPayment, setSolanaPayment] = useState<any | null>(null);
+  const [solanaTxHash, setSolanaTxHash] = useState("");
+  const [solanaVerifying, setSolanaVerifying] = useState(false);
+  const solanaGuideUrl =
+    process.env.EXPO_PUBLIC_SOLANA_USDC_GUIDE_URL ??
+    "https://youtu.be/v5TInJgWdFA?si=QN8rJY_blVW6JbfH";
 
   const loadVotesPage = async () => {
     try {
@@ -88,37 +78,15 @@ export default function Votes() {
   const showPaymentSuccess = (bundleId: string, method: PaymentMethod) => {
     const bundle = bundles.find((b) => b.id === bundleId);
     const votes = bundle?.votes ?? 0;
-    const methodLabel =
-      method === "SOLANA" ? "Solana" : method === "MOVEMENT" ? "Movement" : "Card";
+    const methodLabel = method === "SOLANA" ? "Solana" : "Card";
     Alert.alert("Payment successful", `You received ${votes} vote${votes === 1 ? "" : "s"} via ${methodLabel}.`);
   };
 
-  const syncPrivySessionToBackend = async () => {
-    const privyToken = await getAccessToken();
-    if (!privyToken) {
-      throw new Error("Privy token not available. Please log in again.");
-    }
-
-    const res = await fetch(`${API_BASE_URL}/auth/privy/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ privyToken }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Failed to sync Movement wallet: ${text}`);
-    }
-
-    const verified = await res.json();
-    await SecureStore.setItemAsync(
-      "banter_session",
-      JSON.stringify({
-        token: verified?.token,
-        email: verified?.user?.email || "",
-      })
-    );
-    return verified;
+  const normalizeErrorMessage = (error: unknown) => {
+    if (!error) return "Try again.";
+    if (typeof error === "string") return error;
+    if (error instanceof Error) return error.message || "Try again.";
+    return "Try again.";
   };
 
   const pollFlutterwaveStatus = async (paymentId: string, attempts: number = 15) => {
@@ -143,180 +111,42 @@ export default function Votes() {
         method: "POST",
         body: JSON.stringify({ bundleId }),
       });
-
-      let wallet = solanaWallet.wallets?.[0];
-      if (!wallet) {
-        if (typeof solanaWallet.create !== "function") {
-          throw new Error("Solana wallet creation is not available in this session.");
-        }
-        await solanaWallet.create({ recoveryMethod: "privy" });
-        wallet = solanaWallet.wallets?.[0];
-      }
-
-      if (!wallet?.address) {
-        throw new Error("Solana wallet not available. Please log in again.");
-      }
-
-      const provider = await wallet.getProvider();
-      const connection = new Connection(
-        process.env.EXPO_PUBLIC_SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com",
-        "confirmed"
-      );
-
-      const mint = new PublicKey(created.tokenMint);
-      const from = new PublicKey(wallet.address);
-      const to = new PublicKey(created.toAddress);
-      const fromAta = await getAssociatedTokenAddress(mint, from);
-      const toAta = await getAssociatedTokenAddress(mint, to);
-
-      const instructions = [];
-      const toAtaInfo = await connection.getAccountInfo(toAta);
-      if (!toAtaInfo) {
-        instructions.push(
-          createAssociatedTokenAccountInstruction(from, toAta, to, mint)
-        );
-      }
-
-      const amount = BigInt(created.amountRaw);
-      instructions.push(
-        createTransferCheckedInstruction(
-          fromAta,
-          mint,
-          toAta,
-          from,
-          amount,
-          created.decimals ?? 6
-        )
-      );
-
-      const latest = await connection.getLatestBlockhash("finalized");
-      const tx = new Transaction();
-      tx.feePayer = from;
-      tx.recentBlockhash = latest.blockhash;
-      instructions.forEach((ix) => tx.add(ix));
-
-      const serialized = tx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-      });
-      const encoded = Buffer.from(serialized).toString("base64");
-      const signResult = await (provider as any).request({
-        method: "signAndSendTransaction",
-        params: { transaction: encoded },
-      });
-      const txHash =
-        signResult?.signature || signResult?.result || signResult;
-
-      await connection.confirmTransaction(
-        { signature: txHash, ...latest },
-        "confirmed"
-      );
-
-      const verified = await apiFetch("/payments/solana/votes/verify", {
-        method: "POST",
-        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
-      });
-
-      if (verified?.payment?.status === "COMPLETED") {
-        await refreshBalance();
-        showPaymentSuccess(bundleId, "SOLANA");
-      }
+      setSolanaPayment({ ...created, bundleId });
+      setSolanaTxHash("");
+      return;
     } catch (error) {
       const rawMessage = (error as Error)?.message ?? "Try again.";
-      const lowered = rawMessage.toLowerCase();
-      const isMovementAccountMissing =
-        lowered.includes("account_not_found") ||
-        lowered.includes("account not found by address") ||
-        lowered.includes("movement account not initialized on-chain");
-
-      if (isMovementAccountMissing) {
-        Alert.alert(
-          "Payment failed",
-          "This Movement wallet is not initialized on-chain yet. Fund this exact wallet with a small amount of MOVE on Movement testnet, wait 1-2 minutes, then try again."
-        );
-      } else {
-        Alert.alert("Payment failed", rawMessage);
-      }
+      Alert.alert("Payment failed", rawMessage);
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleMovement = async (bundleId: string) => {
+  const verifySolanaVotePayment = async () => {
+    if (!solanaPayment?.paymentId || !solanaTxHash.trim()) {
+      Alert.alert("Verify payment", "Paste the Solana transaction hash first.");
+      return;
+    }
     try {
-      setProcessingId(bundleId);
-      let created: any;
-      try {
-        created = await apiFetch("/payments/movement/votes/create", {
-          method: "POST",
-          body: JSON.stringify({ bundleId }),
-        });
-      } catch (error) {
-        const message = ((error as Error)?.message || "").toLowerCase();
-        const missingMovementWallet = message.includes("movement wallet not found");
-        if (!missingMovementWallet) {
-          throw error;
-        }
-
-        try {
-          await createWallet({ chainType: "movement" });
-        } catch (createError) {
-          const createMsg = ((createError as Error)?.message || "").toLowerCase();
-          const alreadyExists =
-            createMsg.includes("already has an embedded wallet") ||
-            createMsg.includes("already has an account of the type linked") ||
-            createMsg.includes("already has a wallet");
-          if (!alreadyExists) {
-            await createWallet({ chainType: "aptos" });
-          }
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        await syncPrivySessionToBackend();
-        created = await apiFetch("/payments/movement/votes/create", {
-          method: "POST",
-          body: JSON.stringify({ bundleId }),
-        });
-      }
-
-      if (created?.status === "COMPLETED") {
-        await refreshBalance();
-        showPaymentSuccess(bundleId, "MOVEMENT");
-        return;
-      }
-
-      const movementWallet = getMovementWalletByAddress(user, created?.fromAddress);
-      if (!movementWallet?.address) {
-        throw new Error(
-          `Movement wallet mismatch. Backend expects ${created?.fromAddress || "unknown"}, but Privy session is using a different Movement wallet. Please log out and sign in again.`
-        );
-      }
-
-      const publicKey = movementWallet.publicKey || movementWallet.public_key;
-      if (!publicKey) {
-        throw new Error("Movement wallet public key not available. Please log in again.");
-      }
-
-      const txHash = await sendMovementTransaction(
-        created.transactionData,
-        created.fromAddress,
-        publicKey,
-        signRawHash as any
-      );
-
-      const verified = await apiFetch("/payments/movement/votes/verify", {
+      setSolanaVerifying(true);
+      const verified = await apiFetch("/payments/solana/votes/verify", {
         method: "POST",
-        body: JSON.stringify({ paymentId: created.paymentId, txHash }),
+        body: JSON.stringify({
+          paymentId: solanaPayment.paymentId,
+          txHash: solanaTxHash.trim(),
+        }),
       });
-
-      if (verified?.payment?.status === "COMPLETED") {
-        await refreshBalance();
-        showPaymentSuccess(bundleId, "MOVEMENT");
+      if (verified?.payment?.status !== "COMPLETED") {
+        throw new Error("Payment is still pending. Please try again shortly.");
       }
+      setSolanaPayment(null);
+      setSolanaTxHash("");
+      await refreshBalance();
+      showPaymentSuccess(String(solanaPayment.bundleId || ""), "SOLANA");
     } catch (error) {
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
     } finally {
-      setProcessingId(null);
+      setSolanaVerifying(false);
     }
   };
 
@@ -328,7 +158,9 @@ export default function Votes() {
         method: "POST",
         body: JSON.stringify({ bundleId, redirectUrl }),
       });
-      console.log("FW create response:", created);
+      if (__DEV__) {
+        console.log("FW create response:", created);
+      }
 
       const result = await WebBrowser.openAuthSessionAsync(
         created.paymentUrl,
@@ -380,7 +212,9 @@ export default function Votes() {
 
       throw new Error("Payment is still pending verification. Please check again shortly.");
     } catch (error) {
-      console.log("FW error:", error);
+      if (__DEV__) {
+        console.log("FW error:", error);
+      }
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
     } finally {
       setProcessingId(null);
@@ -399,11 +233,6 @@ export default function Votes() {
 
     if (selectedMethod === "SOLANA") {
       await handleBuySolana(selectedBundleId);
-      return;
-    }
-
-    if (selectedMethod === "MOVEMENT") {
-      await handleMovement(selectedBundleId);
       return;
     }
 
@@ -477,22 +306,6 @@ export default function Votes() {
           <TouchableOpacity
             style={[
               styles.methodChip,
-              selectedMethod === "MOVEMENT" && styles.methodChipActive,
-            ]}
-            onPress={() => setSelectedMethod("MOVEMENT")}
-          >
-            <Text
-              style={[
-                styles.methodText,
-                selectedMethod === "MOVEMENT" && styles.methodTextActive,
-              ]}
-            >
-              USDC.e (Movement)
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.methodChip,
               selectedMethod === "CARD" && styles.methodChipActive,
             ]}
             onPress={() => setSelectedMethod("CARD")}
@@ -507,6 +320,11 @@ export default function Votes() {
             </Text>
           </TouchableOpacity>
         </View>
+        {selectedMethod === "CARD" ? (
+          <Text style={styles.cardNote}>
+            Flutterwave may reject some cards. If that happens, try USDC (Solana).
+          </Text>
+        ) : null}
 
         <TouchableOpacity
           style={[
@@ -521,7 +339,94 @@ export default function Votes() {
             {processingId ? "Processing..." : "Pay"}
           </Text>
         </TouchableOpacity>
+
+        <View style={styles.guideCard}>
+          <Text style={styles.section}>Wallet payment guide</Text>
+          <Text style={styles.guideLabel}>USDC (Solana)</Text>
+          <Text style={styles.guideStep}>1. Tap Pay to generate the Solana deposit address.</Text>
+          <Text style={styles.guideStep}>2. Withdraw USDC on the Solana (SPL) network.</Text>
+          <Text style={styles.guideStep}>3. Paste the transaction hash and tap Verify.</Text>
+          {solanaGuideUrl ? (
+            <Pressable onPress={() => Linking.openURL(solanaGuideUrl)}>
+              <Text style={styles.guideLink}>Watch the USDC (Solana) payment guide</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.guideStep}>
+              Add a guide link in `EXPO_PUBLIC_SOLANA_USDC_GUIDE_URL`.
+            </Text>
+          )}
+
+          <Text style={styles.guideLabel}>Buy USDC safely via Bybit P2P</Text>
+          <Text style={styles.guideStep}>1. Open Bybit → Buy Crypto → P2P Trading → set to Buy.</Text>
+          <Text style={styles.guideStep}>2. Select Asset = USDC. If liquidity is low, buy USDT then swap to USDC.</Text>
+          <Text style={styles.guideStep}>3. Set Currency = NGN.</Text>
+          <Text style={styles.guideStep}>4. Filter: Verified advertisers, Online only, 500+ orders, 99–100% completion.</Text>
+          <Text style={styles.guideStep}>5. Enter your NGN amount and tap Buy.</Text>
+          <Text style={styles.guideStep}>6. Transfer to the seller’s bank, then tap “Payment completed”.</Text>
+          <Text style={styles.guideStep}>7. Wait for release (usually under 5 minutes). USDC arrives in Funding Account.</Text>
+        </View>
       </ScrollView>
+
+      {solanaPayment ? (
+        <Modal transparent animationType="fade" visible>
+          <Pressable style={styles.modalBackdrop} onPress={() => setSolanaPayment(null)} />
+          <View style={styles.solanaSheet}>
+            <Text style={styles.section}>Send USDC (Solana)</Text>
+            <Text style={styles.metaSub}>
+              Send exactly {solanaPayment.amount} USDC to:
+            </Text>
+            <Pressable
+              style={styles.copyRow}
+              onPress={async () => {
+                if (solanaPayment.toAddress) {
+                  await Clipboard.setStringAsync(solanaPayment.toAddress);
+                  Alert.alert("Copied", "Solana address copied.");
+                }
+              }}
+            >
+              <Text style={styles.copyText} numberOfLines={1}>
+                {solanaPayment.toAddress}
+              </Text>
+              <Text style={styles.copyCta}>Copy</Text>
+            </Pressable>
+            {solanaPayment.memo ? (
+              <Pressable
+                style={styles.copyRow}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(String(solanaPayment.memo));
+                  Alert.alert("Copied", "Memo code copied.");
+                }}
+              >
+                <Text style={styles.copyText}>Memo: {solanaPayment.memo}</Text>
+                <Text style={styles.copyCta}>Copy</Text>
+              </Pressable>
+            ) : null}
+            <TextInput
+              value={solanaTxHash}
+              onChangeText={setSolanaTxHash}
+              placeholder="Paste Solana transaction hash"
+              placeholderTextColor="#6b7280"
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable
+              style={styles.verifyButton}
+              onPress={() => void verifySolanaVotePayment()}
+              disabled={solanaVerifying}
+            >
+              <Text style={styles.verifyButtonText}>
+                {solanaVerifying ? "Verifying..." : "Verify Payment"}
+              </Text>
+            </Pressable>
+            <Text style={styles.disclaimer}>
+              {solanaPayment.memo
+                ? "You must include the memo code in the transfer. Payments without the memo cannot be verified."
+                : "No memo is required for this transfer."}
+            </Text>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -583,6 +488,7 @@ const styles = StyleSheet.create({
   },
   methodText: { color: "#fafafa", fontWeight: "700", fontSize: 12 },
   methodTextActive: { color: "#ff6b35" },
+  cardNote: { color: "#9ca3af", fontSize: 12, marginTop: 6 },
   payBtn: {
     backgroundColor: "#ff6b35",
     paddingVertical: 12,
@@ -592,4 +498,61 @@ const styles = StyleSheet.create({
   },
   payBtnDisabled: { opacity: 0.6 },
   payText: { color: "#0d0d0d", fontWeight: "700", fontSize: 16 },
+  guideCard: {
+    borderWidth: 1,
+    borderColor: "#262626",
+    borderRadius: 12,
+    backgroundColor: "#121212",
+    padding: 12,
+  },
+  guideLabel: { color: "#ff6b35", fontWeight: "700", marginTop: 8 },
+  guideStep: { color: "#cbd5f5", marginTop: 4, fontSize: 12 },
+  guideLink: { color: "#ff6b35", marginTop: 8, fontSize: 12, fontWeight: "700" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  solanaSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "22%",
+    backgroundColor: "#141414",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  metaSub: { color: "#9ca3af", fontSize: 12, marginTop: 4 },
+  copyRow: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  copyText: { color: "#e2e8f0", fontSize: 12, flex: 1 },
+  copyCta: { color: "#ff6b35", fontWeight: "700" },
+  input: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#fafafa",
+  },
+  verifyButton: {
+    marginTop: 12,
+    backgroundColor: "#ff6b35",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  verifyButtonText: { color: "#0d0d0d", fontWeight: "700" },
+  disclaimer: { color: "#9ca3af", fontSize: 11, marginTop: 10 },
 });
