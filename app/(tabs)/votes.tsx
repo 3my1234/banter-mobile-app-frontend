@@ -208,7 +208,11 @@ export default function Votes() {
       const redirectUrl = Linking.createURL("payments/flutterwave");
       const created = await apiFetch("/payments/flutterwave/votes/create", {
         method: "POST",
-        body: JSON.stringify({ bundleId, redirectUrl }),
+        body: JSON.stringify({
+          bundleId,
+          redirectUrl,
+          currency: isNigeria ? "NGN" : "USD",
+        }),
       });
       if (__DEV__) {
         console.log("FW create response:", created);

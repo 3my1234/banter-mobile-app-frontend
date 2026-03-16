@@ -456,6 +456,7 @@ export default function RolleyBotScreen() {
             amount,
             lockDays: stakeDays,
             redirectUrl,
+            currency: isNigeria ? "NGN" : "USD",
           }),
         });
 
