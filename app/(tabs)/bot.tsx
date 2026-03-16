@@ -277,12 +277,19 @@ export default function RolleyBotScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [defaultAssetSet, setDefaultAssetSet] = useState(false);
+  const [isNigeria, setIsNigeria] = useState(false);
 
   const isNigeriaUser = (user?: { country?: string | null; phone?: string | null }) => {
     const country = (user?.country || "").trim().toLowerCase();
     if (country === "nigeria" || country === "ng") return true;
     const digits = (user?.phone || "").replace(/\D+/g, "");
     return digits.startsWith("234");
+  };
+  const getStakeAssetLabel = (asset: StakeAsset) => {
+    if (asset === "USD") {
+      return isNigeria ? "USD (charged in NGN)" : "Card (USD)";
+    }
+    return "USDC (Solana)";
   };
 
   const fetchUserContext = useCallback(async () => {
@@ -295,6 +302,8 @@ export default function RolleyBotScreen() {
         setStakeAsset(nigeria ? "USD" : "USDC");
         setDefaultAssetSet(true);
       }
+      const nigeria = isNigeriaUser(me?.user || me);
+      setIsNigeria(nigeria);
     } catch {
       setUserId("");
     }
@@ -432,7 +441,7 @@ export default function RolleyBotScreen() {
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
-      Alert.alert("Stake failed", `Enter a valid stake amount in ${stakeAsset}.`);
+      Alert.alert("Stake failed", `Enter a valid stake amount in ${getStakeAssetLabel(stakeAsset)}.`);
       return;
     }
 
@@ -699,7 +708,9 @@ export default function RolleyBotScreen() {
                 style={[styles.durationChip, stakeAsset === asset && styles.durationChipActive]}
                 onPress={() => setStakeAsset(asset)}
               >
-                <Text style={[styles.durationText, stakeAsset === asset && styles.durationTextActive]}>{asset}</Text>
+                <Text style={[styles.durationText, stakeAsset === asset && styles.durationTextActive]}>
+                  {getStakeAssetLabel(asset)}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -708,7 +719,7 @@ export default function RolleyBotScreen() {
               value={stakeAmount}
               onChangeText={setStakeAmount}
               keyboardType="decimal-pad"
-              placeholder={`Amount (${stakeAsset})`}
+              placeholder={`Amount (${getStakeAssetLabel(stakeAsset)})`}
               placeholderTextColor="#6b7280"
               style={styles.input}
             />
@@ -733,6 +744,11 @@ export default function RolleyBotScreen() {
             <Text style={styles.disclaimer}>
               USDC uses a manual Solana transfer. Tap "Start Managed Rollover" to get the deposit address,
               then paste the Solana tx hash to verify.
+            </Text>
+          ) : null}
+          {stakeAsset === "USD" && isNigeria ? (
+            <Text style={styles.disclaimer}>
+              Charges are processed in NGN on Flutterwave local rails.
             </Text>
           ) : null}
           <Text style={styles.disclaimer}>

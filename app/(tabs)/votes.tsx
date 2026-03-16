@@ -368,14 +368,14 @@ export default function Votes() {
                 selectedMethod === "CARD" && styles.methodTextActive,
               ]}
             >
-              {isNigeria ? "Bank Transfer / USSD" : "Card (USD)"}
+              {isNigeria ? "Bank Transfer / USSD (NGN)" : "Card (USD)"}
             </Text>
           </TouchableOpacity>
         </View>
         {selectedMethod === "CARD" ? (
           <Text style={styles.cardNote}>
             {isNigeria
-              ? "Use bank transfer or USSD. If cards fail, try USDC (Solana)."
+              ? "Charges are in NGN. Use bank transfer or USSD. If cards fail, try USDC (Solana)."
               : "Flutterwave may reject some cards. If that happens, try USDC (Solana)."}
           </Text>
         ) : null}
