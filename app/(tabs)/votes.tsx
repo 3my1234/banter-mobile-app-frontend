@@ -18,6 +18,8 @@ import * as Linking from "expo-linking";
 import * as Clipboard from "expo-clipboard";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Bundle = {
   id: string;
@@ -41,9 +43,20 @@ export default function Votes() {
   const [solanaPayment, setSolanaPayment] = useState<any | null>(null);
   const [solanaTxHash, setSolanaTxHash] = useState("");
   const [solanaVerifying, setSolanaVerifying] = useState(false);
+  const [solanaSending, setSolanaSending] = useState(false);
+  const [defaultMethodSet, setDefaultMethodSet] = useState(false);
+  const [isNigeria, setIsNigeria] = useState(false);
+  const solanaWallet = useEmbeddedSolanaWallet();
   const solanaGuideUrl =
     process.env.EXPO_PUBLIC_SOLANA_USDC_GUIDE_URL ??
     "https://youtu.be/v5TInJgWdFA?si=QN8rJY_blVW6JbfH";
+
+  const isNigeriaUser = (user?: { country?: string | null; phone?: string | null }) => {
+    const country = (user?.country || "").trim().toLowerCase();
+    if (country === "nigeria" || country === "ng") return true;
+    const digits = (user?.phone || "").replace(/\D+/g, "");
+    return digits.startsWith("234");
+  };
 
   const loadVotesPage = async () => {
     try {
@@ -53,6 +66,12 @@ export default function Votes() {
 
       const me = await apiFetch("/auth/me");
       setBalance(me?.user?.voteBalance ?? 0);
+      const nigeria = isNigeriaUser(me?.user || me);
+      setIsNigeria(nigeria);
+      if (!defaultMethodSet) {
+        setSelectedMethod(nigeria ? "CARD" : "SOLANA");
+        setDefaultMethodSet(true);
+      }
     } catch {
       // Keep defaults
     } finally {
@@ -125,8 +144,9 @@ export default function Votes() {
     }
   };
 
-  const verifySolanaVotePayment = async () => {
-    if (!solanaPayment?.paymentId || !solanaTxHash.trim()) {
+  const verifySolanaVotePayment = async (txHashOverride?: string) => {
+    const hash = (txHashOverride || solanaTxHash).trim();
+    if (!solanaPayment?.paymentId || !hash) {
       Alert.alert("Verify payment", "Paste the Solana transaction hash first.");
       return;
     }
@@ -136,7 +156,7 @@ export default function Votes() {
         method: "POST",
         body: JSON.stringify({
           paymentId: solanaPayment.paymentId,
-          txHash: solanaTxHash.trim(),
+          txHash: hash,
         }),
       });
       if (verified?.payment?.status !== "COMPLETED") {
@@ -150,6 +170,35 @@ export default function Votes() {
       Alert.alert("Payment failed", (error as Error)?.message ?? "Try again.");
     } finally {
       setSolanaVerifying(false);
+    }
+  };
+
+  const handleEmbeddedSolanaVotePayment = async () => {
+    if (!solanaPayment?.toAddress || !solanaPayment?.tokenMint) {
+      Alert.alert("Payment not ready", "Generate a Solana payment first.");
+      return;
+    }
+    try {
+      setSolanaSending(true);
+      const result = await sendEmbeddedSolanaUsdc({
+        walletState: solanaWallet,
+        toAddress: solanaPayment.toAddress,
+        amount: Number(solanaPayment.amount || 0),
+        tokenMint: solanaPayment.tokenMint,
+        decimals: solanaPayment.decimals ?? 6,
+        memo: solanaPayment.memo,
+      });
+      if (result?.signature) {
+        setSolanaTxHash(result.signature);
+        await verifySolanaVotePayment(result.signature);
+      }
+    } catch (error) {
+      Alert.alert(
+        "Payment failed",
+        (error as Error)?.message || "Unable to send from the in-app wallet."
+      );
+    } finally {
+      setSolanaSending(false);
     }
   };
 
@@ -319,13 +368,15 @@ export default function Votes() {
                 selectedMethod === "CARD" && styles.methodTextActive,
               ]}
             >
-              Card (USD)
+              {isNigeria ? "Bank Transfer / USSD" : "Card (USD)"}
             </Text>
           </TouchableOpacity>
         </View>
         {selectedMethod === "CARD" ? (
           <Text style={styles.cardNote}>
-            Flutterwave may reject some cards. If that happens, try USDC (Solana).
+            {isNigeria
+              ? "Use bank transfer or USSD. If cards fail, try USDC (Solana)."
+              : "Flutterwave may reject some cards. If that happens, try USDC (Solana)."}
           </Text>
         ) : null}
 
@@ -404,6 +455,15 @@ export default function Votes() {
                 <Text style={styles.copyCta}>Copy</Text>
               </Pressable>
             ) : null}
+            <Pressable
+              style={[styles.verifyButton, solanaSending && styles.verifyButtonDisabled]}
+              onPress={() => void handleEmbeddedSolanaVotePayment()}
+              disabled={solanaSending}
+            >
+              <Text style={styles.verifyButtonText}>
+                {solanaSending ? "Sending..." : "Pay from in-app wallet"}
+              </Text>
+            </Pressable>
             <TextInput
               value={solanaTxHash}
               onChangeText={setSolanaTxHash}
@@ -557,6 +617,7 @@ const createStyles = (colors: AppThemeColors) =>
     borderRadius: 12,
     alignItems: "center",
   },
+  verifyButtonDisabled: { opacity: 0.6 },
   verifyButtonText: { color: "#0d0d0d", fontWeight: "700" },
   disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 10 },
 });

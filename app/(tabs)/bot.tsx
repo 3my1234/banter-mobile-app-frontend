@@ -18,6 +18,8 @@ import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
 import * as Clipboard from "expo-clipboard";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Sport = "SOCCER" | "BASKETBALL";
 type StakeAsset = "USD" | "USDC";
@@ -269,19 +271,34 @@ export default function RolleyBotScreen() {
   const [solanaPayment, setSolanaPayment] = useState<any | null>(null);
   const [solanaTxHash, setSolanaTxHash] = useState("");
   const [solanaVerifying, setSolanaVerifying] = useState(false);
+  const [solanaSending, setSolanaSending] = useState(false);
+  const solanaWallet = useEmbeddedSolanaWallet();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [defaultAssetSet, setDefaultAssetSet] = useState(false);
+
+  const isNigeriaUser = (user?: { country?: string | null; phone?: string | null }) => {
+    const country = (user?.country || "").trim().toLowerCase();
+    if (country === "nigeria" || country === "ng") return true;
+    const digits = (user?.phone || "").replace(/\D+/g, "");
+    return digits.startsWith("234");
+  };
 
   const fetchUserContext = useCallback(async () => {
     try {
       const me = await apiFetch("/auth/me");
       const id = me?.user?.id ? String(me.user.id) : "";
       setUserId(id);
+      if (!defaultAssetSet) {
+        const nigeria = isNigeriaUser(me?.user || me);
+        setStakeAsset(nigeria ? "USD" : "USDC");
+        setDefaultAssetSet(true);
+      }
     } catch {
       setUserId("");
     }
-  }, []);
+  }, [defaultAssetSet]);
 
 
 
@@ -507,8 +524,9 @@ export default function RolleyBotScreen() {
     }
   }, [loadStakes, sport, stakeAmount, stakeAsset, stakeDays, userId]);
 
-  const verifySolanaPayment = useCallback(async () => {
-    if (!solanaPayment?.paymentId || !solanaTxHash.trim()) {
+  const verifySolanaPayment = useCallback(async (txHashOverride?: string) => {
+    const hash = (txHashOverride || solanaTxHash).trim();
+    if (!solanaPayment?.paymentId || !hash) {
       Alert.alert("Verify payment", "Paste the Solana transaction hash first.");
       return;
     }
@@ -518,7 +536,7 @@ export default function RolleyBotScreen() {
         method: "POST",
         body: JSON.stringify({
           paymentId: solanaPayment.paymentId,
-          txHash: solanaTxHash.trim(),
+          txHash: hash,
         }),
       });
       if (verified?.payment?.status !== "COMPLETED") {
@@ -552,6 +570,35 @@ export default function RolleyBotScreen() {
       setSolanaVerifying(false);
     }
   }, [loadStakes, solanaPayment, solanaTxHash, stakeAmount, stakeAsset, stakeDays]);
+
+  const handleEmbeddedSolanaStake = useCallback(async () => {
+    if (!solanaPayment?.toAddress || !solanaPayment?.tokenMint) {
+      Alert.alert("Payment not ready", "Generate a Solana payment first.");
+      return;
+    }
+    try {
+      setSolanaSending(true);
+      const result = await sendEmbeddedSolanaUsdc({
+        walletState: solanaWallet,
+        toAddress: solanaPayment.toAddress,
+        amount: Number(solanaPayment.amount || 0),
+        tokenMint: solanaPayment.tokenMint,
+        decimals: solanaPayment.decimals ?? 6,
+        memo: solanaPayment.memo,
+      });
+      if (result?.signature) {
+        setSolanaTxHash(result.signature);
+        await verifySolanaPayment(result.signature);
+      }
+    } catch (error) {
+      Alert.alert(
+        "Payment failed",
+        (error as Error)?.message || "Unable to send from the in-app wallet."
+      );
+    } finally {
+      setSolanaSending(false);
+    }
+  }, [solanaPayment, solanaWallet, verifySolanaPayment]);
 
   const onWithdrawStake = useCallback(
     async (stakeId: string) => {
@@ -1050,6 +1097,15 @@ export default function RolleyBotScreen() {
                 <Text style={styles.copyCta}>Copy</Text>
               </Pressable>
             ) : null}
+            <Pressable
+              style={[styles.stakeButton, solanaSending && styles.stakeButtonDisabled]}
+              onPress={() => void handleEmbeddedSolanaStake()}
+              disabled={solanaSending}
+            >
+              <Text style={styles.stakeButtonText}>
+                {solanaSending ? "Sending..." : "Pay from in-app wallet"}
+              </Text>
+            </Pressable>
             <TextInput
               value={solanaTxHash}
               onChangeText={setSolanaTxHash}
@@ -1136,6 +1192,7 @@ const createStyles = (colors: AppThemeColors) =>
       paddingVertical: 10,
       alignItems: "center",
     },
+    stakeButtonDisabled: { opacity: 0.6 },
     stakeButtonText: { color: "#16120c", fontWeight: "800", fontSize: 13 },
     disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 8, lineHeight: 16 },
     guideLabel: { color: colors.text, fontSize: 12, fontWeight: "700", marginTop: 10 },

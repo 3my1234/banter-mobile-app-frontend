@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
+  TextInput,
   TouchableOpacity,
   View as RNView,
 } from "react-native";
@@ -21,16 +23,18 @@ import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
-import { usePrivy } from "@privy-io/expo";
+import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
 import { disconnectSocket } from "@/lib/socket";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { useThemePreference } from "@/components/theme";
+import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Session = { token: string; email?: string };
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { logout: privyLogout } = usePrivy();
+  const solanaWallet = useEmbeddedSolanaWallet();
   const { resolvedTheme, setPreference } = useThemePreference();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -47,10 +51,16 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [profileTab, setProfileTab] = useState<"posts" | "banter" | "comments">("posts");
   const [syncingWallets, setSyncingWallets] = useState(false);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
   const [showPointsDetails, setShowPointsDetails] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileLocked, setProfileLocked] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawSending, setWithdrawSending] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
@@ -64,6 +74,9 @@ export default function ProfileScreen() {
     borderColor: isDark ? "#1f1f1f" : "#d1d5db",
     borderWidth: 1,
   };
+  const solanaUsdcMint =
+    process.env.EXPO_PUBLIC_SOLANA_USDC_MINT ??
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const detectMediaType = (uri?: string | null, fallback?: string | null) => {
     if (fallback) return fallback;
     if (!uri) return undefined;
@@ -140,19 +153,6 @@ export default function ProfileScreen() {
       const data = await apiFetch("/wallet/balances");
       setBalances(data?.balances || null);
 
-      const tx = await apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1");
-      const rawTransactions = tx?.transactions || [];
-      const deduped: any[] = [];
-      const seen = new Set<string>();
-      for (let i = 0; i < rawTransactions.length; i += 1) {
-        const item = rawTransactions[i] || {};
-        const key = (item.txHash || item.id || `${item.tokenSymbol}-${item.createdAt}-${i}`).toString();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.push(item);
-      }
-      setTransactions(deduped);
-
       if (!walletsSynced && data?.wallets?.length) {
         setSyncingWallets(true);
         await Promise.all(
@@ -165,10 +165,30 @@ export default function ProfileScreen() {
         setWalletsSynced(true);
         setSyncingWallets(false);
       }
+
+      setTransactionsLoading(true);
+      const tx = await apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1");
+      const rawTransactions = tx?.transactions || [];
+      const deduped: any[] = [];
+      const seen = new Set<string>();
+      for (let i = 0; i < rawTransactions.length; i += 1) {
+        const item = rawTransactions[i] || {};
+        const key = (item.txHash || item.id || `${item.tokenSymbol}-${item.createdAt}-${i}`).toString();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(item);
+      }
+      const filtered = deduped.filter((item) => {
+        const symbol = (item?.tokenSymbol || "").toString().toUpperCase();
+        return symbol !== "USDC.E" && symbol !== "MOVE";
+      });
+      setTransactions(filtered);
+      setTransactionsLoading(false);
     } catch (e: any) {
       showToast(e.message || "Failed to sync wallet");
     } finally {
       setSyncingWallets(false);
+      setTransactionsLoading(false);
     }
   };
 
@@ -311,6 +331,45 @@ export default function ProfileScreen() {
     await Clipboard.setStringAsync(value);
     setCopiedWallet(label);
     setTimeout(() => setCopiedWallet(null), 1500);
+  };
+
+  const handleWithdrawUsdc = async () => {
+    const toAddress = withdrawAddress.trim();
+    const amount = Number(withdrawAmount);
+    if (!toAddress) {
+      showToast("Enter the destination address.");
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid USDC amount.");
+      return;
+    }
+    try {
+      setWithdrawSending(true);
+      setWithdrawError(null);
+      const result = await sendEmbeddedSolanaUsdc({
+        walletState: solanaWallet,
+        toAddress,
+        amount,
+        tokenMint: solanaUsdcMint,
+        decimals: usdcBalance?.decimals ?? 6,
+      });
+      if (result?.signature) {
+        showToast("USDC withdrawal sent.");
+      } else {
+        showToast("Withdrawal submitted.");
+      }
+      setWithdrawOpen(false);
+      setWithdrawAddress("");
+      setWithdrawAmount("");
+      await fetchWalletData();
+    } catch (e: any) {
+      const message = e?.message || "Unable to send USDC.";
+      setWithdrawError(message);
+      showToast(message);
+    } finally {
+      setWithdrawSending(false);
+    }
   };
 
   const Row = ({ label, value }: { label: string; value?: string }) => (
@@ -456,6 +515,16 @@ export default function ProfileScreen() {
                 : "0.00"}
             </Text>
           </View>
+          <Pressable
+            style={styles.withdrawButton}
+            onPress={() => setWithdrawOpen(true)}
+            disabled={withdrawSending}
+          >
+            <Text style={styles.withdrawButtonText}>Withdraw USDC (Solana)</Text>
+          </Pressable>
+          <Text style={[styles.withdrawHint, textMutedStyle]}>
+            Requires a tiny SOL fee in your in-app wallet.
+          </Text>
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>ROL</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
@@ -531,7 +600,12 @@ export default function ProfileScreen() {
 
         <View style={[styles.card, cardStyle]}>
           <Text style={[styles.sectionTitle, textPrimaryStyle]}>Transactions</Text>
-          {transactions.length === 0 ? (
+          {transactionsLoading || syncingWallets ? (
+            <View style={styles.txLoading}>
+              <ActivityIndicator color="#ff6b35" />
+              <Text style={[styles.muted, textMutedStyle]}>Loading transactions...</Text>
+            </View>
+          ) : transactions.length === 0 ? (
             <Text style={[styles.muted, textMutedStyle]}>No transactions yet.</Text>
           ) : (
             <ScrollView
@@ -774,6 +848,49 @@ export default function ProfileScreen() {
           </RNView>
         </RNView>
       </Modal>
+
+      <Modal visible={withdrawOpen} transparent animationType="fade">
+        <Pressable style={styles.modalBackdrop} onPress={() => setWithdrawOpen(false)} />
+        <RNView style={styles.withdrawSheet}>
+          <Text style={styles.sectionTitle}>Withdraw USDC (Solana)</Text>
+          <Text style={styles.withdrawLabel}>Destination address</Text>
+          <TextInput
+            style={styles.withdrawInput}
+            value={withdrawAddress}
+            onChangeText={setWithdrawAddress}
+            placeholder="Solana address"
+            placeholderTextColor="#6b7280"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={styles.withdrawLabel}>Amount (USDC)</Text>
+          <TextInput
+            style={styles.withdrawInput}
+            value={withdrawAmount}
+            onChangeText={setWithdrawAmount}
+            placeholder="0.00"
+            placeholderTextColor="#6b7280"
+            keyboardType="decimal-pad"
+          />
+          {withdrawError ? <Text style={styles.error}>{withdrawError}</Text> : null}
+          <RNView style={styles.withdrawActions}>
+            <Pressable style={styles.withdrawCancel} onPress={() => setWithdrawOpen(false)}>
+              <Text style={styles.withdrawCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={styles.withdrawSubmit}
+              onPress={handleWithdrawUsdc}
+              disabled={withdrawSending}
+            >
+              {withdrawSending ? (
+                <ActivityIndicator color="#0d0d0d" />
+              ) : (
+                <Text style={styles.withdrawSubmitText}>Send USDC</Text>
+              )}
+            </Pressable>
+          </RNView>
+        </RNView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -840,6 +957,52 @@ const styles = StyleSheet.create({
     borderColor: "#2a2a2a",
     gap: 16,
   },
+  withdrawSheet: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: "25%",
+    backgroundColor: "#151515",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    gap: 12,
+  },
+  withdrawLabel: { color: "#9ca3af", fontSize: 12, fontWeight: "600" },
+  withdrawInput: {
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#f9fafb",
+    backgroundColor: "#0f0f0f",
+    fontSize: 12,
+  },
+  withdrawActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 6,
+  },
+  withdrawCancel: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    alignItems: "center",
+  },
+  withdrawCancelText: { color: "#9ca3af", fontWeight: "700" },
+  withdrawSubmit: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#ff6b35",
+    alignItems: "center",
+  },
+  withdrawSubmitText: { color: "#0d0d0d", fontWeight: "700" },
   settingsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -923,6 +1086,15 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { color: "#9ca3af", fontSize: 12 },
   balanceValue: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  withdrawButton: {
+    marginTop: 8,
+    backgroundColor: "#1f1f1f",
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  withdrawButtonText: { color: "#ff6b35", fontWeight: "700", fontSize: 12 },
+  withdrawHint: { marginTop: 6, fontSize: 11 },
   pointsHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -984,6 +1156,7 @@ const styles = StyleSheet.create({
   txLink: { paddingLeft: 6, paddingVertical: 2 },
   txList: { maxHeight: 260 },
   txListContent: { paddingBottom: 2 },
+  txLoading: { alignItems: "center", gap: 8, paddingVertical: 12 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
