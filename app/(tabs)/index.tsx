@@ -42,6 +42,7 @@ import { getSocket } from "@/lib/socket";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import { FlashList } from "@shopify/flash-list";
+import * as Linking from "expo-linking";
 
 type RepostOf = {
   id: string;
@@ -83,6 +84,25 @@ type Post = {
   raw?: any;
 };
 
+type AdPlacement = "POST_FEED" | "BANTER_FEED";
+
+type AdCampaign = {
+  id: string;
+  title: string;
+  body?: string | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  targetUrl?: string | null;
+  ctaLabel?: string | null;
+  placement: AdPlacement;
+};
+
+type AdSettings = {
+  postFrequency: number;
+  banterFrequency: number;
+  isEnabled: boolean;
+};
+
 const showToast = (message: string) => {
   if (Platform.OS === "android") {
     ToastAndroid.show(message, ToastAndroid.SHORT);
@@ -117,7 +137,7 @@ export default function HomeFeed() {
   const { height: windowHeight } = useWindowDimensions();
   const banterHeight = Math.max(360, windowHeight);
   const tabBarHeight = useBottomTabBarHeight();
-  const postMediaHeight = Math.min(Math.max(windowHeight * 0.45, 260), 460);
+  const postMediaHeight = Math.min(Math.max(windowHeight * 0.5, 300), 520);
   const themeColors = useAppThemeColors();
   const styles = useMemo(
     () => createStyles(themeColors, postMediaHeight),
@@ -125,6 +145,10 @@ export default function HomeFeed() {
   );
   const [posts, setPosts] = useState<Post[]>([]);
   const [banters, setBanters] = useState<Post[]>([]);
+  const [adSettings, setAdSettings] = useState<AdSettings | null>(null);
+  const [postAds, setPostAds] = useState<AdCampaign[]>([]);
+  const [banterAds, setBanterAds] = useState<AdCampaign[]>([]);
+  const [adsLoading, setAdsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -250,6 +274,56 @@ export default function HomeFeed() {
     } as Post;
   };
 
+  const mapAdToPost = (ad: AdCampaign): Post => {
+    const mediaUrl = normalizeMediaUrl(ad.mediaUrl || "");
+    const mediaType = (ad.mediaType || detectMediaType(mediaUrl)) as "image" | "video" | undefined;
+    return {
+      id: `ad-${ad.id}`,
+      name: ad.title || "Sponsored",
+      handle: "Sponsored",
+      time: "Sponsored",
+      text: ad.body || "",
+      type: "banter",
+      media: mediaUrl
+        ? {
+            type: mediaType || "image",
+            uri: mediaUrl,
+            ratio: 16 / 9,
+          }
+        : undefined,
+      stayVotes: 0,
+      dropVotes: 0,
+      avatarUrl: null,
+      tags: [],
+      league: null,
+      commentCount: 0,
+      reactionCount: 0,
+      shareCount: 0,
+      reactionBreakdown: {},
+      userReaction: null,
+      repostCount: 0,
+      repostOf: null,
+      raw: { isAd: true, ad },
+    } as Post;
+  };
+
+  const loadAds = useCallback(async () => {
+    try {
+      setAdsLoading(true);
+      const [postRes, banterRes] = await Promise.all([
+        apiFetch("/ads?placement=POST_FEED", undefined, false),
+        apiFetch("/ads?placement=BANTER_FEED", undefined, false),
+      ]);
+      setAdSettings((postRes?.settings || banterRes?.settings || null) as AdSettings | null);
+      setPostAds(postRes?.ads || []);
+      setBanterAds(banterRes?.ads || []);
+    } catch {
+      // ignore ads errors
+    } finally {
+      setAdsLoading(false);
+    }
+  }, []);
+
   const pullFollowingFrom = (items: Post[]) => {
     const next: Record<string, boolean> = {};
     items.forEach((p) => {
@@ -266,7 +340,10 @@ export default function HomeFeed() {
   const loadPosts = useCallback(async (type: "posts" | "banter", feed: string) => {
     try {
       setError(null);
-      const data = await apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`);
+      const [data] = await Promise.all([
+        apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`),
+        loadAds(),
+      ]);
       const mapped = (data.posts || []).map(mapPost);
       if (type === "posts") {
         setPosts(mapped);
@@ -282,7 +359,7 @@ export default function HomeFeed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [loadAds]);
 
   const loadMe = useCallback(async () => {
     try {
@@ -742,19 +819,44 @@ export default function HomeFeed() {
     }));
   }, [pendingPosts, meAvatar]);
 
+  const injectAds = useCallback(
+    (items: Post[], ads: AdCampaign[], frequency: number | undefined) => {
+      if (!adSettings?.isEnabled) return items;
+      if (!ads?.length) return items;
+      const slot = Number(frequency || 0);
+      if (!Number.isFinite(slot) || slot <= 0) return items;
+      const result: Post[] = [];
+      let adIndex = 0;
+      items.forEach((item, idx) => {
+        result.push(item);
+        if ((idx + 1) % slot === 0) {
+          const ad = ads[adIndex % ads.length];
+          if (ad) {
+            result.push(mapAdToPost(ad));
+            adIndex += 1;
+          }
+        }
+      });
+      return result;
+    },
+    [adSettings?.isEnabled, mapAdToPost]
+  );
+
   const visiblePosts = useMemo(() => {
     const normalPending = pendingPostItems.filter(
       (pending) => !pending.raw?.isRoast
     );
-    return [...normalPending, ...posts];
-  }, [pendingPostItems, posts]);
+    const injected = injectAds(posts, postAds, adSettings?.postFrequency);
+    return [...normalPending, ...injected];
+  }, [pendingPostItems, posts, injectAds, postAds, adSettings?.postFrequency]);
 
   const visibleBanters = useMemo(() => {
     const videoPending = pendingPostItems.filter(
       (pending) => pending.raw?.isRoast
     );
-    return [...videoPending, ...banters];
-  }, [pendingPostItems, banters]);
+    const injected = injectAds(banters, banterAds, adSettings?.banterFrequency);
+    return [...videoPending, ...injected];
+  }, [pendingPostItems, banters, injectAds, banterAds, adSettings?.banterFrequency]);
   const activeBanterIndex = useMemo(
     () => visibleBanters.findIndex((banter) => banter.id === activeBanterId),
     [visibleBanters, activeBanterId]
@@ -1066,7 +1168,7 @@ export default function HomeFeed() {
         <View style={[styles.mediaWrapper, styles.mediaFrame]}>
           <Video
             source={{ uri: media.uri }}
-            style={[styles.mediaFill, styles.media]}
+            style={styles.mediaFill}
             resizeMode={ResizeMode.COVER}
             shouldPlay={false}
             useNativeControls
@@ -1084,18 +1186,10 @@ export default function HomeFeed() {
     }
 
     return (
-      <View
-        style={[
-          styles.mediaWrapper,
-          media.type === "video" ? styles.mediaFrame : null,
-        ]}
-      >
+      <View style={[styles.mediaWrapper, styles.mediaFrame]}>
         <ExpoImage
           source={{ uri: media.uri }}
-          style={[
-            styles.media,
-            media.ratio ? { aspectRatio: media.ratio } : { aspectRatio: 16 / 9 },
-          ]}
+          style={styles.mediaFill}
           contentFit="cover"
           contentPosition="center"
           transition={180}
@@ -1106,6 +1200,36 @@ export default function HomeFeed() {
   };
 
   const renderPostItem = ({ item }: { item: Post }) => {
+    if (item.raw?.isAd) {
+      const ad = item.raw?.ad as AdCampaign | undefined;
+      const ctaLabel = ad?.ctaLabel || "Learn more";
+      return (
+        <Pressable
+          style={styles.adCard}
+          onPress={async () => {
+            if (!ad?.targetUrl) return;
+            try {
+              await Linking.openURL(ad.targetUrl);
+            } catch {
+              showToast("Unable to open link.");
+            }
+          }}
+        >
+          <View style={styles.adHeader}>
+            <Text style={styles.adBadge}>Sponsored</Text>
+            <Text style={styles.adTitle}>{ad?.title || "Banter Sponsor"}</Text>
+          </View>
+          {item.text ? <Text style={styles.adBody}>{item.text}</Text> : null}
+          {item.media ? renderMedia(item.media, true) : null}
+          {ad?.targetUrl ? (
+            <View style={styles.adCtaRow}>
+              <Text style={styles.adCtaText}>{ctaLabel}</Text>
+              <FontAwesome name="external-link" size={12} color="#0d0d0d" />
+            </View>
+          ) : null}
+        </Pressable>
+      );
+    }
     const isRoast = item.type === "roast";
     const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
@@ -1311,6 +1435,84 @@ export default function HomeFeed() {
   };
 
   const renderBanterItem = ({ item, index }: { item: Post; index: number }) => {
+    if (item.raw?.isAd) {
+      const ad = item.raw?.ad as AdCampaign | undefined;
+      const media = item.media;
+      const isVideo = media?.type === "video";
+      const isSheetOpen = !!banterCommentTarget;
+      const withinWindow =
+        activeBanterIndex === -1
+          ? index === 0
+          : index >= activeBanterIndex - 1 && index <= activeBanterIndex + 2;
+      const ctaLabel = ad?.ctaLabel || "Learn more";
+      return (
+        <View
+          style={[
+            styles.banterCard,
+            { height: banterHeight },
+            isSheetOpen && activeBanterId === item.id && styles.banterCardShrunk,
+          ]}
+        >
+          <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
+            {media ? (
+              isVideo ? (
+                withinWindow ? (
+                  <Video
+                    key={`${item.id}-${media.uri}`}
+                    source={{ uri: media.uri }}
+                    style={styles.banterMediaFill}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
+                    isLooping
+                    useNativeControls={false}
+                    isMuted={false}
+                    volume={1.0}
+                    ref={(ref) => {
+                      if (ref) {
+                        videoRefs.current.set(item.id, ref);
+                      } else {
+                        videoRefs.current.delete(item.id);
+                      }
+                    }}
+                  />
+                ) : (
+                  <View style={styles.banterPlaceholder} />
+                )
+              ) : (
+                <ExpoImage
+                  source={{ uri: media.uri }}
+                  style={styles.banterMediaFill}
+                  contentFit="cover"
+                  transition={180}
+                  cachePolicy="memory-disk"
+                />
+              )
+            ) : (
+              <View style={styles.banterPlaceholder} />
+            )}
+          </View>
+          <View style={styles.adBanterOverlay}>
+            <Text style={styles.adBadgeBanter}>Sponsored</Text>
+            <Text style={styles.adBanterTitle}>{ad?.title || "Banter Sponsor"}</Text>
+            {item.text ? <Text style={styles.adBanterBody}>{item.text}</Text> : null}
+            {ad?.targetUrl ? (
+              <Pressable
+                style={styles.adBanterCta}
+                onPress={async () => {
+                  try {
+                    await Linking.openURL(ad.targetUrl);
+                  } catch {
+                    showToast("Unable to open link.");
+                  }
+                }}
+              >
+                <Text style={styles.adBanterCtaText}>{ctaLabel}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      );
+    }
     const ownerId = item.raw?.user?.id || item.raw?.userId;
     const isMine = !!meId && ownerId === meId;
     const isFollowing = ownerId
@@ -2685,6 +2887,67 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     flex: 1,
     backgroundColor: colors.overlayStrong,
   },
+  adCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  adHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  adBadge: {
+    backgroundColor: "rgba(255,107,53,0.18)",
+    borderColor: "rgba(255,107,53,0.5)",
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  adTitle: { color: colors.text, fontWeight: "700", fontSize: 15, flex: 1 },
+  adBody: { color: colors.textMuted, lineHeight: 18 },
+  adCtaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 6,
+  },
+  adCtaText: { color: "#ff6b35", fontWeight: "700" },
+  adBanterOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 16,
+    backgroundColor: "rgba(15,23,42,0.6)",
+  },
+  adBadgeBanter: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,107,53,0.2)",
+    borderColor: "rgba(255,107,53,0.5)",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
+  adBanterTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  adBanterBody: { color: "rgba(255,255,255,0.82)", marginTop: 6, lineHeight: 18 },
+  adBanterCta: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#ff6b35",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  adBanterCtaText: { color: "#0d0d0d", fontWeight: "700" },
   repostSheet: {
     position: "absolute",
     left: 16,
