@@ -1,4 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import { apiFetch, API_BASE_URL } from "./api";
 
 type PresignResponse = {
@@ -137,6 +139,36 @@ export async function uploadToS3(
     xhr.onerror = () => reject(new Error("Upload failed (network error)"));
     xhr.send(blob);
   });
+}
+
+export function isStreamMediaUrl(url?: string | null) {
+  return !!url && /\.m3u8($|[?#])/i.test(url);
+}
+
+export function isPendingProcessedVideoUrl(url?: string | null) {
+  if (!url) return false;
+  return /\/post\/branded\//i.test(url) && !isStreamMediaUrl(url);
+}
+
+export async function saveRemoteMediaToLibrary(url: string) {
+  if (isPendingProcessedVideoUrl(url)) {
+    throw new Error("This video is still processing. Wait for the Banter outro version to finish.");
+  }
+
+  if (isStreamMediaUrl(url)) {
+    throw new Error("This video is now streaming in HLS format. Downloading that version is not supported in-app yet.");
+  }
+
+  const perm = await MediaLibrary.requestPermissionsAsync();
+  if (!perm.granted) {
+    throw new Error("Permission denied");
+  }
+
+  const ext = url.split(".").pop()?.split("?")[0] || "jpg";
+  const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
+  const download = await FileSystem.downloadAsync(url, fileUri);
+  const asset = await MediaLibrary.createAssetAsync(download.uri);
+  await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");

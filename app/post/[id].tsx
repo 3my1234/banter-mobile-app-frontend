@@ -22,9 +22,11 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
-import { normalizeMediaUrl } from "@/lib/media";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
+import {
+  isPendingProcessedVideoUrl,
+  normalizeMediaUrl,
+  saveRemoteMediaToLibrary,
+} from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -563,6 +565,11 @@ socket.off("comment-deleted");
                   >
                     <FontAwesome name="download" size={14} color="#fff" />
                   </Pressable>
+                  {isPendingProcessedVideoUrl(mediaUrl) ? (
+                    <View style={styles.processingBadge}>
+                      <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
+                    </View>
+                  ) : null}
                 </View>
               ) : (
                 <Pressable
@@ -611,12 +618,19 @@ socket.off("comment-deleted");
                 {originalMediaUrl ? (
 	                  <View style={styles.mediaWrapper}>
 	                    {originalMediaType === "video" ? (
+                        <View>
 	                      <Video
 	                        source={{ uri: originalMediaUrl }}
 	                        style={[styles.media, { aspectRatio: 16 / 9 }]}
 	                        resizeMode={ResizeMode.COVER}
 	                        useNativeControls
 	                      />
+                          {isPendingProcessedVideoUrl(originalMediaUrl) ? (
+                            <View style={styles.processingBadge}>
+                              <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
+                            </View>
+                          ) : null}
+                        </View>
 	                    ) : (
                       <ExpoImage
                         source={{ uri: originalMediaUrl }}
@@ -709,15 +723,7 @@ socket.off("comment-deleted");
     if (!mediaUrl) return;
     setSavingMedia(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        throw new Error("Permission denied");
-      }
-      const ext = mediaUrl.split(".").pop()?.split("?")[0] || "jpg";
-      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-      const download = await FileSystem.downloadAsync(mediaUrl, fileUri);
-      const asset = await MediaLibrary.createAssetAsync(download.uri);
-      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      await saveRemoteMediaToLibrary(mediaUrl);
       Alert.alert("Saved", "Media saved to your gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
@@ -1084,6 +1090,20 @@ const createStyles = (colors: AppThemeColors) =>
     backgroundColor: colors.overlay,
     padding: 6,
     borderRadius: 999,
+  },
+  processingBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    backgroundColor: colors.overlay,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  processingBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   voteActions: { flexDirection: "row", gap: 10, marginTop: 8 },
   stayBtn: {

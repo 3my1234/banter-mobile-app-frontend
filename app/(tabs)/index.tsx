@@ -28,7 +28,11 @@ import { useRouter } from "expo-router";
 import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
-import { normalizeMediaUrl } from "@/lib/media";
+import {
+  isPendingProcessedVideoUrl,
+  normalizeMediaUrl,
+  saveRemoteMediaToLibrary,
+} from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
 import { PendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
 import {
@@ -39,8 +43,6 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
 import { FlashList } from "@shopify/flash-list";
 import * as Linking from "expo-linking";
 
@@ -624,15 +626,7 @@ export default function HomeFeed() {
 
   const downloadMedia = async (uri: string) => {
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        throw new Error("Permission denied");
-      }
-      const ext = uri.split(".").pop()?.split("?")[0] || "jpg";
-      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-      const download = await FileSystem.downloadAsync(uri, fileUri);
-      const asset = await MediaLibrary.createAssetAsync(download.uri);
-      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      await saveRemoteMediaToLibrary(uri);
       Alert.alert("Saved", "Media saved to your gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
@@ -1166,10 +1160,10 @@ export default function HomeFeed() {
     media: { type: "image" | "video"; uri: string; ratio?: number },
     allowDownload: boolean
   ) => {
-    if (media.type === "video") {
-      return (
-        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
-          <Video
+      if (media.type === "video") {
+        return (
+          <View style={[styles.mediaWrapper, styles.mediaFrame]}>
+            <Video
             source={{ uri: media.uri }}
             style={styles.mediaFill}
             resizeMode={ResizeMode.COVER}
@@ -1181,12 +1175,17 @@ export default function HomeFeed() {
               style={styles.mediaDownload}
               onPress={() => downloadMedia(media.uri)}
             >
-              <FontAwesome name="download" size={14} color="#fff" />
-            </Pressable>
-          ) : null}
-        </View>
-      );
-    }
+                <FontAwesome name="download" size={14} color="#fff" />
+              </Pressable>
+            ) : null}
+            {isPendingProcessedVideoUrl(media.uri) ? (
+              <View style={styles.processingBadge}>
+                <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
+              </View>
+            ) : null}
+          </View>
+        );
+      }
 
     return (
       <View style={[styles.mediaWrapper, styles.mediaFrame]}>
@@ -2654,6 +2653,20 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     backgroundColor: "rgba(0,0,0,0.6)",
     padding: 6,
     borderRadius: 999,
+  },
+  processingBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  processingBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   voteActions: {
     flexDirection: "row",

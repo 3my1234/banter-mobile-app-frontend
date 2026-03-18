@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -11,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
@@ -26,6 +27,7 @@ const ROAST_PREFIX = "[ROAST]";
 
 export default function ComposeScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
@@ -41,10 +43,15 @@ export default function ComposeScreen() {
   const [league, setLeague] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const mountedRef = useRef(true);
+  const bypassDiscardGuardRef = useRef(false);
+
+  const hasDraft =
+    !!text.trim() || !!media || tags.length > 0 || !!query.trim() || !!league;
 
   useFocusEffect(
     React.useCallback(() => {
       mountedRef.current = true;
+      bypassDiscardGuardRef.current = false;
       setText("");
       setMedia(null);
       setTags([]);
@@ -85,6 +92,35 @@ export default function ComposeScreen() {
       hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (bypassDiscardGuardRef.current) return;
+
+      if (loading) {
+        event.preventDefault();
+        Alert.alert("Upload in progress", "Wait for the upload to finish before leaving this screen.");
+        return;
+      }
+
+      if (!hasDraft) return;
+
+      event.preventDefault();
+      Alert.alert("Discard post?", "Your draft video or text will be lost.", [
+        { text: "Keep editing", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            bypassDiscardGuardRef.current = true;
+            navigation.dispatch(event.data.action);
+          },
+        },
+      ]);
+    });
+
+    return unsubscribe;
+  }, [hasDraft, loading, navigation]);
 
   useEffect(() => {
     const q = query.trim();
@@ -164,6 +200,7 @@ export default function ComposeScreen() {
           }
         : undefined,
     });
+    bypassDiscardGuardRef.current = true;
     router.back();
     try {
       let mediaUrl: string | undefined;
