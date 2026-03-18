@@ -556,12 +556,13 @@ socket.off("comment-deleted");
 	                  <Video
 	                    source={{ uri: mediaUrl }}
 	                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
-	                    resizeMode={ResizeMode.COVER}
+	                    resizeMode={ResizeMode.CONTAIN}
 	                    useNativeControls
 	                  />
 	                  <Pressable
 	                    style={styles.mediaDownload}
 	                    onPress={saveMedia}
+                        hitSlop={12}
                   >
                     <FontAwesome name="download" size={14} color="#fff" />
                   </Pressable>
@@ -622,7 +623,7 @@ socket.off("comment-deleted");
 	                      <Video
 	                        source={{ uri: originalMediaUrl }}
 	                        style={[styles.media, { aspectRatio: 16 / 9 }]}
-	                        resizeMode={ResizeMode.COVER}
+	                        resizeMode={ResizeMode.CONTAIN}
 	                        useNativeControls
 	                      />
                           {isPendingProcessedVideoUrl(originalMediaUrl) ? (
@@ -1078,11 +1079,11 @@ const createStyles = (colors: AppThemeColors) =>
     marginTop: 8,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: "#000",
     borderWidth: 1,
     borderColor: colors.border,
   },
-  media: { width: "100%" },
+  media: { width: "100%", backgroundColor: "#000" },
   mediaDownload: {
     position: "absolute",
     right: 8,
@@ -1090,6 +1091,8 @@ const createStyles = (colors: AppThemeColors) =>
     backgroundColor: colors.overlay,
     padding: 6,
     borderRadius: 999,
+    zIndex: 5,
+    elevation: 5,
   },
   processingBadge: {
     position: "absolute",
