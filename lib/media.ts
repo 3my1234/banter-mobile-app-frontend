@@ -150,23 +150,27 @@ export function isPendingProcessedVideoUrl(url?: string | null) {
   return /\/post\/branded\//i.test(url) && !isStreamMediaUrl(url);
 }
 
+export function getDownloadableMediaUrl(url: string) {
+  if (isStreamMediaUrl(url)) {
+    return url.replace(/\/index\.m3u8($|[?#].*)/i, "/download.mp4$1");
+  }
+  return url;
+}
+
 export async function saveRemoteMediaToLibrary(url: string) {
   if (isPendingProcessedVideoUrl(url)) {
     throw new Error("This video is still processing. Wait for the Banter outro version to finish.");
   }
-
-  if (isStreamMediaUrl(url)) {
-    throw new Error("This video is now streaming in HLS format. Downloading that version is not supported in-app yet.");
-  }
+  const targetUrl = getDownloadableMediaUrl(url);
 
   const perm = await MediaLibrary.requestPermissionsAsync();
   if (!perm.granted) {
     throw new Error("Permission denied");
   }
 
-  const ext = url.split(".").pop()?.split("?")[0] || "jpg";
+  const ext = targetUrl.split(".").pop()?.split("?")[0] || "jpg";
   const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-  const download = await FileSystem.downloadAsync(url, fileUri);
+  const download = await FileSystem.downloadAsync(targetUrl, fileUri);
   const asset = await MediaLibrary.createAssetAsync(download.uri);
   await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
 }
