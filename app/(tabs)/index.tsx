@@ -632,7 +632,7 @@ export default function HomeFeed() {
         {
           text: "Preview",
           onPress: async () => {
-            await Linking.openURL(saved.targetUrl);
+            await Linking.openURL(saved.assetUri || saved.localUri || saved.targetUrl);
           },
         },
       ]);

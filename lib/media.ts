@@ -171,17 +171,14 @@ export async function saveRemoteMediaToLibrary(url: string) {
   const ext = targetUrl.split(".").pop()?.split("?")[0] || "jpg";
   const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
   const download = await FileSystem.downloadAsync(targetUrl, fileUri);
-  await MediaLibrary.saveToLibraryAsync(download.uri);
-  const asset = await MediaLibrary.createAssetAsync(download.uri).catch(() => null);
-  if (asset) {
-    const album = await MediaLibrary.getAlbumAsync("Banter");
-    if (album) {
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false).catch(() => {});
-    } else {
-      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
-    }
+  const asset = await MediaLibrary.createAssetAsync(download.uri);
+  const album = await MediaLibrary.getAlbumAsync("Banter");
+  if (album) {
+    await MediaLibrary.addAssetsToAlbumAsync([asset], album, false).catch(() => {});
+  } else {
+    await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
   }
-  return { localUri: download.uri, targetUrl };
+  return { localUri: download.uri, assetUri: asset.uri, targetUrl };
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
