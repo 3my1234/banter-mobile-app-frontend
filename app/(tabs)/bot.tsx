@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -23,6 +24,16 @@ import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Sport = "SOCCER" | "BASKETBALL";
 type StakeAsset = "USD" | "USDC";
+
+const EURO_COUNTRIES = new Set([
+  "at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt",
+  "lu", "lv", "mt", "nl", "pt", "si", "sk",
+  "austria", "belgium", "cyprus", "germany", "estonia", "spain", "finland",
+  "france", "greece", "croatia", "ireland", "italy", "lithuania", "luxembourg",
+  "latvia", "malta", "netherlands", "portugal", "slovenia", "slovakia",
+]);
+
+const flutterwaveLogo = require("../../assets/images/flutterwave-logo.png");
 
 type RolleyPick = {
   id: string;
@@ -278,6 +289,13 @@ export default function RolleyBotScreen() {
   const [error, setError] = useState<string | null>(null);
   const [defaultAssetSet, setDefaultAssetSet] = useState(false);
   const [isNigeria, setIsNigeria] = useState(false);
+  const [flutterwaveCurrency, setFlutterwaveCurrency] = useState<"NGN" | "USD" | "GBP" | "EUR">("USD");
+  const [confirmingFlutterwave, setConfirmingFlutterwave] = useState(false);
+  const [stakeSuccessState, setStakeSuccessState] = useState<{
+    amount: number;
+    asset: StakeAsset;
+    days: number;
+  } | null>(null);
 
   const isNigeriaUser = (user?: { country?: string | null; phone?: string | null }) => {
     const country = (user?.country || "").trim().toLowerCase();
@@ -285,9 +303,20 @@ export default function RolleyBotScreen() {
     const digits = (user?.phone || "").replace(/\D+/g, "");
     return digits.startsWith("234");
   };
+  const getFlutterwaveCurrency = (user?: { country?: string | null; phone?: string | null }) => {
+    if (isNigeriaUser(user)) return "NGN" as const;
+    const country = (user?.country || "").trim().toLowerCase();
+    if (country === "uk" || country === "gb" || country === "united kingdom" || country === "great britain") {
+      return "GBP" as const;
+    }
+    if (EURO_COUNTRIES.has(country)) {
+      return "EUR" as const;
+    }
+    return "USD" as const;
+  };
   const getStakeAssetLabel = (asset: StakeAsset) => {
     if (asset === "USD") {
-      return isNigeria ? "USD (charged in NGN)" : "Card (USD)";
+      return `Flutterwave (${flutterwaveCurrency})`;
     }
     return "USDC (Solana)";
   };
@@ -295,19 +324,20 @@ export default function RolleyBotScreen() {
   const fetchUserContext = useCallback(async () => {
     try {
       const me = await apiFetch("/auth/me");
-      const id = me?.user?.id ? String(me.user.id) : "";
-      setUserId(id);
-      if (!defaultAssetSet) {
+        const id = me?.user?.id ? String(me.user.id) : "";
+        setUserId(id);
         const nigeria = isNigeriaUser(me?.user || me);
-        setStakeAsset(nigeria ? "USD" : "USDC");
-        setDefaultAssetSet(true);
+        const currency = getFlutterwaveCurrency(me?.user || me);
+        if (!defaultAssetSet) {
+          setStakeAsset(nigeria ? "USD" : "USDC");
+          setDefaultAssetSet(true);
+        }
+        setIsNigeria(nigeria);
+        setFlutterwaveCurrency(currency);
+      } catch {
+        setUserId("");
       }
-      const nigeria = isNigeriaUser(me?.user || me);
-      setIsNigeria(nigeria);
-    } catch {
-      setUserId("");
-    }
-  }, [defaultAssetSet]);
+    }, [defaultAssetSet]);
 
 
 
@@ -327,6 +357,39 @@ export default function RolleyBotScreen() {
       setStakes([]);
     }
   }, [userId]);
+
+  const completeStakeSuccess = useCallback(
+    async (amount: number, asset: StakeAsset, days: number) => {
+      try {
+        await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
+      } catch {
+        // Reward is optional for the success path.
+      }
+      await loadStakes();
+      setStakeSuccessState({ amount, asset, days });
+    },
+    [loadStakes]
+  );
+
+  const confirmRolleyFlutterwaveCompletion = useCallback(
+    async (paymentId: string, amount: number, days: number) => {
+      setConfirmingFlutterwave(true);
+      try {
+        const finalStatus = await pollRolleyFlutterwaveStatus(paymentId, 30);
+        if (finalStatus === "COMPLETED") {
+          await completeStakeSuccess(amount, "USD", days);
+          return true;
+        }
+        if (finalStatus === "FAILED") {
+          throw new Error("Payment failed.");
+        }
+        return false;
+      } finally {
+        setConfirmingFlutterwave(false);
+      }
+    },
+    [completeStakeSuccess]
+  );
 
   const loadPicks = useCallback(async () => {
     try {
@@ -447,59 +510,63 @@ export default function RolleyBotScreen() {
 
     try {
       setStakeBusy(true);
-      if (stakeAsset === "USD") {
-        const redirectUrl = ExpoLinking.createURL("payments/flutterwave/rolley");
-        const created = await apiFetch("/payments/flutterwave/rolley/create", {
-          method: "POST",
-          body: JSON.stringify({
-            sport,
-            amount,
-            lockDays: stakeDays,
-            redirectUrl,
-            currency: isNigeria ? "NGN" : "USD",
-          }),
-        });
+        if (stakeAsset === "USD") {
+          const redirectUrl = ExpoLinking.createURL("payments/flutterwave/rolley");
+          const created = await apiFetch("/payments/flutterwave/rolley/create", {
+            method: "POST",
+            body: JSON.stringify({
+              sport,
+              amount,
+              lockDays: stakeDays,
+              redirectUrl,
+              currency: flutterwaveCurrency,
+            }),
+          });
 
         const result = await WebBrowser.openAuthSessionAsync(created.paymentUrl, redirectUrl);
 
         let transactionId: string | undefined;
         let txRef: string | undefined = created.reference;
 
-        if (result.type === "success" && result.url) {
-          const parsed = ExpoLinking.parse(result.url);
-          transactionId = (parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId) as
-            | string
-            | undefined;
-          txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
-        } else if (result.type === "cancel" || result.type === "dismiss") {
-          const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId, 6);
-          if (finalStatus !== "COMPLETED") {
-            throw new Error("Payment was cancelled.");
+          if (result.type === "success" && result.url) {
+            const parsed = ExpoLinking.parse(result.url);
+            transactionId = (parsed.queryParams?.transaction_id || parsed.queryParams?.transactionId) as
+              | string
+              | undefined;
+            txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
+          } else if (result.type === "cancel" || result.type === "dismiss") {
+            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+            if (!confirmed) {
+              throw new Error(
+                "Checkout was closed before confirmation. If your card was debited, wait a moment and refresh this screen."
+              );
+            }
           }
-        }
 
-        if (transactionId || txRef) {
-          const verified = await apiFetch("/payments/flutterwave/rolley/verify", {
+          if (transactionId || txRef) {
+            const verified = await apiFetch("/payments/flutterwave/rolley/verify", {
             method: "POST",
             body: JSON.stringify({
               paymentId: created.paymentId,
               transactionId,
-              txRef,
-            }),
-          });
-          if (verified?.payment?.status !== "COMPLETED") {
-            const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId);
-            if (finalStatus !== "COMPLETED") {
-              throw new Error("Payment is still pending verification. Please check again shortly.");
+                txRef,
+              }),
+            });
+            if (verified?.payment?.status !== "COMPLETED") {
+              const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+              if (!confirmed) {
+                throw new Error("Payment is still being confirmed. If you were charged, refresh this screen shortly.");
+              }
+            } else {
+              await completeStakeSuccess(amount, "USD", stakeDays);
+            }
+          } else {
+            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+            if (!confirmed) {
+              throw new Error("Payment is still being confirmed. If you were charged, refresh this screen shortly.");
             }
           }
         } else {
-          const finalStatus = await pollRolleyFlutterwaveStatus(created.paymentId);
-          if (finalStatus !== "COMPLETED") {
-            throw new Error("Payment is still pending verification. Please check again shortly.");
-          }
-        }
-      } else {
         const created = await apiFetch("/payments/solana/rolley/create", {
           method: "POST",
           body: JSON.stringify({
@@ -509,30 +576,24 @@ export default function RolleyBotScreen() {
           }),
         });
         setSolanaPayment(created);
-        setSolanaTxHash("");
-        return;
-      }
-
-      try {
-        const reward = await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
-        if (reward?.awarded) {
-          Alert.alert(
-            "Stake created",
-            `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
-          );
-        } else {
-          Alert.alert("Stake created", `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.`);
+          setSolanaTxHash("");
+          return;
         }
-      } catch {
-        Alert.alert("Stake created", `Locked ${formatAmount(amount, stakeAsset)} for ${stakeDays} days.`);
+      } catch (e: any) {
+        Alert.alert("Stake failed", e?.message || "Failed to create stake");
+      } finally {
+        setStakeBusy(false);
       }
-      await loadStakes();
-    } catch (e: any) {
-      Alert.alert("Stake failed", e?.message || "Failed to create stake");
-    } finally {
-      setStakeBusy(false);
-    }
-  }, [loadStakes, sport, stakeAmount, stakeAsset, stakeDays, userId]);
+    }, [
+      completeStakeSuccess,
+      confirmRolleyFlutterwaveCompletion,
+      flutterwaveCurrency,
+      stakeAmount,
+      stakeAsset,
+      stakeDays,
+      sport,
+      userId,
+    ]);
 
   const verifySolanaPayment = useCallback(async (txHashOverride?: string) => {
     const hash = (txHashOverride || solanaTxHash).trim();
@@ -554,32 +615,13 @@ export default function RolleyBotScreen() {
       }
       setSolanaPayment(null);
       setSolanaTxHash("");
-      try {
-        const reward = await apiFetch("/rewards/rolley/first-stake", { method: "POST" });
-        if (reward?.awarded) {
-          Alert.alert(
-            "Stake created",
-            `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.\n\nBonus unlocked: first Rolley stake points awarded.`
-          );
-        } else {
-          Alert.alert(
-            "Stake created",
-            `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.`
-          );
-        }
-      } catch {
-        Alert.alert(
-          "Stake created",
-          `Locked ${formatAmount(Number(stakeAmount), stakeAsset)} for ${stakeDays} days.`
-        );
-      }
-      await loadStakes();
+      await completeStakeSuccess(Number(solanaPayment.amount ?? stakeAmount), "USDC", stakeDays);
     } catch (e: any) {
       Alert.alert("Verify failed", e?.message || "Failed to verify payment");
     } finally {
       setSolanaVerifying(false);
     }
-  }, [loadStakes, solanaPayment, solanaTxHash, stakeAmount, stakeAsset, stakeDays]);
+  }, [completeStakeSuccess, solanaPayment, solanaTxHash, stakeAmount, stakeAsset, stakeDays]);
 
   const handleEmbeddedSolanaStake = useCallback(async () => {
     if (!solanaPayment?.toAddress || !solanaPayment?.tokenMint) {
@@ -702,19 +744,25 @@ export default function RolleyBotScreen() {
           <Text style={styles.sectionTitle}>Start Rollover Position</Text>
           <Text style={styles.metaSub}>Choose the asset Banter will receive and manage for your rollover.</Text>
           <Text style={styles.metaSub}>Banter receives this stake, rolls it through the daily AI product for your selected duration, then pays you principal plus profit minus Banter's 10% profit fee.</Text>
-          <View style={styles.durationRow}>
-            {(["USD", "USDC"] as StakeAsset[]).map((asset) => (
-              <Pressable
-                key={asset}
-                style={[styles.durationChip, stakeAsset === asset && styles.durationChipActive]}
-                onPress={() => setStakeAsset(asset)}
-              >
-                <Text style={[styles.durationText, stakeAsset === asset && styles.durationTextActive]}>
-                  {getStakeAssetLabel(asset)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+            <View style={styles.durationRow}>
+              {(["USD", "USDC"] as StakeAsset[]).map((asset) => (
+                <Pressable
+                  key={asset}
+                  style={[styles.durationChip, stakeAsset === asset && styles.durationChipActive]}
+                  onPress={() => setStakeAsset(asset)}
+                >
+                  {asset === "USD" ? (
+                    <View style={styles.flutterwaveChip}>
+                      <Image source={flutterwaveLogo} style={styles.flutterwaveLogo} resizeMode="contain" />
+                    </View>
+                  ) : (
+                    <Text style={[styles.durationText, stakeAsset === asset && styles.durationTextActive]}>
+                      {getStakeAssetLabel(asset)}
+                    </Text>
+                  )}
+                </Pressable>
+              ))}
+            </View>
           <View style={styles.inputRow}>
             <TextInput
               value={stakeAmount}
@@ -747,11 +795,15 @@ export default function RolleyBotScreen() {
               then paste the Solana tx hash to verify.
             </Text>
           ) : null}
-          {stakeAsset === "USD" && isNigeria ? (
-            <Text style={styles.disclaimer}>
-              Charges are processed in NGN on Flutterwave local rails.
-            </Text>
-          ) : null}
+            {stakeAsset === "USD" && isNigeria ? (
+              <Text style={styles.disclaimer}>
+                Charges are processed in NGN on Flutterwave local rails.
+              </Text>
+            ) : stakeAsset === "USD" ? (
+              <Text style={styles.disclaimer}>
+                Flutterwave will charge this rollover in {flutterwaveCurrency}.
+              </Text>
+            ) : null}
           <Text style={styles.disclaimer}>
             Your deposit is managed by Banter for the selected rollover period. Movement is used to publish pick and settlement proof, not to hold your stake directly.
           </Text>
@@ -1147,6 +1199,40 @@ export default function RolleyBotScreen() {
           </View>
         </Modal>
       ) : null}
+
+      {confirmingFlutterwave ? (
+        <Modal transparent animationType="fade" visible>
+          <View style={styles.statusBackdrop}>
+            <View style={styles.statusCard}>
+              <Text style={styles.sectionTitle}>Confirming payment</Text>
+              <Text style={styles.metaSub}>
+                Your bank charge may complete before Flutterwave finishes the callback. We are checking your rollover now.
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      {stakeSuccessState ? (
+        <Modal transparent animationType="fade" visible>
+          <View style={styles.statusBackdrop}>
+            <View style={styles.statusCard}>
+              <Text style={styles.successBadge}>Success</Text>
+              <Text style={styles.sectionTitle}>Rollover started</Text>
+              <Text style={styles.successValue}>
+                {formatAmount(stakeSuccessState.amount, stakeSuccessState.asset)}
+              </Text>
+              <Text style={styles.metaSub}>
+                Managed for {stakeSuccessState.days} day{stakeSuccessState.days === 1 ? "" : "s"} via{" "}
+                {stakeSuccessState.asset === "USD" ? "Flutterwave" : "Solana USDC"}.
+              </Text>
+              <Pressable style={styles.stakeButton} onPress={() => setStakeSuccessState(null)}>
+                <Text style={styles.stakeButtonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1202,6 +1288,14 @@ const createStyles = (colors: AppThemeColors) =>
     durationChipActive: { borderColor: "#ff6b35", backgroundColor: "rgba(255,107,53,0.14)" },
     durationText: { color: colors.text, fontSize: 12, fontWeight: "700" },
     durationTextActive: { color: "#ff6b35" },
+    flutterwaveChip: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    flutterwaveLogo: {
+      width: 108,
+      height: 28,
+    },
     stakeButton: {
       marginTop: 12,
       backgroundColor: "#ff6b35",
@@ -1265,6 +1359,38 @@ const createStyles = (colors: AppThemeColors) =>
     modalBackdrop: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: colors.overlayStrong,
+    },
+    statusBackdrop: {
+      flex: 1,
+      backgroundColor: colors.overlayStrong,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+    },
+    statusCard: {
+      width: "100%",
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 18,
+      gap: 10,
+    },
+    successBadge: {
+      alignSelf: "flex-start",
+      backgroundColor: "rgba(34,197,94,0.16)",
+      color: "#22c55e",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      fontWeight: "700",
+      overflow: "hidden",
+    },
+    successValue: {
+      color: colors.text,
+      fontSize: 28,
+      fontWeight: "700",
     },
     solanaSheet: {
       position: "absolute",

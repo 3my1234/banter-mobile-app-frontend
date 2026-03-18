@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -30,6 +31,16 @@ type Bundle = {
 
 type PaymentMethod = "SOLANA" | "CARD";
 
+const EURO_COUNTRIES = new Set([
+  "at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt",
+  "lu", "lv", "mt", "nl", "pt", "si", "sk",
+  "austria", "belgium", "cyprus", "germany", "estonia", "spain", "finland",
+  "france", "greece", "croatia", "ireland", "italy", "lithuania", "luxembourg",
+  "latvia", "malta", "netherlands", "portugal", "slovenia", "slovakia",
+]);
+
+const flutterwaveLogo = require("../../assets/images/flutterwave-logo.png");
+
 export default function Votes() {
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
@@ -46,6 +57,7 @@ export default function Votes() {
   const [solanaSending, setSolanaSending] = useState(false);
   const [defaultMethodSet, setDefaultMethodSet] = useState(false);
   const [isNigeria, setIsNigeria] = useState(false);
+  const [flutterwaveCurrency, setFlutterwaveCurrency] = useState<"NGN" | "USD" | "GBP" | "EUR">("USD");
   const [confirmingFlutterwave, setConfirmingFlutterwave] = useState(false);
   const [successState, setSuccessState] = useState<{
     votes: number;
@@ -63,6 +75,18 @@ export default function Votes() {
     return digits.startsWith("234");
   };
 
+  const getFlutterwaveCurrency = (user?: { country?: string | null; phone?: string | null }) => {
+    if (isNigeriaUser(user)) return "NGN" as const;
+    const country = (user?.country || "").trim().toLowerCase();
+    if (country === "uk" || country === "gb" || country === "united kingdom" || country === "great britain") {
+      return "GBP" as const;
+    }
+    if (EURO_COUNTRIES.has(country)) {
+      return "EUR" as const;
+    }
+    return "USD" as const;
+  };
+
   const loadVotesPage = async () => {
     try {
       setLoading(true);
@@ -72,7 +96,9 @@ export default function Votes() {
       const me = await apiFetch("/auth/me");
       setBalance(me?.user?.voteBalance ?? 0);
       const nigeria = isNigeriaUser(me?.user || me);
+      const currency = getFlutterwaveCurrency(me?.user || me);
       setIsNigeria(nigeria);
+      setFlutterwaveCurrency(currency);
       if (!defaultMethodSet) {
         setSelectedMethod(nigeria ? "CARD" : "SOLANA");
         setDefaultMethodSet(true);
@@ -230,12 +256,12 @@ export default function Votes() {
       const redirectUrl = Linking.createURL("payments/flutterwave");
       const created = await apiFetch("/payments/flutterwave/votes/create", {
         method: "POST",
-        body: JSON.stringify({
-          bundleId,
-          redirectUrl,
-          currency: isNigeria ? "NGN" : "USD",
-        }),
-      });
+          body: JSON.stringify({
+            bundleId,
+            redirectUrl,
+            currency: flutterwaveCurrency,
+          }),
+        });
       if (__DEV__) {
         console.log("FW create response:", created);
       }
@@ -385,21 +411,16 @@ export default function Votes() {
             ]}
             onPress={() => setSelectedMethod("CARD")}
           >
-            <Text
-              style={[
-                styles.methodText,
-                selectedMethod === "CARD" && styles.methodTextActive,
-              ]}
-            >
-              {isNigeria ? "Bank Transfer / USSD (NGN)" : "Card (USD)"}
-            </Text>
+            <View style={styles.flutterwaveChip}>
+              <Image source={flutterwaveLogo} style={styles.flutterwaveLogo} resizeMode="contain" />
+            </View>
           </TouchableOpacity>
         </View>
         {selectedMethod === "CARD" ? (
           <Text style={styles.cardNote}>
             {isNigeria
-              ? "Charges are in NGN. Use bank transfer or USSD. If cards fail, try USDC (Solana)."
-              : "Flutterwave may reject some cards. If that happens, try USDC (Solana)."}
+              ? "Charges are in NGN. Bank transfer, USSD, or card can be used. If Flutterwave fails, try USDC (Solana)."
+              : `Flutterwave will charge in ${flutterwaveCurrency}. If your bank declines the payment, try USDC (Solana).`}
           </Text>
         ) : null}
 
@@ -605,6 +626,14 @@ const createStyles = (colors: AppThemeColors) =>
   methodChipActive: {
     borderColor: "#ff6b35",
     backgroundColor: "rgba(255,107,53,0.12)",
+  },
+  flutterwaveChip: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  flutterwaveLogo: {
+    width: 108,
+    height: 28,
   },
   methodText: { color: colors.text, fontWeight: "700", fontSize: 12 },
   methodTextActive: { color: "#ff6b35" },
