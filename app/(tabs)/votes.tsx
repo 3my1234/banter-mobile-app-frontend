@@ -46,6 +46,11 @@ export default function Votes() {
   const [solanaSending, setSolanaSending] = useState(false);
   const [defaultMethodSet, setDefaultMethodSet] = useState(false);
   const [isNigeria, setIsNigeria] = useState(false);
+  const [confirmingFlutterwave, setConfirmingFlutterwave] = useState(false);
+  const [successState, setSuccessState] = useState<{
+    votes: number;
+    method: PaymentMethod;
+  } | null>(null);
   const solanaWallet = useEmbeddedSolanaWallet();
   const solanaGuideUrl =
     process.env.EXPO_PUBLIC_SOLANA_USDC_GUIDE_URL ??
@@ -100,8 +105,7 @@ export default function Votes() {
   const showPaymentSuccess = (bundleId: string, method: PaymentMethod) => {
     const bundle = bundles.find((b) => b.id === bundleId);
     const votes = bundle?.votes ?? 0;
-    const methodLabel = method === "SOLANA" ? "Solana" : "Card";
-    Alert.alert("Payment successful", `You received ${votes} vote${votes === 1 ? "" : "s"} via ${methodLabel}.`);
+    setSuccessState({ votes, method });
   };
 
   const normalizeErrorMessage = (error: unknown) => {
@@ -124,6 +128,24 @@ export default function Votes() {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     return "PENDING";
+  };
+
+  const confirmFlutterwaveCompletion = async (paymentId: string, bundleId: string) => {
+    setConfirmingFlutterwave(true);
+    try {
+      const finalStatus = await pollFlutterwaveStatus(paymentId, 30);
+      if (finalStatus === "COMPLETED") {
+        await refreshBalance();
+        showPaymentSuccess(bundleId, "CARD");
+        return true;
+      }
+      if (finalStatus === "FAILED") {
+        throw new Error("Payment failed.");
+      }
+      return false;
+    } finally {
+      setConfirmingFlutterwave(false);
+    }
   };
 
   const handleBuySolana = async (bundleId: string) => {
@@ -233,14 +255,13 @@ export default function Votes() {
           | undefined;
         txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
       } else if (result.type === "cancel" || result.type === "dismiss") {
-        // Do not fail immediately; webhooks/callbacks may still complete shortly.
-        const finalStatus = await pollFlutterwaveStatus(created.paymentId, 6);
-        if (finalStatus === "COMPLETED") {
-          await refreshBalance();
-          showPaymentSuccess(bundleId, "CARD");
+        const confirmed = await confirmFlutterwaveCompletion(created.paymentId, bundleId);
+        if (confirmed) {
           return;
         }
-        throw new Error("Payment was cancelled.");
+        throw new Error(
+          "Checkout was closed before confirmation. If your card was debited, wait a moment and refresh this screen."
+        );
       }
 
       if (transactionId || txRef) {
@@ -259,14 +280,12 @@ export default function Votes() {
         }
       }
 
-      const finalStatus = await pollFlutterwaveStatus(created.paymentId);
-      if (finalStatus === "COMPLETED") {
-        await refreshBalance();
-        showPaymentSuccess(bundleId, "CARD");
+      const confirmed = await confirmFlutterwaveCompletion(created.paymentId, bundleId);
+      if (confirmed) {
         return;
       }
 
-      throw new Error("Payment is still pending verification. Please check again shortly.");
+      throw new Error("Payment is still being confirmed. If you were charged, refresh this screen shortly.");
     } catch (error) {
       if (__DEV__) {
         console.log("FW error:", error);
@@ -494,6 +513,39 @@ export default function Votes() {
           </View>
         </Modal>
       ) : null}
+
+      {confirmingFlutterwave ? (
+        <Modal transparent animationType="fade" visible>
+          <View style={styles.statusBackdrop}>
+            <View style={styles.statusCard}>
+              <Text style={styles.section}>Confirming payment</Text>
+              <Text style={styles.metaSub}>
+                Your bank charge may complete before Flutterwave finishes the callback. We are checking your payment now.
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      {successState ? (
+        <Modal transparent animationType="fade" visible>
+          <View style={styles.statusBackdrop}>
+            <View style={styles.statusCard}>
+              <Text style={styles.successBadge}>Success</Text>
+              <Text style={styles.section}>Votes added</Text>
+              <Text style={styles.successValue}>
+                {successState.votes} vote{successState.votes === 1 ? "" : "s"}
+              </Text>
+              <Text style={styles.metaSub}>
+                Payment completed via {successState.method === "CARD" ? "Flutterwave" : "Solana"}.
+              </Text>
+              <Pressable style={styles.verifyButton} onPress={() => setSuccessState(null)}>
+                <Text style={styles.verifyButtonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -624,4 +676,36 @@ const createStyles = (colors: AppThemeColors) =>
   verifyButtonDisabled: { opacity: 0.6 },
   verifyButtonText: { color: "#0d0d0d", fontWeight: "700" },
   disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 10 },
+  statusBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  statusCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+  },
+  successBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(34,197,94,0.16)",
+    color: "#22c55e",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    fontWeight: "700",
+    overflow: "hidden",
+  },
+  successValue: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "700",
+  },
 });
