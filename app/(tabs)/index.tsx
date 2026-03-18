@@ -29,6 +29,7 @@ import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
 import {
+  getPreviewableLocalUri,
   isPendingProcessedVideoUrl,
   normalizeMediaUrl,
   saveRemoteMediaToLibrary,
@@ -632,7 +633,8 @@ export default function HomeFeed() {
         {
           text: "Preview",
           onPress: async () => {
-            await Linking.openURL(saved.assetUri || saved.localUri || saved.targetUrl);
+            const previewUri = await getPreviewableLocalUri(saved.assetUri || saved.localUri);
+            await Linking.openURL(previewUri || saved.targetUrl);
           },
         },
       ]);

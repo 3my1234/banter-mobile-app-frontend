@@ -24,6 +24,7 @@ import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
 import {
+  getPreviewableLocalUri,
   isPendingProcessedVideoUrl,
   normalizeMediaUrl,
   saveRemoteMediaToLibrary,
@@ -736,7 +737,8 @@ socket.off("comment-deleted");
         {
           text: "Preview",
           onPress: async () => {
-            await Linking.openURL(saved.assetUri || saved.localUri || saved.targetUrl);
+            const previewUri = await getPreviewableLocalUri(saved.assetUri || saved.localUri);
+            await Linking.openURL(previewUri || saved.targetUrl);
           },
         },
       ]);

@@ -151,10 +151,14 @@ export function isPendingProcessedVideoUrl(url?: string | null) {
 }
 
 export function getDownloadableMediaUrl(url: string) {
-  if (isStreamMediaUrl(url)) {
-    return url.replace(/\/index\.m3u8($|[?#].*)/i, "/download.mp4$1");
+  if (!isStreamMediaUrl(url)) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.pathname = parsed.pathname.replace(/\/[^/]+\.m3u8$/i, "/download.mp4");
+    return parsed.toString();
+  } catch {
+    return url.replace(/\/[^/]+\.m3u8($|[?#].*)/i, "/download.mp4$1");
   }
-  return url;
 }
 
 export async function saveRemoteMediaToLibrary(url: string) {
@@ -162,6 +166,9 @@ export async function saveRemoteMediaToLibrary(url: string) {
     throw new Error("This video is still processing. Wait for the Banter outro version to finish.");
   }
   const targetUrl = getDownloadableMediaUrl(url);
+  if (isStreamMediaUrl(targetUrl)) {
+    throw new Error("Processed video download is not ready yet. Please try again shortly.");
+  }
 
   const perm = await MediaLibrary.requestPermissionsAsync();
   if (!perm.granted) {
@@ -179,6 +186,19 @@ export async function saveRemoteMediaToLibrary(url: string) {
     await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
   }
   return { localUri: download.uri, assetUri: asset.uri, targetUrl };
+}
+
+export async function getPreviewableLocalUri(uri?: string | null) {
+  if (!uri) return undefined;
+  if (uri.startsWith("content://")) return uri;
+  if (uri.startsWith("file://")) {
+    try {
+      return await FileSystem.getContentUriAsync(uri);
+    } catch {
+      return uri;
+    }
+  }
+  return uri;
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
