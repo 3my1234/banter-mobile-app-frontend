@@ -837,6 +837,9 @@ export default function HomeFeed() {
           }
         }
       });
+      if (adIndex === 0 && items.length > 0) {
+        result.push(mapAdToPost(ads[0]));
+      }
       return result;
     },
     [adSettings?.isEnabled, mapAdToPost]

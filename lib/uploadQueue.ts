@@ -36,8 +36,13 @@ export const updatePendingPost = (
   id: string,
   updates: Partial<PendingPost>
 ) => {
+  const nextUpdates = { ...updates };
+  if (typeof nextUpdates.progress === "number") {
+    const bounded = Math.max(0, Math.min(100, nextUpdates.progress));
+    nextUpdates.progress = Number.isFinite(bounded) ? bounded : 0;
+  }
   pendingPosts = pendingPosts.map((post) =>
-    post.id === id ? { ...post, ...updates } : post
+    post.id === id ? { ...post, ...nextUpdates } : post
   );
   emit();
 };

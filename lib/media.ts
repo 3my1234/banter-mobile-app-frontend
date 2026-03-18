@@ -90,7 +90,8 @@ export async function uploadToS3(
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
       const percent = Math.round((event.loaded / event.total) * 100);
-      onProgress?.(percent);
+      const bounded = Math.max(0, Math.min(100, percent));
+      onProgress?.(Number.isFinite(bounded) ? bounded : 0);
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
