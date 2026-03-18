@@ -1459,28 +1459,30 @@ export default function HomeFeed() {
           <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
             {media ? (
               isVideo ? (
-                withinWindow ? (
-                  <Video
-                    key={`${item.id}-${media.uri}`}
-                    source={{ uri: media.uri }}
-                    style={styles.banterMediaFill}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
-                    isLooping
-                    useNativeControls={false}
-                    isMuted={false}
-                    volume={1.0}
-                    ref={(ref) => {
-                      if (ref) {
-                        videoRefs.current.set(item.id, ref);
-                      } else {
-                        videoRefs.current.delete(item.id);
-                      }
-                    }}
-                  />
-                ) : (
-                  <View style={styles.banterPlaceholder} />
-                )
+	                withinWindow ? (
+	                  <>
+	                    <Video
+	                      key={`${item.id}-${media.uri}`}
+	                      source={{ uri: media.uri }}
+	                      style={styles.banterMediaFill}
+	                      resizeMode={ResizeMode.COVER}
+	                      shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
+	                      isLooping
+	                      useNativeControls={false}
+	                      isMuted={false}
+	                      volume={1.0}
+	                      ref={(ref) => {
+	                        if (ref) {
+	                          videoRefs.current.set(item.id, ref);
+	                        } else {
+	                          videoRefs.current.delete(item.id);
+	                        }
+	                      }}
+	                    />
+	                  </>
+	                ) : (
+	                  <View style={styles.banterPlaceholder} />
+	                )
               ) : (
                 <ExpoImage
                   source={{ uri: media.uri }}
@@ -1498,15 +1500,17 @@ export default function HomeFeed() {
             <Text style={styles.adBadgeBanter}>Sponsored</Text>
             <Text style={styles.adBanterTitle}>{ad?.title || "Banter Sponsor"}</Text>
             {item.text ? <Text style={styles.adBanterBody}>{item.text}</Text> : null}
-            {ad?.targetUrl ? (
-              <Pressable
-                style={styles.adBanterCta}
-                onPress={async () => {
-                  try {
-                    await Linking.openURL(ad.targetUrl);
-                  } catch {
-                    showToast("Unable to open link.");
-                  }
+	            {ad?.targetUrl ? (
+	              <Pressable
+	                style={styles.adBanterCta}
+	                onPress={async () => {
+	                  try {
+	                    const targetUrl = ad?.targetUrl;
+	                    if (!targetUrl) return;
+	                    await Linking.openURL(targetUrl);
+	                  } catch {
+	                    showToast("Unable to open link.");
+	                  }
                 }}
               >
                 <Text style={styles.adBanterCtaText}>{ctaLabel}</Text>
@@ -1574,38 +1578,40 @@ export default function HomeFeed() {
         <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
           {media ? (
             isVideo ? (
-              withinWindow ? (
-                <Video
-                  key={`${item.id}-${media.uri}`}
-                  source={{ uri: media.uri }}
-                  style={styles.banterMediaFill}
-                  resizeMode={ResizeMode.COVER}
-                  shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
-                  isLooping
-                  useNativeControls={false}
-                  isMuted={false}
-                  volume={1.0}
-                  onPlaybackStatusUpdate={(status) => {
-                    if (!status.isLoaded) return;
-                    if (seekingVideoId === item.id) return;
-                    const nextPosition = status.positionMillis ?? 0;
-                    const nextDuration = status.durationMillis ?? 0;
-                    setVideoProgress((prev) => ({
-                      ...prev,
-                      [item.id]: { position: nextPosition, duration: nextDuration },
-                    }));
-                  }}
-                  ref={(ref) => {
-                    if (ref) {
-                      videoRefs.current.set(item.id, ref);
-                    } else {
-                      videoRefs.current.delete(item.id);
-                    }
-                  }}
-                />
-              ) : (
-                <View style={styles.banterPlaceholder} />
-              )
+	              withinWindow ? (
+	                <>
+	                  <Video
+	                    key={`${item.id}-${media.uri}`}
+	                    source={{ uri: media.uri }}
+	                    style={styles.banterMediaFill}
+	                    resizeMode={ResizeMode.COVER}
+	                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
+	                    isLooping
+	                    useNativeControls={false}
+	                    isMuted={false}
+	                    volume={1.0}
+	                    onPlaybackStatusUpdate={(status) => {
+	                      if (!status.isLoaded) return;
+	                      if (seekingVideoId === item.id) return;
+	                      const nextPosition = status.positionMillis ?? 0;
+	                      const nextDuration = status.durationMillis ?? 0;
+	                      setVideoProgress((prev) => ({
+	                        ...prev,
+	                        [item.id]: { position: nextPosition, duration: nextDuration },
+	                      }));
+	                    }}
+	                    ref={(ref) => {
+	                      if (ref) {
+	                        videoRefs.current.set(item.id, ref);
+	                      } else {
+	                        videoRefs.current.delete(item.id);
+	                      }
+	                    }}
+	                  />
+	                </>
+	              ) : (
+	                <View style={styles.banterPlaceholder} />
+	              )
             ) : (
               <ExpoImage
                 source={{ uri: media.uri }}
@@ -2088,11 +2094,10 @@ export default function HomeFeed() {
                 colors={["transparent"]}
                 progressBackgroundColor="transparent"
               />
-            }
-            estimatedItemSize={520}
-            drawDistance={windowHeight * 2}
-            viewabilityConfig={viewabilityConfig.current}
-            onViewableItemsChanged={onViewableItemsChanged}
+	            }
+	            drawDistance={windowHeight * 2}
+	            viewabilityConfig={viewabilityConfig.current}
+	            onViewableItemsChanged={onViewableItemsChanged}
           />
         ) : (
             <FlashList
@@ -2117,11 +2122,10 @@ export default function HomeFeed() {
                   colors={["transparent"]}
                   progressBackgroundColor="transparent"
                 />
-              }
-              estimatedItemSize={banterHeight}
-              drawDistance={windowHeight * 2}
-              viewabilityConfig={viewabilityConfig.current}
-              onViewableItemsChanged={onViewableItemsChanged}
+	              }
+	              drawDistance={windowHeight * 2}
+	              viewabilityConfig={viewabilityConfig.current}
+	              onViewableItemsChanged={onViewableItemsChanged}
               onMomentumScrollEnd={(event) => {
                 const offsetY = event.nativeEvent.contentOffset.y || 0;
                 const index = Math.round(offsetY / banterHeight);

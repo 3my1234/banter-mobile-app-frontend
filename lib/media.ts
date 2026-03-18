@@ -51,6 +51,39 @@ export async function pickMedia(
   };
 }
 
+export async function captureMedia(
+  kind: "image" | "video"
+): Promise<PickedMedia | null> {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error("Camera permission is required to record media.");
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: (kind === "video" ? ["videos"] : ["images"]) as ImagePicker.ImagePickerOptions["mediaTypes"],
+    quality: 0.9,
+    allowsEditing: false,
+    videoMaxDuration: 60,
+  });
+
+  if (result.canceled || !result.assets?.length) return null;
+
+  const asset = result.assets[0];
+  const fileName =
+    asset.fileName ||
+    `banter-${Date.now()}.${asset.type === "video" ? "mp4" : "jpg"}`;
+  const mimeType =
+    asset.mimeType ||
+    (asset.type === "video" ? "video/mp4" : "image/jpeg");
+
+  return {
+    uri: asset.uri,
+    mimeType,
+    fileName,
+    isVideo: asset.type === "video",
+  };
+}
+
 export async function presignUpload(
   fileName: string,
   mimeType: string,

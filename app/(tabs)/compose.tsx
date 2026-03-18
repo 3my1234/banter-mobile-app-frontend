@@ -17,7 +17,7 @@ import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
-import { pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
+import { captureMedia, pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
 import { useFocusEffect } from "@react-navigation/native";
 import { addPendingPost, removePendingPost, updatePendingPost } from "@/lib/uploadQueue";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
@@ -117,8 +117,25 @@ export default function ComposeScreen() {
   };
 
   const handlePick = async (kind: "image" | "video") => {
-    const picked = await pickMedia(kind);
-    if (picked) setMedia(picked);
+    try {
+      const picked = await pickMedia(kind);
+      if (picked) {
+        setMedia(picked);
+      }
+    } catch (error) {
+      setError((error as Error)?.message || "Failed to pick media.");
+    }
+  };
+
+  const handleCapture = async (kind: "image" | "video") => {
+    try {
+      const captured = await captureMedia(kind);
+      if (captured) {
+        setMedia(captured);
+      }
+    } catch (error) {
+      setError((error as Error)?.message || "Failed to record media.");
+    }
   };
 
   const handleSubmit = async () => {
@@ -272,9 +289,16 @@ export default function ComposeScreen() {
             </Pressable>
             <Pressable style={styles.mediaAction} onPress={() => handlePick("video")}>
               <FontAwesome name="video-camera" size={18} color="#ff6b35" />
-              <Text style={styles.mediaActionText}>Video</Text>
+              <Text style={styles.mediaActionText}>Pick video</Text>
+            </Pressable>
+            <Pressable style={styles.mediaAction} onPress={() => handleCapture("video")}>
+              <FontAwesome name="circle" size={16} color="#ff6b35" />
+              <Text style={styles.mediaActionText}>Record</Text>
             </Pressable>
           </View>
+          <Text style={styles.captureNote}>
+            Record opens your device camera. All uploaded or recorded post videos will be processed with the Banter outro after upload.
+          </Text>
 
           <View style={styles.tagsSection}>
             <Text style={styles.sectionTitle}>League</Text>
@@ -407,6 +431,7 @@ const createStyles = (colors: AppThemeColors) =>
     borderRadius: 999,
   },
   mediaActionText: { color: colors.text, fontWeight: "600", fontSize: 12 },
+  captureNote: { color: colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: -4 },
   tagsSection: { gap: 10 },
   sectionTitle: { color: colors.text, fontWeight: "700" },
   leagueRow: { flexDirection: "row", gap: 8 },

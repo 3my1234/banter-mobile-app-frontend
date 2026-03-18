@@ -550,16 +550,16 @@ socket.off("comment-deleted");
             ) : null}
             {mediaUrl ? (
               mediaType === "video" ? (
-                <View style={styles.mediaWrapper}>
-                  <Video
-                    source={{ uri: mediaUrl }}
-                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
-                    resizeMode={ResizeMode.COVER}
-                    useNativeControls
-                  />
-                  <Pressable
-                    style={styles.mediaDownload}
-                    onPress={saveMedia}
+	                  <View style={styles.mediaWrapper}>
+	                  <Video
+	                    source={{ uri: mediaUrl }}
+	                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
+	                    resizeMode={ResizeMode.COVER}
+	                    useNativeControls
+	                  />
+	                  <Pressable
+	                    style={styles.mediaDownload}
+	                    onPress={saveMedia}
                   >
                     <FontAwesome name="download" size={14} color="#fff" />
                   </Pressable>
@@ -609,15 +609,15 @@ socket.off("comment-deleted");
                   {stripRoastPrefix(original.content || "")}
                 </Text>
                 {originalMediaUrl ? (
-                  <View style={styles.mediaWrapper}>
-                    {originalMediaType === "video" ? (
-                      <Video
-                        source={{ uri: originalMediaUrl }}
-                        style={[styles.media, { aspectRatio: 16 / 9 }]}
-                        resizeMode={ResizeMode.COVER}
-                        useNativeControls
-                      />
-                    ) : (
+	                  <View style={styles.mediaWrapper}>
+	                    {originalMediaType === "video" ? (
+	                      <Video
+	                        source={{ uri: originalMediaUrl }}
+	                        style={[styles.media, { aspectRatio: 16 / 9 }]}
+	                        resizeMode={ResizeMode.COVER}
+	                        useNativeControls
+	                      />
+	                    ) : (
                       <ExpoImage
                         source={{ uri: originalMediaUrl }}
                         style={[styles.media, { aspectRatio: 16 / 9 }]}

@@ -169,24 +169,41 @@ export default function UserProfileScreen() {
             )}
           </RNView>
 
-          <RNView style={styles.profileHeader}>
-            <ExpoImage
-              source={avatarUrl ? { uri: avatarUrl } : undefined}
-              style={styles.avatarLarge}
-              contentFit="cover"
-              transition={120}
-              cachePolicy="memory-disk"
-            />
-            <Pressable
-              style={[styles.followBtn, following && styles.followingBtn]}
-              onPress={toggleFollow}
-              disabled={followLoading}
-            >
-              <Text style={styles.followBtnText}>
-                {following ? "Following" : "Follow"}
-              </Text>
-            </Pressable>
-          </RNView>
+	          <RNView style={styles.profileHeader}>
+	            <ExpoImage
+	              source={avatarUrl ? { uri: avatarUrl } : undefined}
+	              style={styles.avatarLarge}
+	              contentFit="cover"
+	              transition={120}
+	              cachePolicy="memory-disk"
+	            />
+	            <RNView style={styles.profileActions}>
+	              <Pressable
+	                style={[styles.messageBtn]}
+	                onPress={() =>
+	                  router.push({
+	                    pathname: "/messages/new",
+	                    params: {
+	                      recipientId: String(id),
+	                      displayName:
+	                        profile.displayName || profile.username || "User",
+	                    },
+	                  })
+	                }
+	              >
+	                <Text style={styles.messageBtnText}>Message</Text>
+	              </Pressable>
+	              <Pressable
+	                style={[styles.followBtn, following && styles.followingBtn]}
+	                onPress={toggleFollow}
+	                disabled={followLoading}
+	              >
+	                <Text style={styles.followBtnText}>
+	                  {following ? "Following" : "Follow"}
+	                </Text>
+	              </Pressable>
+	            </RNView>
+	          </RNView>
 
           <Text style={styles.displayName}>{profile.displayName || "User"}</Text>
           <Text style={styles.username}>@{profile.username || "user"}</Text>
@@ -301,13 +318,18 @@ const createStyles = (colors: AppThemeColors) =>
   bannerWrap: { borderRadius: 16, overflow: "hidden" },
   banner: { width: "100%", height: 140 },
   bannerPlaceholder: { width: "100%", height: 140, backgroundColor: colors.surfaceAlt },
-  profileHeader: {
-    marginTop: -32,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  avatarLarge: {
+	  profileHeader: {
+	    marginTop: -32,
+	    flexDirection: "row",
+	    alignItems: "center",
+	    justifyContent: "space-between",
+	  },
+	  profileActions: {
+	    flexDirection: "row",
+	    alignItems: "center",
+	    gap: 8,
+	  },
+	  avatarLarge: {
     width: 88,
     height: 88,
     borderRadius: 44,
@@ -315,14 +337,23 @@ const createStyles = (colors: AppThemeColors) =>
     borderColor: "#ff6b35",
     backgroundColor: colors.surface,
   },
-  followBtn: {
-    backgroundColor: "#ff6b35",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  followingBtn: { backgroundColor: colors.surfaceAlt },
-  followBtnText: { color: colors.text, fontWeight: "700" },
+	  followBtn: {
+	    backgroundColor: "#ff6b35",
+	    paddingHorizontal: 16,
+	    paddingVertical: 8,
+	    borderRadius: 999,
+	  },
+	  messageBtn: {
+	    backgroundColor: colors.surface,
+	    borderWidth: 1,
+	    borderColor: colors.borderStrong,
+	    paddingHorizontal: 16,
+	    paddingVertical: 8,
+	    borderRadius: 999,
+	  },
+	  followingBtn: { backgroundColor: colors.surfaceAlt },
+	  followBtnText: { color: colors.text, fontWeight: "700" },
+	  messageBtnText: { color: colors.text, fontWeight: "700" },
   displayName: { fontSize: 20, fontWeight: "700", color: colors.text },
   username: { color: colors.textMuted, fontSize: 12 },
   bio: { color: colors.textSoft, marginTop: 6, lineHeight: 18, fontSize: 12 },

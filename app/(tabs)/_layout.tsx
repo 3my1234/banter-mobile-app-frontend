@@ -15,6 +15,13 @@ import {
   setNotificationUnreadCount,
   subscribeNotificationUnreadCount,
 } from "@/lib/notificationBadge";
+import {
+  decrementMessageUnreadCount,
+  getMessageUnreadCount,
+  incrementMessageUnreadCount,
+  setMessageUnreadCount,
+  subscribeMessageUnreadCount,
+} from "@/lib/messageBadge";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -100,7 +107,7 @@ function HorizontalTabBar({
 export default function TabLayout() {
   useColorScheme();
   const [notificationUnread, setNotificationUnread] = useState(getNotificationUnreadCount());
-  const [messageUnread] = useState(0);
+  const [messageUnread, setMessageUnread] = useState(getMessageUnreadCount());
 
   const loadNotificationUnread = useCallback(async () => {
     try {
@@ -112,14 +119,32 @@ export default function TabLayout() {
     }
   }, []);
 
+  const loadMessageUnread = useCallback(async () => {
+    try {
+      const response = await apiFetch("/messages/unread-count");
+      setMessageUnreadCount(Number(response?.unreadCount || 0));
+    } catch {
+      // keep last value
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = subscribeNotificationUnreadCount(setNotificationUnread);
     return unsubscribe;
   }, []);
 
   useEffect(() => {
+    const unsubscribe = subscribeMessageUnreadCount(setMessageUnread);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     loadNotificationUnread();
-    const retry = setTimeout(loadNotificationUnread, 1500);
+    loadMessageUnread();
+    const retry = setTimeout(() => {
+      loadNotificationUnread();
+      loadMessageUnread();
+    }, 1500);
     let socket: any;
     let disposed = false;
     const setup = async () => {
@@ -136,6 +161,18 @@ export default function TabLayout() {
         socket.on("notifications.read_all", () => {
           setNotificationUnreadCount(0);
         });
+        socket.on("messages.new", () => {
+          incrementMessageUnreadCount(1);
+        });
+        socket.on("messages.requested", () => {
+          incrementMessageUnreadCount(1);
+        });
+        socket.on("messages.read", (payload?: { count?: number }) => {
+          decrementMessageUnreadCount(Number(payload?.count || 1));
+        });
+        socket.on("messages.request_resolved", () => {
+          loadMessageUnread();
+        });
       } catch {
         // ignore
       }
@@ -149,21 +186,26 @@ export default function TabLayout() {
         socket.off("notifications.new");
         socket.off("notifications.read");
         socket.off("notifications.read_all");
+        socket.off("messages.new");
+        socket.off("messages.requested");
+        socket.off("messages.read");
+        socket.off("messages.request_resolved");
       }
     };
-  }, [loadNotificationUnread]);
+  }, [loadMessageUnread, loadNotificationUnread]);
 
   useEffect(() => {
     const onAppStateChange = (nextState: string) => {
       if (nextState === "active") {
         loadNotificationUnread();
+        loadMessageUnread();
       }
     };
     const sub = AppState.addEventListener("change", onAppStateChange);
     return () => {
       sub.remove();
     };
-  }, [loadNotificationUnread]);
+  }, [loadMessageUnread, loadNotificationUnread]);
 
   return (
     <Tabs
