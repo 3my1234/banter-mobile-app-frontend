@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -559,13 +560,6 @@ socket.off("comment-deleted");
 	                    resizeMode={ResizeMode.CONTAIN}
 	                    useNativeControls
 	                  />
-	                  <Pressable
-	                    style={styles.mediaDownload}
-	                    onPress={saveMedia}
-                        hitSlop={12}
-                  >
-                    <FontAwesome name="download" size={14} color="#fff" />
-                  </Pressable>
                   {isPendingProcessedVideoUrl(mediaUrl) ? (
                     <View style={styles.processingBadge}>
                       <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
@@ -587,6 +581,18 @@ socket.off("comment-deleted");
                   />
                 </Pressable>
               )
+            ) : null}
+            {mediaType === "video" && mediaUrl ? (
+              <Pressable style={styles.downloadButton} onPress={saveMedia} disabled={savingMedia}>
+                {savingMedia ? (
+                  <ActivityIndicator color="#0d0d0d" />
+                ) : (
+                  <>
+                    <FontAwesome name="download" size={14} color="#0d0d0d" />
+                    <Text style={styles.downloadButtonText}>Download video</Text>
+                  </>
+                )}
+              </Pressable>
             ) : null}
             {isRepost && original ? (
               <View style={styles.repostCard}>
@@ -724,8 +730,16 @@ socket.off("comment-deleted");
     if (!mediaUrl) return;
     setSavingMedia(true);
     try {
-      await saveRemoteMediaToLibrary(mediaUrl);
-      Alert.alert("Saved", "Media saved to your gallery.");
+      const saved = await saveRemoteMediaToLibrary(mediaUrl);
+      Alert.alert("Saved", "Media saved to your gallery.", [
+        { text: "OK" },
+        {
+          text: "Preview",
+          onPress: async () => {
+            await Linking.openURL(saved.targetUrl);
+          },
+        },
+      ]);
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     } finally {
@@ -1084,16 +1098,18 @@ const createStyles = (colors: AppThemeColors) =>
     borderColor: colors.border,
   },
   media: { width: "100%", backgroundColor: "#000" },
-  mediaDownload: {
-    position: "absolute",
-    right: 8,
-    top: 8,
-    backgroundColor: colors.overlay,
-    padding: 6,
+  downloadButton: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#ff6b35",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 999,
-    zIndex: 5,
-    elevation: 5,
   },
+  downloadButtonText: { color: "#0d0d0d", fontWeight: "700" },
   processingBadge: {
     position: "absolute",
     left: 8,

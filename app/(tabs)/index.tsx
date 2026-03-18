@@ -626,8 +626,16 @@ export default function HomeFeed() {
 
   const downloadMedia = async (uri: string) => {
     try {
-      await saveRemoteMediaToLibrary(uri);
-      Alert.alert("Saved", "Media saved to your gallery.");
+      const saved = await saveRemoteMediaToLibrary(uri);
+      Alert.alert("Saved", "Media saved to your gallery.", [
+        { text: "OK" },
+        {
+          text: "Preview",
+          onPress: async () => {
+            await Linking.openURL(saved.targetUrl);
+          },
+        },
+      ]);
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     }

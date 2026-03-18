@@ -174,8 +174,14 @@ export async function saveRemoteMediaToLibrary(url: string) {
   await MediaLibrary.saveToLibraryAsync(download.uri);
   const asset = await MediaLibrary.createAssetAsync(download.uri).catch(() => null);
   if (asset) {
-    await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+    const album = await MediaLibrary.getAlbumAsync("Banter");
+    if (album) {
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false).catch(() => {});
+    } else {
+      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+    }
   }
+  return { localUri: download.uri, targetUrl };
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
