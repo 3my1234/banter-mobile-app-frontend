@@ -4,13 +4,13 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
   Share,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,7 +24,6 @@ import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
 import {
-  getPreviewableLocalUri,
   isPendingProcessedVideoUrl,
   normalizeMediaUrl,
   saveRemoteMediaToLibrary,
@@ -103,6 +102,7 @@ export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [post, setPost] = useState<Post | null>(null);
@@ -554,10 +554,17 @@ socket.off("comment-deleted");
             ) : null}
             {mediaUrl ? (
               mediaType === "video" ? (
-	                  <View style={styles.mediaWrapper}>
+	                  <View style={[styles.mediaWrapper, styles.detailVideoFrame]}>
 	                  <Video
 	                    source={{ uri: mediaUrl }}
-	                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
+	                    style={[
+                        styles.media,
+                        {
+                          aspectRatio: detailAspect || 16 / 9,
+                          minHeight: Math.min(screenWidth, 360),
+                          maxHeight: screenHeight * 0.72,
+                        },
+                      ]}
 	                    resizeMode={ResizeMode.CONTAIN}
 	                    useNativeControls
 	                  />
@@ -582,18 +589,6 @@ socket.off("comment-deleted");
                   />
                 </Pressable>
               )
-            ) : null}
-            {mediaType === "video" && mediaUrl ? (
-              <Pressable style={styles.downloadButton} onPress={saveMedia} disabled={savingMedia}>
-                {savingMedia ? (
-                  <ActivityIndicator color="#0d0d0d" />
-                ) : (
-                  <>
-                    <FontAwesome name="download" size={14} color="#0d0d0d" />
-                    <Text style={styles.downloadButtonText}>Download video</Text>
-                  </>
-                )}
-              </Pressable>
             ) : null}
             {isRepost && original ? (
               <View style={styles.repostCard}>
@@ -731,17 +726,8 @@ socket.off("comment-deleted");
     if (!mediaUrl) return;
     setSavingMedia(true);
     try {
-      const saved = await saveRemoteMediaToLibrary(mediaUrl);
-      Alert.alert("Saved", "Media saved to your gallery.", [
-        { text: "OK" },
-        {
-          text: "Preview",
-          onPress: async () => {
-            const previewUri = await getPreviewableLocalUri(saved.assetUri || saved.localUri);
-            await Linking.openURL(previewUri || saved.targetUrl);
-          },
-        },
-      ]);
+      await saveRemoteMediaToLibrary(mediaUrl);
+      Alert.alert("Saved", "Media saved to your gallery. It may take a few seconds to appear.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     } finally {
@@ -1099,19 +1085,10 @@ const createStyles = (colors: AppThemeColors) =>
     borderWidth: 1,
     borderColor: colors.border,
   },
-  media: { width: "100%", backgroundColor: "#000" },
-  downloadButton: {
-    marginTop: 10,
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#ff6b35",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+  detailVideoFrame: {
+    width: "100%",
   },
-  downloadButtonText: { color: "#0d0d0d", fontWeight: "700" },
+  media: { width: "100%", backgroundColor: "#000" },
   processingBadge: {
     position: "absolute",
     left: 8,

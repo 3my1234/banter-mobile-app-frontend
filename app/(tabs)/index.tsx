@@ -29,7 +29,6 @@ import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
 import {
-  getPreviewableLocalUri,
   isPendingProcessedVideoUrl,
   normalizeMediaUrl,
   saveRemoteMediaToLibrary,
@@ -627,17 +626,8 @@ export default function HomeFeed() {
 
   const downloadMedia = async (uri: string) => {
     try {
-      const saved = await saveRemoteMediaToLibrary(uri);
-      Alert.alert("Saved", "Media saved to your gallery.", [
-        { text: "OK" },
-        {
-          text: "Preview",
-          onPress: async () => {
-            const previewUri = await getPreviewableLocalUri(saved.assetUri || saved.localUri);
-            await Linking.openURL(previewUri || saved.targetUrl);
-          },
-        },
-      ]);
+      await saveRemoteMediaToLibrary(uri);
+      Alert.alert("Saved", "Media saved to your gallery. It may take a few seconds to appear.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     }

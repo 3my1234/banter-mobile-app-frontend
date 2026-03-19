@@ -178,21 +178,8 @@ export async function saveRemoteMediaToLibrary(url: string) {
   const ext = targetUrl.split(".").pop()?.split("?")[0] || "jpg";
   const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
   const download = await FileSystem.downloadAsync(targetUrl, fileUri);
-  await MediaLibrary.saveToLibraryAsync(download.uri);
-  return { localUri: download.uri, assetUri: undefined, targetUrl };
-}
-
-export async function getPreviewableLocalUri(uri?: string | null) {
-  if (!uri) return undefined;
-  if (uri.startsWith("content://")) return uri;
-  if (uri.startsWith("file://")) {
-    try {
-      return await FileSystem.getContentUriAsync(uri);
-    } catch {
-      return uri;
-    }
-  }
-  return uri;
+  const asset = await MediaLibrary.createAssetAsync(download.uri);
+  return { localUri: download.uri, assetUri: asset.uri, targetUrl };
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
