@@ -10,7 +10,6 @@ import {
   Share,
   StyleSheet,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,11 +22,9 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
-import {
-  isPendingProcessedVideoUrl,
-  normalizeMediaUrl,
-  saveRemoteMediaToLibrary,
-} from "@/lib/media";
+import { normalizeMediaUrl } from "@/lib/media";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -102,7 +99,6 @@ export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [post, setPost] = useState<Post | null>(null);
@@ -554,25 +550,19 @@ socket.off("comment-deleted");
             ) : null}
             {mediaUrl ? (
               mediaType === "video" ? (
-	                  <View style={[styles.mediaWrapper, styles.detailVideoFrame]}>
+	                  <View style={styles.mediaWrapper}>
 	                  <Video
 	                    source={{ uri: mediaUrl }}
-	                    style={[
-                        styles.media,
-                        {
-                          aspectRatio: detailAspect || 16 / 9,
-                          minHeight: Math.min(screenWidth, 360),
-                          maxHeight: screenHeight * 0.72,
-                        },
-                      ]}
-	                    resizeMode={ResizeMode.CONTAIN}
+	                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
+	                    resizeMode={ResizeMode.COVER}
 	                    useNativeControls
 	                  />
-                  {isPendingProcessedVideoUrl(mediaUrl) ? (
-                    <View style={styles.processingBadge}>
-                      <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
-                    </View>
-                  ) : null}
+	                  <Pressable
+	                    style={styles.mediaDownload}
+	                    onPress={saveMedia}
+                  >
+                    <FontAwesome name="download" size={14} color="#fff" />
+                  </Pressable>
                 </View>
               ) : (
                 <Pressable
@@ -621,19 +611,12 @@ socket.off("comment-deleted");
                 {originalMediaUrl ? (
 	                  <View style={styles.mediaWrapper}>
 	                    {originalMediaType === "video" ? (
-                        <View>
 	                      <Video
 	                        source={{ uri: originalMediaUrl }}
 	                        style={[styles.media, { aspectRatio: 16 / 9 }]}
-	                        resizeMode={ResizeMode.CONTAIN}
+	                        resizeMode={ResizeMode.COVER}
 	                        useNativeControls
 	                      />
-                          {isPendingProcessedVideoUrl(originalMediaUrl) ? (
-                            <View style={styles.processingBadge}>
-                              <Text style={styles.processingBadgeText}>Processing Banter outro...</Text>
-                            </View>
-                          ) : null}
-                        </View>
 	                    ) : (
                       <ExpoImage
                         source={{ uri: originalMediaUrl }}
@@ -726,8 +709,16 @@ socket.off("comment-deleted");
     if (!mediaUrl) return;
     setSavingMedia(true);
     try {
-      await saveRemoteMediaToLibrary(mediaUrl);
-      Alert.alert("Saved", "Media saved to your gallery. It may take a few seconds to appear.");
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (!perm.granted) {
+        throw new Error("Permission denied");
+      }
+      const ext = mediaUrl.split(".").pop()?.split("?")[0] || "jpg";
+      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
+      const download = await FileSystem.downloadAsync(mediaUrl, fileUri);
+      const asset = await MediaLibrary.createAssetAsync(download.uri);
+      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      Alert.alert("Saved", "Media saved to your gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     } finally {
@@ -1081,27 +1072,18 @@ const createStyles = (colors: AppThemeColors) =>
     marginTop: 8,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#000",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  detailVideoFrame: {
-    width: "100%",
-  },
-  media: { width: "100%", backgroundColor: "#000" },
-  processingBadge: {
+  media: { width: "100%" },
+  mediaDownload: {
     position: "absolute",
-    left: 8,
-    bottom: 8,
+    right: 8,
+    top: 8,
     backgroundColor: colors.overlay,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    padding: 6,
     borderRadius: 999,
-  },
-  processingBadgeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
   },
   voteActions: { flexDirection: "row", gap: 10, marginTop: 8 },
   stayBtn: {

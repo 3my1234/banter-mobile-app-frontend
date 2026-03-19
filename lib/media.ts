@@ -1,6 +1,4 @@
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
 import { apiFetch, API_BASE_URL } from "./api";
 
 type PresignResponse = {
@@ -139,47 +137,6 @@ export async function uploadToS3(
     xhr.onerror = () => reject(new Error("Upload failed (network error)"));
     xhr.send(blob);
   });
-}
-
-export function isStreamMediaUrl(url?: string | null) {
-  return !!url && /\.m3u8($|[?#])/i.test(url);
-}
-
-export function isPendingProcessedVideoUrl(url?: string | null) {
-  if (!url) return false;
-  return /\/post\/branded\//i.test(url) && !isStreamMediaUrl(url);
-}
-
-export function getDownloadableMediaUrl(url: string) {
-  if (!isStreamMediaUrl(url)) return url;
-  try {
-    const parsed = new URL(url);
-    parsed.pathname = parsed.pathname.replace(/\/[^/]+\.m3u8$/i, "/download.mp4");
-    return parsed.toString();
-  } catch {
-    return url.replace(/\/[^/]+\.m3u8($|[?#].*)/i, "/download.mp4$1");
-  }
-}
-
-export async function saveRemoteMediaToLibrary(url: string) {
-  if (isPendingProcessedVideoUrl(url)) {
-    throw new Error("This video is still processing. Wait for the Banter outro version to finish.");
-  }
-  const targetUrl = getDownloadableMediaUrl(url);
-  if (isStreamMediaUrl(targetUrl)) {
-    throw new Error("Processed video download is not ready yet. Please try again shortly.");
-  }
-
-  const perm = await MediaLibrary.requestPermissionsAsync();
-  if (!perm.granted) {
-    throw new Error("Permission denied");
-  }
-
-  const ext = targetUrl.split(".").pop()?.split("?")[0] || "jpg";
-  const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-  const download = await FileSystem.downloadAsync(targetUrl, fileUri);
-  const asset = await MediaLibrary.createAssetAsync(download.uri);
-  return { localUri: download.uri, assetUri: asset.uri, targetUrl };
 }
 
 const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
