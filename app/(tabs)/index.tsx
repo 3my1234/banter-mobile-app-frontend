@@ -1525,7 +1525,7 @@ export default function HomeFeed() {
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const controlsPad = isVideo ? 56 : 0;
+    const controlsPad = isVideo ? 96 : 0;
     const stayDropBottom = 12 + insets.bottom + 20 + controlsPad + (isVideo ? 30 : 0);
     const sideActionsBottom = stayDropBottom + 96;
     const metaBottom = stayDropBottom + 120;
@@ -1715,6 +1715,15 @@ export default function HomeFeed() {
               />
               <Text style={styles.banterActionText}>{dislikeCount}</Text>
             </Pressable>
+            {media ? (
+              <Pressable
+                style={styles.banterAction}
+                onPress={() => downloadMedia(media.uri)}
+              >
+                <FontAwesome name="download" size={banterActionIconSize} color="#fff" />
+                <Text style={styles.banterActionText}>Save</Text>
+              </Pressable>
+            ) : null}
             <Pressable style={styles.banterAction} onPress={() => handleShare(item)}>
               <FontAwesome name="share-alt" size={banterActionIconSize} color="#fff" />
               <Text style={styles.banterActionText}>{item.shareCount ?? 0}</Text>

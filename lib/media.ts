@@ -243,6 +243,22 @@ export async function saveMediaToLibrary(
   const prefix = options?.fileNamePrefix || "banter";
   const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
   const download = await FileSystem.downloadAsync(sourceUrl, fileUri);
-  await MediaLibrary.saveToLibraryAsync(download.uri);
-  return download.uri;
+  if (download.status < 200 || download.status >= 300) {
+    throw new Error(`Download failed (${download.status})`);
+  }
+
+  try {
+    await MediaLibrary.saveToLibraryAsync(download.uri);
+    return download.uri;
+  } catch (saveError: any) {
+    try {
+      const asset = await MediaLibrary.createAssetAsync(download.uri);
+      if (options?.albumName) {
+        await MediaLibrary.createAlbumAsync(options.albumName, asset, false).catch(() => {});
+      }
+      return asset.uri;
+    } catch {
+      throw new Error(saveError?.message || "Could not save media.");
+    }
+  }
 }
