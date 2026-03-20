@@ -1,7 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
-import { apiFetch, API_BASE_URL } from "./api";
+import { apiFetch, API_BASE_URL, getSession } from "./api";
 
 type PresignResponse = {
   success: boolean;
@@ -156,6 +156,15 @@ function toBackendPublicViewUrl(keyOrPath: string) {
   return `${API_ORIGIN}/api/public/images/view/${normalized}`;
 }
 
+function toBackendAuthedViewUrl(keyOrPath: string) {
+  const normalized = keyOrPath
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `${API_ORIGIN}/api/images/view/${normalized}`;
+}
+
 function extractCdnPathFromS3(url: string) {
   try {
     const parsed = new URL(url);
@@ -251,7 +260,7 @@ function resolveDownloadableMediaUrl(url?: string | null) {
 
   const key = extractMediaKey(url) || extractMediaKey(normalized);
   if (key) {
-    return toBackendPublicViewUrl(key);
+    return toBackendAuthedViewUrl(key);
   }
 
   return normalized;
@@ -275,6 +284,12 @@ export async function saveMediaToLibrary(
     throw new Error("Permission denied");
   }
 
+  const session = await getSession();
+  const headers =
+    sourceUrl.startsWith(`${API_ORIGIN}/api/images/view/`) && session?.token
+      ? { Authorization: `Bearer ${session.token}` }
+      : undefined;
+
   const lowerUrl = sourceUrl.toLowerCase();
   const fallbackExt =
     options?.preferredExtension ||
@@ -282,7 +297,9 @@ export async function saveMediaToLibrary(
   const extension = options?.preferredExtension || inferFileExtension(sourceUrl, fallbackExt);
   const prefix = options?.fileNamePrefix || "banter";
   const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
-  const download = await FileSystem.downloadAsync(sourceUrl, fileUri);
+  const download = await FileSystem.downloadAsync(sourceUrl, fileUri, {
+    headers,
+  });
   if (download.status < 200 || download.status >= 300) {
     throw new Error(`Download failed (${download.status})`);
   }
