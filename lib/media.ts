@@ -151,6 +151,15 @@ function toCdnUrl(keyOrPath: string) {
   return `${MEDIA_BASE_URL}/${normalized}`;
 }
 
+function toBackendPublicViewUrl(keyOrPath: string) {
+  const normalized = keyOrPath
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `${API_ORIGIN}/api/public/images/view/${normalized}`;
+}
+
 function extractCdnPathFromS3(url: string) {
   try {
     const parsed = new URL(url);
@@ -174,6 +183,30 @@ function inferFileExtension(url: string, fallback: string) {
     return match?.[1]?.toLowerCase() || fallback;
   } catch {
     return fallback;
+  }
+}
+
+function extractMediaKey(url?: string | null) {
+  if (!url) return "";
+
+  const viewPrefix = "/api/images/view/";
+  const publicViewPrefix = "/api/public/images/view/";
+
+  if (url.includes(publicViewPrefix) || url.includes(viewPrefix)) {
+    const targetPrefix = url.includes(publicViewPrefix) ? publicViewPrefix : viewPrefix;
+    const idx = url.indexOf(targetPrefix);
+    return decodeURIComponent(url.slice(idx + targetPrefix.length).replace(/^\/+/, ""));
+  }
+
+  if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(url)) {
+    return extractCdnPathFromS3(url);
+  }
+
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+  } catch {
+    return url.replace(/^\/+/, "");
   }
 }
 
@@ -219,6 +252,12 @@ function resolveDownloadableMediaUrl(url?: string | null) {
   if (/\.m3u8($|\?)/i.test(normalized)) {
     return replaceHlsManifestWithMp4(normalized);
   }
+
+  const key = extractMediaKey(url) || extractMediaKey(normalized);
+  if (key) {
+    return toBackendPublicViewUrl(key);
+  }
+
   return normalized;
 }
 
@@ -241,17 +280,6 @@ export async function saveMediaToLibrary(
   }
 
   let downloadUrl = sourceUrl;
-  if (!/\.m3u8($|\?)/i.test(sourceUrl)) {
-    const response = await apiFetch(
-      "/media/download-url",
-      {
-        method: "POST",
-        body: JSON.stringify({ mediaUrl: url }),
-      },
-      true
-    );
-    downloadUrl = response?.downloadUrl || sourceUrl;
-  }
 
   const lowerUrl = downloadUrl.toLowerCase();
   const fallbackExt =
