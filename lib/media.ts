@@ -151,6 +151,11 @@ function toCdnUrl(keyOrPath: string) {
   return `${MEDIA_BASE_URL}/${normalized}`;
 }
 
+function toBackendPublicViewUrl(keyOrPath: string) {
+  const normalized = keyOrPath.replace(/^\/+/, "");
+  return `${API_ORIGIN}/api/public/images/view/${normalized}`;
+}
+
 function extractCdnPathFromS3(url: string) {
   try {
     const parsed = new URL(url);
@@ -174,6 +179,30 @@ function inferFileExtension(url: string, fallback: string) {
     return match?.[1]?.toLowerCase() || fallback;
   } catch {
     return fallback;
+  }
+}
+
+function extractMediaKey(url?: string | null) {
+  if (!url) return "";
+
+  const viewPrefix = "/api/images/view/";
+  const publicViewPrefix = "/api/public/images/view/";
+
+  if (url.includes(publicViewPrefix) || url.includes(viewPrefix)) {
+    const targetPrefix = url.includes(publicViewPrefix) ? publicViewPrefix : viewPrefix;
+    const idx = url.indexOf(targetPrefix);
+    return url.slice(idx + targetPrefix.length).replace(/^\/+/, "");
+  }
+
+  if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(url)) {
+    return extractCdnPathFromS3(url);
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.replace(/^\/+/, "");
+  } catch {
+    return url.replace(/^\/+/, "");
   }
 }
 
@@ -214,7 +243,18 @@ function resolvePlayableMediaUrl(url?: string | null) {
 }
 
 function resolveDownloadableMediaUrl(url?: string | null) {
-  return resolvePlayableMediaUrl(url);
+  const normalized = normalizeMediaUrl(url);
+  if (!normalized) return undefined;
+  if (/\.m3u8($|\?)/i.test(normalized)) {
+    return replaceHlsManifestWithMp4(normalized);
+  }
+
+  const key = extractMediaKey(url) || extractMediaKey(normalized);
+  if (key) {
+    return toBackendPublicViewUrl(key);
+  }
+
+  return normalized;
 }
 
 export async function saveMediaToLibrary(
