@@ -259,6 +259,7 @@ export async function saveMediaToLibrary(
     (lowerUrl.includes(".mp4") ? "mp4" : "jpg");
   const extension = options?.preferredExtension || inferFileExtension(downloadUrl, fallbackExt);
   const prefix = options?.fileNamePrefix || "banter";
+  const albumName = options?.albumName || "Banter";
   const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
   const download = await FileSystem.downloadAsync(downloadUrl, fileUri);
   if (download.status < 200 || download.status >= 300) {
@@ -266,17 +267,18 @@ export async function saveMediaToLibrary(
   }
 
   try {
+    const asset = await MediaLibrary.createAssetAsync(download.uri);
+    try {
+      await MediaLibrary.createAlbumAsync(albumName, asset, false);
+    } catch {
+      const existingAlbum = await MediaLibrary.getAlbumAsync(albumName);
+      if (existingAlbum) {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false).catch(() => {});
+      }
+    }
+    return asset.uri;
+  } catch (saveError: any) {
     await MediaLibrary.saveToLibraryAsync(download.uri);
     return download.uri;
-  } catch (saveError: any) {
-    try {
-      const asset = await MediaLibrary.createAssetAsync(download.uri);
-      if (options?.albumName) {
-        await MediaLibrary.createAlbumAsync(options.albumName, asset, false).catch(() => {});
-      }
-      return asset.uri;
-    } catch {
-      throw new Error(saveError?.message || "Could not save media.");
-    }
   }
 }
