@@ -1,7 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
-import { apiFetch, API_BASE_URL, getSession } from "./api";
+import { apiFetch, API_BASE_URL } from "./api";
 
 type PresignResponse = {
   success: boolean;
@@ -151,20 +151,6 @@ function toCdnUrl(keyOrPath: string) {
   return `${MEDIA_BASE_URL}/${normalized}`;
 }
 
-function toBackendPublicViewUrl(keyOrPath: string) {
-  const normalized = keyOrPath.replace(/^\/+/, "");
-  return `${API_ORIGIN}/api/public/images/view/${normalized}`;
-}
-
-function toBackendAuthedViewUrl(keyOrPath: string) {
-  const normalized = keyOrPath
-    .replace(/^\/+/, "")
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-  return `${API_ORIGIN}/api/images/view/${normalized}`;
-}
-
 function extractCdnPathFromS3(url: string) {
   try {
     const parsed = new URL(url);
@@ -188,30 +174,6 @@ function inferFileExtension(url: string, fallback: string) {
     return match?.[1]?.toLowerCase() || fallback;
   } catch {
     return fallback;
-  }
-}
-
-function extractMediaKey(url?: string | null) {
-  if (!url) return "";
-
-  const viewPrefix = "/api/images/view/";
-  const publicViewPrefix = "/api/public/images/view/";
-
-  if (url.includes(publicViewPrefix) || url.includes(viewPrefix)) {
-    const targetPrefix = url.includes(publicViewPrefix) ? publicViewPrefix : viewPrefix;
-    const idx = url.indexOf(targetPrefix);
-    return url.slice(idx + targetPrefix.length).replace(/^\/+/, "");
-  }
-
-  if (/^https?:\/\/.+\.s3[.-].*amazonaws\.com\//i.test(url)) {
-    return extractCdnPathFromS3(url);
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.pathname.replace(/^\/+/, "");
-  } catch {
-    return url.replace(/^\/+/, "");
   }
 }
 
@@ -257,12 +219,6 @@ function resolveDownloadableMediaUrl(url?: string | null) {
   if (/\.m3u8($|\?)/i.test(normalized)) {
     return replaceHlsManifestWithMp4(normalized);
   }
-
-  const key = extractMediaKey(url) || extractMediaKey(normalized);
-  if (key) {
-    return toBackendAuthedViewUrl(key);
-  }
-
   return normalized;
 }
 
@@ -284,22 +240,27 @@ export async function saveMediaToLibrary(
     throw new Error("Permission denied");
   }
 
-  const session = await getSession();
-  const headers =
-    sourceUrl.startsWith(`${API_ORIGIN}/api/images/view/`) && session?.token
-      ? { Authorization: `Bearer ${session.token}` }
-      : undefined;
+  let downloadUrl = sourceUrl;
+  if (!/\.m3u8($|\?)/i.test(sourceUrl)) {
+    const response = await apiFetch(
+      "/media/download-url",
+      {
+        method: "POST",
+        body: JSON.stringify({ mediaUrl: url }),
+      },
+      true
+    );
+    downloadUrl = response?.downloadUrl || sourceUrl;
+  }
 
-  const lowerUrl = sourceUrl.toLowerCase();
+  const lowerUrl = downloadUrl.toLowerCase();
   const fallbackExt =
     options?.preferredExtension ||
     (lowerUrl.includes(".mp4") ? "mp4" : "jpg");
-  const extension = options?.preferredExtension || inferFileExtension(sourceUrl, fallbackExt);
+  const extension = options?.preferredExtension || inferFileExtension(downloadUrl, fallbackExt);
   const prefix = options?.fileNamePrefix || "banter";
   const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
-  const download = await FileSystem.downloadAsync(sourceUrl, fileUri, {
-    headers,
-  });
+  const download = await FileSystem.downloadAsync(downloadUrl, fileUri);
   if (download.status < 200 || download.status >= 300) {
     throw new Error(`Download failed (${download.status})`);
   }
