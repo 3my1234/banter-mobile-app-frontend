@@ -267,11 +267,6 @@ export async function saveMediaToLibrary(
   }
 
   const asset = await MediaLibrary.createAssetAsync(download.uri);
-  const existingAlbum = await MediaLibrary.getAlbumAsync(albumName);
-  if (existingAlbum) {
-    await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false);
-  } else {
-    await MediaLibrary.createAlbumAsync(albumName, asset, false);
-  }
+  await MediaLibrary.createAlbumAsync(albumName, asset, false).catch(() => {});
   return asset.uri;
 }
