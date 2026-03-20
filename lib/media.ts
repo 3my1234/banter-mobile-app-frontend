@@ -1,4 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import { apiFetch, API_BASE_URL } from "./api";
 
 type PresignResponse = {
@@ -158,6 +160,23 @@ function extractCdnPathFromS3(url: string) {
   }
 }
 
+function replaceHlsManifestWithMp4(url: string) {
+  if (!/\.m3u8($|\?)/i.test(url)) return url;
+  const [base, query = ""] = url.split("?");
+  const nextBase = base.replace(/[^/]+\.m3u8$/i, "download.mp4");
+  return query ? `${nextBase}?${query}` : nextBase;
+}
+
+function inferFileExtension(url: string, fallback: string) {
+  try {
+    const pathname = new URL(url).pathname;
+    const match = pathname.match(/\.([a-z0-9]+)$/i);
+    return match?.[1]?.toLowerCase() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function normalizeMediaUrl(url?: string | null) {
   if (!url) return undefined;
   let normalized = url;
@@ -186,4 +205,44 @@ export function normalizeMediaUrl(url?: string | null) {
     normalized = toCdnUrl(trimmed);
   }
   return normalized;
+}
+
+function resolvePlayableMediaUrl(url?: string | null) {
+  const normalized = normalizeMediaUrl(url);
+  if (!normalized) return undefined;
+  return replaceHlsManifestWithMp4(normalized);
+}
+
+function resolveDownloadableMediaUrl(url?: string | null) {
+  return resolvePlayableMediaUrl(url);
+}
+
+export async function saveMediaToLibrary(
+  url: string,
+  options?: {
+    albumName?: string;
+    fileNamePrefix?: string;
+    preferredExtension?: string;
+  }
+) {
+  const sourceUrl = resolveDownloadableMediaUrl(url);
+  if (!sourceUrl) {
+    throw new Error("Media URL is missing.");
+  }
+
+  const permission = await MediaLibrary.requestPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error("Permission denied");
+  }
+
+  const lowerUrl = sourceUrl.toLowerCase();
+  const fallbackExt =
+    options?.preferredExtension ||
+    (lowerUrl.includes(".mp4") ? "mp4" : "jpg");
+  const extension = options?.preferredExtension || inferFileExtension(sourceUrl, fallbackExt);
+  const prefix = options?.fileNamePrefix || "banter";
+  const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
+  const download = await FileSystem.downloadAsync(sourceUrl, fileUri);
+  await MediaLibrary.saveToLibraryAsync(download.uri);
+  return download.uri;
 }

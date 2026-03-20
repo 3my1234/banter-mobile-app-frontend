@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,9 +22,10 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
-import { normalizeMediaUrl } from "@/lib/media";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
+import {
+  normalizeMediaUrl,
+  saveMediaToLibrary,
+} from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -557,12 +558,6 @@ socket.off("comment-deleted");
 	                    resizeMode={ResizeMode.COVER}
 	                    useNativeControls
 	                  />
-	                  <Pressable
-	                    style={styles.mediaDownload}
-	                    onPress={saveMedia}
-                  >
-                    <FontAwesome name="download" size={14} color="#fff" />
-                  </Pressable>
                 </View>
               ) : (
                 <Pressable
@@ -709,15 +704,7 @@ socket.off("comment-deleted");
     if (!mediaUrl) return;
     setSavingMedia(true);
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        throw new Error("Permission denied");
-      }
-      const ext = mediaUrl.split(".").pop()?.split("?")[0] || "jpg";
-      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-      const download = await FileSystem.downloadAsync(mediaUrl, fileUri);
-      const asset = await MediaLibrary.createAssetAsync(download.uri);
-      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      await saveMediaToLibrary(mediaUrl);
       Alert.alert("Saved", "Media saved to your gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");

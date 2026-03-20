@@ -28,7 +28,10 @@ import { useRouter } from "expo-router";
 import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch } from "@/lib/api";
-import { normalizeMediaUrl } from "@/lib/media";
+import {
+  normalizeMediaUrl,
+  saveMediaToLibrary,
+} from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
 import { PendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
 import {
@@ -39,8 +42,6 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { getSocket } from "@/lib/socket";
-import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
 import { FlashList } from "@shopify/flash-list";
 import * as Linking from "expo-linking";
 
@@ -624,15 +625,7 @@ export default function HomeFeed() {
 
   const downloadMedia = async (uri: string) => {
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) {
-        throw new Error("Permission denied");
-      }
-      const ext = uri.split(".").pop()?.split("?")[0] || "jpg";
-      const fileUri = `${FileSystem.documentDirectory}banter-${Date.now()}.${ext}`;
-      const download = await FileSystem.downloadAsync(uri, fileUri);
-      const asset = await MediaLibrary.createAssetAsync(download.uri);
-      await MediaLibrary.createAlbumAsync("Banter", asset, false).catch(() => {});
+      await saveMediaToLibrary(uri);
       Alert.alert("Saved", "Media saved to your gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
@@ -1468,7 +1461,7 @@ export default function HomeFeed() {
 	                      resizeMode={ResizeMode.COVER}
 	                      shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                      isLooping
-	                      useNativeControls={false}
+	                      useNativeControls
 	                      isMuted={false}
 	                      volume={1.0}
 	                      ref={(ref) => {
@@ -1587,7 +1580,7 @@ export default function HomeFeed() {
 	                    resizeMode={ResizeMode.COVER}
 	                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                    isLooping
-	                    useNativeControls={false}
+	                    useNativeControls
 	                    isMuted={false}
 	                    volume={1.0}
 	                    onPlaybackStatusUpdate={(status) => {
