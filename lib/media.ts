@@ -266,19 +266,16 @@ export async function saveMediaToLibrary(
     throw new Error(`Download failed (${download.status})`);
   }
 
-  try {
-    const asset = await MediaLibrary.createAssetAsync(download.uri);
-    try {
-      await MediaLibrary.createAlbumAsync(albumName, asset, false);
-    } catch {
-      const existingAlbum = await MediaLibrary.getAlbumAsync(albumName);
-      if (existingAlbum) {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false).catch(() => {});
-      }
-    }
-    return asset.uri;
-  } catch (saveError: any) {
-    await MediaLibrary.saveToLibraryAsync(download.uri);
-    return download.uri;
+  const asset = await MediaLibrary.createAssetAsync(download.uri);
+  const existingAlbum = await MediaLibrary.getAlbumAsync(albumName);
+  if (existingAlbum) {
+    await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false);
+  } else {
+    await MediaLibrary.createAlbumAsync(albumName, asset, false);
   }
+  const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
+  if (!assetInfo?.uri) {
+    throw new Error("Saved asset could not be verified.");
+  }
+  return asset.uri;
 }
