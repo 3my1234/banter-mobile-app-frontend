@@ -273,9 +273,5 @@ export async function saveMediaToLibrary(
   } else {
     await MediaLibrary.createAlbumAsync(albumName, asset, false);
   }
-  const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
-  if (!assetInfo?.uri) {
-    throw new Error("Saved asset could not be verified.");
-  }
   return asset.uri;
 }
