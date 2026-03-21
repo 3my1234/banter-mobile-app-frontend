@@ -18,7 +18,14 @@ import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
-import { captureMedia, pickMedia, presignUpload, uploadToS3, PickedMedia } from "@/lib/media";
+import {
+  captureMedia,
+  pickMedia,
+  pickMultipleImages,
+  presignUpload,
+  uploadToS3,
+  PickedMedia,
+} from "@/lib/media";
 import { useFocusEffect } from "@react-navigation/native";
 import { addPendingPost, removePendingPost, updatePendingPost } from "@/lib/uploadQueue";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
@@ -33,7 +40,7 @@ export default function ComposeScreen() {
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [mode, setMode] = useState<"banter" | "roast">("banter");
   const [text, setText] = useState("");
-  const [media, setMedia] = useState<PickedMedia | null>(null);
+  const [mediaItems, setMediaItems] = useState<PickedMedia[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,14 +53,14 @@ export default function ComposeScreen() {
   const bypassDiscardGuardRef = useRef(false);
 
   const hasDraft =
-    !!text.trim() || !!media || tags.length > 0 || !!query.trim() || !!league;
+    !!text.trim() || mediaItems.length > 0 || tags.length > 0 || !!query.trim() || !!league;
 
   useFocusEffect(
     React.useCallback(() => {
       mountedRef.current = true;
       bypassDiscardGuardRef.current = false;
       setText("");
-      setMedia(null);
+      setMediaItems([]);
       setTags([]);
       setQuery("");
       setLeague(null);
@@ -77,6 +84,12 @@ export default function ComposeScreen() {
     };
     loadLeagues();
   }, []);
+
+  useEffect(() => {
+    if (mode === "roast" && mediaItems.length > 1) {
+      setMediaItems((prev) => prev.slice(0, 1));
+    }
+  }, [mode, mediaItems.length]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -154,9 +167,16 @@ export default function ComposeScreen() {
 
   const handlePick = async (kind: "image" | "video") => {
     try {
+      if (kind === "image" && mode === "banter") {
+        const pickedItems = await pickMultipleImages(6);
+        if (pickedItems.length) {
+          setMediaItems(pickedItems.map((item) => ({ ...item, isVideo: false })));
+        }
+        return;
+      }
       const picked = await pickMedia(kind);
       if (picked) {
-        setMedia(picked);
+        setMediaItems([picked]);
       }
     } catch (error) {
       setError((error as Error)?.message || "Failed to pick media.");
@@ -167,11 +187,15 @@ export default function ComposeScreen() {
     try {
       const captured = await captureMedia(kind);
       if (captured) {
-        setMedia(captured);
+        setMediaItems([captured]);
       }
     } catch (error) {
       setError((error as Error)?.message || "Failed to record media.");
     }
+  };
+
+  const removeMediaAt = (index: number) => {
+    setMediaItems((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const handleSubmit = async () => {
@@ -184,6 +208,11 @@ export default function ComposeScreen() {
     const tempId = `pending-${Date.now()}`;
     const content =
       mode === "roast" ? `${ROAST_PREFIX} ${text.trim()}` : text.trim();
+    const pendingPreviewItems = mediaItems.map((item) => ({
+      type: item.isVideo ? "video" : "image",
+      uri: item.uri,
+      ratio: 16 / 9,
+    })) as Array<{ type: "image" | "video"; uri: string; ratio?: number }>;
     addPendingPost({
       id: tempId,
       content,
@@ -191,31 +220,41 @@ export default function ComposeScreen() {
       createdAt: new Date().toISOString(),
       tags,
       league,
-      progress: media ? 0 : 100,
-      media: media
-        ? {
-            type: media.isVideo ? "video" : "image",
-            uri: media.uri,
-            ratio: 16 / 9,
-          }
-        : undefined,
+      progress: mediaItems.length ? 0 : 100,
+      media: pendingPreviewItems[0],
+      mediaItems: pendingPreviewItems,
     });
     bypassDiscardGuardRef.current = true;
     router.back();
     try {
       let mediaUrl: string | undefined;
       let mediaType: "image" | "video" | undefined;
-      if (media) {
-        const presign = await presignUpload(
-          media.fileName,
-          media.mimeType,
-          "post"
-        );
-        await uploadToS3(presign.uploadUrl, media.uri, media.mimeType, (progress) => {
-          updatePendingPost(tempId, { progress });
-        });
-        mediaUrl = presign.viewUrl;
-        mediaType = media.isVideo ? "video" : "image";
+      let uploadedMediaItems:
+        | Array<{ url: string; type: "image" | "video" }>
+        | undefined;
+
+      if (mediaItems.length) {
+        uploadedMediaItems = [];
+        for (let index = 0; index < mediaItems.length; index += 1) {
+          const item = mediaItems[index];
+          const presign = await presignUpload(
+            item.fileName,
+            item.mimeType,
+            "post"
+          );
+          await uploadToS3(presign.uploadUrl, item.uri, item.mimeType, (progress) => {
+            const overallProgress = Math.round(
+              ((index + progress / 100) / mediaItems.length) * 100
+            );
+            updatePendingPost(tempId, { progress: overallProgress });
+          });
+          uploadedMediaItems.push({
+            url: presign.viewUrl,
+            type: item.isVideo ? "video" : "image",
+          });
+        }
+        mediaUrl = uploadedMediaItems[0]?.url;
+        mediaType = uploadedMediaItems[0]?.type;
       }
 
       await apiFetch("/posts", {
@@ -224,6 +263,7 @@ export default function ComposeScreen() {
           content,
           mediaUrl,
           mediaType,
+          mediaItems: uploadedMediaItems,
           isRoast: mode === "roast",
           tags,
           league,
@@ -296,25 +336,52 @@ export default function ComposeScreen() {
             onChangeText={setText}
           />
 
-          {media ? (
+          {mediaItems.length ? (
             <View style={styles.mediaPreview}>
-              {media.isVideo ? (
+              {mediaItems.length === 1 && mediaItems[0].isVideo ? (
                 <Video
-                  source={{ uri: media.uri }}
+                  source={{ uri: mediaItems[0].uri }}
                   style={styles.media}
                   resizeMode={ResizeMode.COVER}
                   useNativeControls
                 />
               ) : (
-                <ExpoImage
-                  source={{ uri: media.uri }}
-                  style={styles.media}
-                  contentFit="cover"
-                  transition={180}
-                />
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.mediaPreviewScroll}
+                >
+                  {mediaItems.map((item, index) => (
+                    <View key={`${item.uri}-${index}`} style={styles.mediaPreviewItem}>
+                      <ExpoImage
+                        source={{ uri: item.uri }}
+                        style={styles.media}
+                        contentFit="cover"
+                        transition={180}
+                      />
+                      <Pressable
+                        style={styles.mediaPreviewRemove}
+                        onPress={() => removeMediaAt(index)}
+                        hitSlop={10}
+                      >
+                        <FontAwesome name="close" size={14} color="#fff" />
+                      </Pressable>
+                      {mediaItems.length > 1 ? (
+                        <View style={styles.mediaPreviewCount}>
+                          <Text style={styles.mediaPreviewCountText}>
+                            {index + 1}/{mediaItems.length}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                </ScrollView>
               )}
-              <Pressable onPress={() => setMedia(null)}>
-                <Text style={styles.removeMedia}>Remove media</Text>
+              <Pressable onPress={() => setMediaItems([])}>
+                <Text style={styles.removeMedia}>
+                  {mediaItems.length > 1 ? "Remove all media" : "Remove media"}
+                </Text>
               </Pressable>
             </View>
           ) : null}
@@ -322,7 +389,9 @@ export default function ComposeScreen() {
           <View style={styles.actionsRow}>
             <Pressable style={styles.mediaAction} onPress={() => handlePick("image")}>
               <FontAwesome name="image" size={18} color="#ff6b35" />
-              <Text style={styles.mediaActionText}>Image</Text>
+              <Text style={styles.mediaActionText}>
+                {mode === "banter" ? "Images" : "Image"}
+              </Text>
             </Pressable>
             <Pressable style={styles.mediaAction} onPress={() => handlePick("video")}>
               <FontAwesome name="video-camera" size={18} color="#ff6b35" />
@@ -334,7 +403,7 @@ export default function ComposeScreen() {
             </Pressable>
           </View>
           <Text style={styles.captureNote}>
-            Record opens your device camera. All uploaded or recorded post videos will be processed with the Banter outro after upload.
+            Posts support up to 6 images or 1 video. Roasts currently support a single media item.
           </Text>
 
           <View style={styles.tagsSection}>
@@ -453,7 +522,37 @@ const createStyles = (colors: AppThemeColors) =>
     fontSize: 16,
   },
   mediaPreview: { gap: 8 },
+  mediaPreviewScroll: { gap: 10 },
+  mediaPreviewItem: {
+    width: 280,
+    position: "relative",
+  },
   media: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12 },
+  mediaPreviewRemove: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  mediaPreviewCount: {
+    position: "absolute",
+    left: 10,
+    bottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  mediaPreviewCountText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   removeMedia: { color: "#ff6b35", fontWeight: "700" },
   actionsRow: { flexDirection: "row", gap: 16, marginTop: 6 },
   mediaAction: {

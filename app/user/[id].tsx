@@ -41,6 +41,30 @@ export default function UserProfileScreen() {
     return "image";
   };
 
+  const getMediaItems = (
+    rawMediaItems: unknown,
+    fallbackUrl?: string | null,
+    fallbackType?: string | null
+  ) => {
+    const normalized = Array.isArray(rawMediaItems)
+      ? rawMediaItems
+          .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const uri = normalizeMediaUrl((item as any).url);
+            const type = detectMediaType(uri, (item as any).type || null);
+            if (!uri || !type) return null;
+            return { uri, type };
+          })
+          .filter((item): item is { uri: string; type: string } => !!item)
+      : [];
+
+    if (normalized.length) return normalized;
+    const uri = normalizeMediaUrl(fallbackUrl);
+    const type = detectMediaType(uri, fallbackType || null);
+    if (!uri || !type) return [];
+    return [{ uri, type }];
+  };
+
   const loadProfile = async () => {
     if (!id) return;
     try {
@@ -263,8 +287,9 @@ export default function UserProfileScreen() {
               );
             }
             return filtered.map((post) => {
-              const mediaUrl = normalizeMediaUrl(post.mediaUrl);
-              const mediaType = detectMediaType(mediaUrl, post.mediaType);
+              const mediaItems = getMediaItems(post.mediaItems, post.mediaUrl, post.mediaType);
+              const mediaUrl = mediaItems[0]?.uri;
+              const mediaType = mediaItems[0]?.type;
               return (
                 <Pressable
                   key={post.id}
@@ -280,7 +305,11 @@ export default function UserProfileScreen() {
                         transition={120}
                         cachePolicy="memory-disk"
                       />
-                      {mediaType === "video" ? (
+                      {mediaItems.length > 1 ? (
+                        <RNView style={styles.postMediaBadge}>
+                          <Text style={styles.postMediaBadgeText}>{mediaItems.length}</Text>
+                        </RNView>
+                      ) : mediaType === "video" ? (
                         <RNView style={styles.postMediaBadge}>
                           <FontAwesome name="play" size={10} color="#fff" />
                         </RNView>
@@ -405,4 +434,5 @@ const createStyles = (colors: AppThemeColors) =>
     paddingVertical: 3,
     borderRadius: 999,
   },
+  postMediaBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
 });

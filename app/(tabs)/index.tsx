@@ -27,6 +27,7 @@ import { Video, ResizeMode } from "expo-av";
 import { useRouter } from "expo-router";
 import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
+import ImageCarousel from "@/components/ImageCarousel";
 import { apiFetch } from "@/lib/api";
 import {
   normalizeMediaUrl,
@@ -50,6 +51,7 @@ type RepostOf = {
   content: string;
   mediaUrl?: string | null;
   mediaType?: "image" | "video" | null;
+  mediaItems?: Array<{ url: string; type: "image" | "video" }> | null;
   isRoast?: boolean;
   tags?: string[];
   league?: string | null;
@@ -62,13 +64,20 @@ type RepostOf = {
   };
 };
 
+type MediaItem = {
+  type: "image" | "video";
+  uri: string;
+  ratio?: number;
+};
+
 type Post = {
   id: string;
   name: string;
   handle: string;
   time: string;
   text: string;
-  media?: { type: "image" | "video"; uri: string; ratio?: number };
+  media?: MediaItem;
+  mediaItems?: MediaItem[];
   type: "banter" | "roast";
   stayVotes: number;
   dropVotes: number;
@@ -127,6 +136,42 @@ const normalizeMediaType = (raw?: string | null) => {
   if (lower.includes("video")) return "video";
   if (lower.includes("image")) return "image";
   return undefined;
+};
+
+const buildMediaItems = (
+  rawMediaItems: unknown,
+  fallbackUrl?: string | null,
+  fallbackType?: string | null
+): MediaItem[] => {
+  const normalized: MediaItem[] = [];
+  if (Array.isArray(rawMediaItems)) {
+    rawMediaItems.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const rawUrl = normalizeMediaUrl((item as any).url);
+      const rawType =
+        normalizeMediaType((item as any).type) || detectMediaType(rawUrl);
+      if (!rawUrl || !rawType) return;
+      normalized.push({
+        type: rawType as "image" | "video",
+        uri: rawUrl,
+        ratio: 16 / 9,
+      });
+    });
+  }
+
+  if (normalized.length) return normalized;
+
+  const mediaUrl = normalizeMediaUrl(fallbackUrl);
+  const mediaType = normalizeMediaType(fallbackType) || detectMediaType(mediaUrl);
+  if (!mediaUrl || !mediaType) return [];
+
+  return [
+    {
+      type: mediaType as "image" | "video",
+      uri: mediaUrl,
+      ratio: 16 / 9,
+    },
+  ];
 };
 
 const stripRoastPrefix = (content: string) =>
@@ -246,9 +291,7 @@ export default function HomeFeed() {
     const isRoast =
       typeof post.content === "string" &&
       (post.isRoast || post.content.toUpperCase().startsWith(ROAST_PREFIX));
-    const mediaUrl = normalizeMediaUrl(post.mediaUrl);
-    const mediaType =
-      normalizeMediaType(post.mediaType) || detectMediaType(mediaUrl);
+    const mediaItems = buildMediaItems(post.mediaItems, post.mediaUrl, post.mediaType);
     const avatarUrl = normalizeMediaUrl(post.user?.avatarUrl);
     return {
       id: post.id,
@@ -257,13 +300,8 @@ export default function HomeFeed() {
       time: formatRelativeTime(post.createdAt),
       text: stripRoastPrefix(post.content || ""),
       type: isRoast ? "roast" : "banter",
-      media: mediaUrl
-        ? {
-            type: mediaType as "image" | "video",
-            uri: mediaUrl,
-            ratio: 16 / 9,
-          }
-        : undefined,
+      media: mediaItems[0],
+      mediaItems,
       stayVotes: post.stayVotes ?? 0,
       dropVotes: post.dropVotes ?? 0,
       avatarUrl: avatarUrl ?? null,
@@ -281,8 +319,7 @@ export default function HomeFeed() {
   };
 
   const mapAdToPost = (ad: AdCampaign): Post => {
-    const mediaUrl = normalizeMediaUrl(ad.mediaUrl || "");
-    const mediaType = (ad.mediaType || detectMediaType(mediaUrl)) as "image" | "video" | undefined;
+    const mediaItems = buildMediaItems([], ad.mediaUrl || "", ad.mediaType || null);
     return {
       id: `ad-${ad.id}`,
       name: ad.title || "Sponsored",
@@ -290,13 +327,8 @@ export default function HomeFeed() {
       time: "Sponsored",
       text: ad.body || "",
       type: "banter",
-      media: mediaUrl
-        ? {
-            type: mediaType || "image",
-            uri: mediaUrl,
-            ratio: 16 / 9,
-          }
-        : undefined,
+      media: mediaItems[0],
+      mediaItems,
       stayVotes: 0,
       dropVotes: 0,
       avatarUrl: null,
@@ -813,6 +845,7 @@ export default function HomeFeed() {
       text: stripRoastPrefix(pending.content),
       type: pending.isRoast ? "roast" : "banter",
       media: pending.media,
+      mediaItems: pending.mediaItems || (pending.media ? [pending.media] : []),
       stayVotes: 0,
       dropVotes: 0,
       avatarUrl: meAvatar,
@@ -1171,14 +1204,14 @@ export default function HomeFeed() {
     }
   };
 
-	  const renderMedia = (
-	    media: { type: "image" | "video"; uri: string; ratio?: number },
-	    allowDownload: boolean
-	  ) => {
+  const renderSingleMedia = (
+    media: MediaItem,
+    allowDownload: boolean
+  ) => {
     const isDownloading = downloadingMediaUri === media.uri;
-	    if (media.type === "video") {
-	      return (
-	        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
+    if (media.type === "video") {
+      return (
+        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
                   <Video
                     source={{ uri: media.uri }}
                     style={styles.mediaFill}
@@ -1193,22 +1226,22 @@ export default function HomeFeed() {
                       }
                     }}
                   />
-	          {allowDownload ? (
-	            <Pressable
-	              style={[styles.mediaDownload, isDownloading && styles.mediaDownloadBusy]}
-	              onPress={() => downloadMedia(media.uri)}
+          {allowDownload ? (
+            <Pressable
+              style={[styles.mediaDownload, isDownloading && styles.mediaDownloadBusy]}
+              onPress={() => downloadMedia(media.uri)}
                 disabled={isDownloading}
                 hitSlop={12}
-	            >
+            >
                 {isDownloading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-	                <FontAwesome name="download" size={20} color="#fff" />
+                  <FontAwesome name="download" size={20} color="#fff" />
                 )}
-	            </Pressable>
-	          ) : null}
-	        </View>
-	      );
+            </Pressable>
+          ) : null}
+        </View>
+      );
     }
 
     return (
@@ -1220,6 +1253,23 @@ export default function HomeFeed() {
           contentPosition="center"
           transition={180}
           cachePolicy="memory-disk"
+        />
+      </View>
+    );
+  };
+
+  const renderMedia = (mediaItems: MediaItem[], allowDownload: boolean) => {
+    if (!mediaItems.length) return null;
+    if (mediaItems.length === 1 || mediaItems.some((item) => item.type === "video")) {
+      return renderSingleMedia(mediaItems[0], allowDownload);
+    }
+    return (
+      <View style={[styles.mediaWrapper, styles.mediaFrame]}>
+        <ImageCarousel
+          items={mediaItems.map((item) => ({ uri: item.uri }))}
+          height={postMediaHeight}
+          onDownload={allowDownload ? downloadMedia : undefined}
+          downloadingUri={downloadingMediaUri}
         />
       </View>
     );
@@ -1246,7 +1296,7 @@ export default function HomeFeed() {
             <Text style={styles.adTitle}>{ad?.title || "Banter Sponsor"}</Text>
           </View>
           {item.text ? <Text style={styles.adBody}>{item.text}</Text> : null}
-          {item.media ? renderMedia(item.media, true) : null}
+          {item.mediaItems?.length ? renderMedia(item.mediaItems, true) : null}
           {ad?.targetUrl ? (
             <View style={styles.adCtaRow}>
               <Text style={styles.adCtaText}>{ctaLabel}</Text>
@@ -1268,17 +1318,12 @@ export default function HomeFeed() {
     const dislikeActive = item.userReaction === "ANGRY";
     const isRepost = !!item.repostOf;
     const original = item.repostOf;
-    const originalMediaUrl = normalizeMediaUrl(original?.mediaUrl);
+    const originalMediaItems = buildMediaItems(
+      original?.mediaItems,
+      original?.mediaUrl,
+      original?.mediaType || null
+    );
     const repostAvatarUrl = normalizeMediaUrl(original?.user?.avatarUrl);
-    const originalMediaType =
-      normalizeMediaType(original?.mediaType) || detectMediaType(originalMediaUrl);
-    const originalMedia = originalMediaUrl
-      ? {
-          type: originalMediaType as "image" | "video",
-          uri: originalMediaUrl,
-          ratio: 16 / 9,
-        }
-      : null;
 
     return (
       <Pressable
@@ -1353,7 +1398,7 @@ export default function HomeFeed() {
                 ))}
               </View>
             ) : null}
-            {item.media ? renderMedia(item.media, true) : null}
+            {item.mediaItems?.length ? renderMedia(item.mediaItems, true) : null}
             {isRepost ? (
               <View style={styles.repostCard}>
                 <View style={styles.repostHeader}>
@@ -1382,7 +1427,7 @@ export default function HomeFeed() {
                 <Text style={styles.repostBody}>
                   {stripRoastPrefix(original?.content || "")}
                 </Text>
-                {originalMedia ? renderMedia(originalMedia, true) : null}
+                {originalMediaItems.length ? renderMedia(originalMediaItems, true) : null}
               </View>
             ) : null}
             {isRoast && (

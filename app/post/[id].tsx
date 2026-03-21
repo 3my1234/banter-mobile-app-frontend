@@ -24,6 +24,7 @@ import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
+import ImageCarousel from "@/components/ImageCarousel";
 import {
   normalizeMediaUrl,
   saveMediaToLibrary,
@@ -44,8 +45,47 @@ const showToast = (message: string) => {
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
   const lower = uri.toLowerCase();
-  if (lower.match(/\.(mp4|mov|m4v|webm)$/)) return "video";
+  if (lower.match(/\.(mp4|mov|m4v|webm|m3u8)$/)) return "video";
   return "image";
+};
+
+const normalizeMediaType = (value?: string | null) => {
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  if (lower.includes("video")) return "video";
+  if (lower.includes("image")) return "image";
+  return undefined;
+};
+
+type MediaItem = {
+  type: "image" | "video";
+  uri: string;
+};
+
+const buildMediaItems = (
+  rawMediaItems: unknown,
+  fallbackUrl?: string | null,
+  fallbackType?: string | null
+): MediaItem[] => {
+  const normalized = Array.isArray(rawMediaItems)
+    ? rawMediaItems
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const uri = normalizeMediaUrl((item as any).url);
+          const type =
+            normalizeMediaType((item as any).type) || detectMediaType(uri);
+          if (!uri || !type) return null;
+          return { uri, type: type as "image" | "video" };
+        })
+        .filter((item): item is MediaItem => !!item)
+    : [];
+
+  if (normalized.length) return normalized;
+
+  const uri = normalizeMediaUrl(fallbackUrl);
+  const type = normalizeMediaType(fallbackType) || detectMediaType(uri);
+  if (!uri || !type) return [];
+  return [{ uri, type: type as "image" | "video" }];
 };
 
 type RepostOf = {
@@ -53,6 +93,7 @@ type RepostOf = {
   content: string;
   mediaUrl?: string | null;
   mediaType?: "image" | "video" | null;
+  mediaItems?: Array<{ url: string; type: "image" | "video" }> | null;
   isRoast?: boolean;
   tags?: string[];
   league?: string | null;
@@ -70,6 +111,7 @@ type Post = {
   content: string;
   mediaUrl?: string | null;
   mediaType?: "image" | "video" | null;
+  mediaItems?: Array<{ url: string; type: "image" | "video" }> | null;
   isRoast?: boolean;
   tags?: string[];
   league?: string | null;
@@ -378,17 +420,21 @@ export default function PostDetail() {
     }
   };
 
-  const mediaUrl = normalizeMediaUrl(post?.mediaUrl);
+  const mediaItems = buildMediaItems(post?.mediaItems, post?.mediaUrl, post?.mediaType);
+  const mediaUrl = mediaItems[0]?.uri;
   const avatarUrl = normalizeMediaUrl(post?.user?.avatarUrl);
   const repostAvatarUrl = normalizeMediaUrl(post?.repostOf?.user?.avatarUrl);
   const displayName = post?.user?.displayName || post?.user?.username || "Banter";
   const handle = post?.user?.username ? `@${post.user.username}` : "@banter";
   const createdAt = post?.createdAt ? formatRelativeTime(post.createdAt) : "";
   const isRoast = !!post?.isRoast || (post?.content || "").startsWith(ROAST_PREFIX);
-  const mediaType = post?.mediaType || detectMediaType(mediaUrl);
+  const mediaType =
+    mediaItems[0]?.type ||
+    normalizeMediaType(post?.mediaType) ||
+    detectMediaType(mediaUrl);
 
   useEffect(() => {
-    if (!mediaUrl) {
+    if (!mediaUrl || mediaItems.length > 1) {
       setDetailAspect(null);
       return;
     }
@@ -406,7 +452,7 @@ export default function PostDetail() {
       },
       () => setDetailAspect(16 / 9)
     );
-  }, [mediaUrl, mediaType]);
+  }, [mediaItems.length, mediaUrl, mediaType]);
 
   useEffect(() => {
     let active = true;
@@ -545,9 +591,13 @@ socket.off("comment-deleted");
     if (!post) return null;
     const isRepost = !!post.repostOf;
     const original = post.repostOf;
-    const originalMediaUrl = normalizeMediaUrl(original?.mediaUrl);
-    const originalMediaType =
-      original?.mediaType || detectMediaType(originalMediaUrl);
+    const originalMediaItems = buildMediaItems(
+      original?.mediaItems,
+      original?.mediaUrl,
+      original?.mediaType || null
+    );
+    const originalMediaUrl = originalMediaItems[0]?.uri;
+    const originalMediaType = originalMediaItems[0]?.type;
     return (
       <View style={styles.postCard}>
         <View style={styles.row}>
@@ -574,8 +624,15 @@ socket.off("comment-deleted");
             {post.content?.trim() ? (
               <Text style={styles.body}>{stripRoastPrefix(post.content || "")}</Text>
             ) : null}
-            {mediaUrl ? (
-              mediaType === "video" ? (
+            {mediaItems.length ? (
+              mediaItems.length > 1 ? (
+                <View style={styles.mediaWrapper}>
+                  <ImageCarousel
+                    items={mediaItems.map((item) => ({ uri: item.uri }))}
+                    aspectRatio={detailAspect || 16 / 9}
+                  />
+                </View>
+              ) : mediaType === "video" ? (
 	                  <View style={styles.mediaWrapper}>
 	                  <Video
 	                    source={{ uri: mediaUrl }}
@@ -636,9 +693,14 @@ socket.off("comment-deleted");
                 <Text style={styles.repostBody}>
                   {stripRoastPrefix(original.content || "")}
                 </Text>
-                {originalMediaUrl ? (
+                {originalMediaItems.length ? (
 	                  <View style={styles.mediaWrapper}>
-	                    {originalMediaType === "video" ? (
+	                    {originalMediaItems.length > 1 ? (
+                        <ImageCarousel
+                          items={originalMediaItems.map((item) => ({ uri: item.uri }))}
+                          aspectRatio={16 / 9}
+                        />
+                      ) : originalMediaType === "video" ? (
 		                      <Video
 		                        source={{ uri: originalMediaUrl }}
 		                        style={[styles.media, { aspectRatio: 16 / 9 }]}
@@ -739,7 +801,20 @@ socket.off("comment-deleted");
         </View>
       </View>
     );
-  }, [post, avatarUrl, repostAvatarUrl, displayName, handle, createdAt, isRoast, mediaUrl, mediaType, detailAspect, comments.length]);
+  }, [
+    post,
+    avatarUrl,
+    repostAvatarUrl,
+    displayName,
+    handle,
+    createdAt,
+    isRoast,
+    mediaItems,
+    mediaUrl,
+    mediaType,
+    detailAspect,
+    comments.length,
+  ]);
 
   const saveMedia = async () => {
     if (!mediaUrl) return;
@@ -864,7 +939,7 @@ socket.off("comment-deleted");
         </View>
       </KeyboardAvoidingView>
 
-      {mediaUrl && mediaType !== "video" ? (
+      {mediaUrl && mediaType !== "video" && mediaItems.length <= 1 ? (
         <Modal transparent visible={showMedia} animationType="fade">
           <View style={styles.modalBackdrop}>
             <View style={styles.modalMediaWrap}>

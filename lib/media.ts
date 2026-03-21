@@ -17,6 +17,25 @@ export type PickedMedia = {
   isVideo: boolean;
 };
 
+function toPickedMedia(
+  asset: ImagePicker.ImagePickerAsset,
+  fallbackPrefix: string
+): PickedMedia {
+  const fileName =
+    asset.fileName ||
+    `${fallbackPrefix}-${Date.now()}.${asset.type === "video" ? "mp4" : "jpg"}`;
+  const mimeType =
+    asset.mimeType ||
+    (asset.type === "video" ? "video/mp4" : "image/jpeg");
+
+  return {
+    uri: asset.uri,
+    mimeType,
+    fileName,
+    isVideo: asset.type === "video",
+  };
+}
+
 const MAX_IMAGE_SIZE_MB = 10;
 
 export async function pickMedia(
@@ -38,19 +57,25 @@ export async function pickMedia(
   if (result.canceled || !result.assets?.length) return null;
 
   const asset = result.assets[0];
-  const fileName =
-    asset.fileName ||
-    `banter-${Date.now()}.${asset.type === "video" ? "mp4" : "jpg"}`;
-  const mimeType =
-    asset.mimeType ||
-    (asset.type === "video" ? "video/mp4" : "image/jpeg");
+  return toPickedMedia(asset, "banter");
+}
 
-  return {
-    uri: asset.uri,
-    mimeType,
-    fileName,
-    isVideo: asset.type === "video",
-  };
+export async function pickMultipleImages(
+  maxSelection: number = 6
+): Promise<PickedMedia[]> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 0.9,
+    allowsEditing: false,
+    allowsMultipleSelection: true,
+    selectionLimit: maxSelection,
+  } as ImagePicker.ImagePickerOptions);
+
+  if (result.canceled || !result.assets?.length) return [];
+
+  return result.assets
+    .slice(0, maxSelection)
+    .map((asset) => toPickedMedia(asset, "banter"));
 }
 
 export async function captureMedia(
@@ -71,19 +96,7 @@ export async function captureMedia(
   if (result.canceled || !result.assets?.length) return null;
 
   const asset = result.assets[0];
-  const fileName =
-    asset.fileName ||
-    `banter-${Date.now()}.${asset.type === "video" ? "mp4" : "jpg"}`;
-  const mimeType =
-    asset.mimeType ||
-    (asset.type === "video" ? "video/mp4" : "image/jpeg");
-
-  return {
-    uri: asset.uri,
-    mimeType,
-    fileName,
-    isVideo: asset.type === "video",
-  };
+  return toPickedMedia(asset, "banter");
 }
 
 export async function presignUpload(

@@ -2,6 +2,7 @@ export type PendingPost = {
   id: string;
   content: string;
   media?: { type: "image" | "video"; uri: string; ratio?: number };
+  mediaItems?: Array<{ type: "image" | "video"; uri: string; ratio?: number }>;
   isRoast: boolean;
   createdAt: string;
   tags?: string[];
