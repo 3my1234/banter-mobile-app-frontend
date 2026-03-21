@@ -136,8 +136,8 @@ export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const banterHeight = Math.max(360, windowHeight);
   const tabBarHeight = useBottomTabBarHeight();
+  const banterHeight = Math.max(360, windowHeight - tabBarHeight);
   const postMediaHeight = Math.min(Math.max(windowHeight * 0.5, 300), 520);
   const themeColors = useAppThemeColors();
   const styles = useMemo(
@@ -1538,10 +1538,10 @@ export default function HomeFeed() {
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const controlsPad = isVideo ? 96 : 0;
-    const stayDropBottom = 12 + insets.bottom + 20 + controlsPad + (isVideo ? 30 : 0);
-    const sideActionsBottom = stayDropBottom + 96;
-    const metaBottom = stayDropBottom + 120;
+    const nativeControlsHeight = isVideo ? 74 : 0;
+    const stayDropBottom = 10 + nativeControlsHeight;
+    const sideActionsBottom = stayDropBottom + 82;
+    const metaBottom = stayDropBottom + 104;
     const banterActionIconSize = 34;
     const isSheetOpen = !!banterCommentTarget;
     const seekBarThumbSize = 12;
@@ -1752,7 +1752,7 @@ export default function HomeFeed() {
           </View>
           {showSeekBar ? (
             <View
-              style={[styles.banterSeekBarWrap, { bottom: stayDropBottom + 54 }]}
+              style={[styles.banterSeekBarWrap, { bottom: stayDropBottom + 42 }]}
               pointerEvents="box-only"
               onStartShouldSetResponderCapture={() => true}
               onMoveShouldSetResponderCapture={() => true}
@@ -2128,6 +2128,7 @@ export default function HomeFeed() {
               keyExtractor={(item) => item.id}
               renderItem={renderBanterItem}
               extraData={{ followedUserIds, followLoadingById, meId }}
+              style={{ height: banterHeight }}
               pagingEnabled
               decelerationRate="fast"
               showsVerticalScrollIndicator={false}
