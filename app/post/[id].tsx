@@ -9,6 +9,7 @@ import {
   Pressable,
   Share,
   StyleSheet,
+  ToastAndroid,
   TextInput,
   View,
 } from "react-native";
@@ -30,6 +31,14 @@ import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 const ROAST_PREFIX = "[ROAST]";
+
+const showToast = (message: string) => {
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert("Notice", message);
+  }
+};
 
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
@@ -703,9 +712,10 @@ socket.off("comment-deleted");
   const saveMedia = async () => {
     if (!mediaUrl) return;
     setSavingMedia(true);
+    showToast("Downloading...");
     try {
       await saveMediaToLibrary(mediaUrl);
-      Alert.alert("Saved", "Media saved to your gallery.");
+      showToast("Saved to gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
     } finally {

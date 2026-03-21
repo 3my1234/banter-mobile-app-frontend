@@ -203,6 +203,7 @@ export default function HomeFeed() {
   const [followLoadingById, setFollowLoadingById] = useState<Record<string, boolean>>(
     {}
   );
+  const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({});
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -624,11 +625,16 @@ export default function HomeFeed() {
   };
 
   const downloadMedia = async (uri: string) => {
+    if (downloadingMediaUri === uri) return;
+    setDownloadingMediaUri(uri);
+    showToast("Downloading...");
     try {
       await saveMediaToLibrary(uri);
-      Alert.alert("Saved", "Media saved to your gallery.");
+      showToast("Saved to gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
+    } finally {
+      setDownloadingMediaUri((current) => (current === uri ? null : current));
     }
   };
 
@@ -1155,13 +1161,14 @@ export default function HomeFeed() {
     }
   };
 
-  const renderMedia = (
-    media: { type: "image" | "video"; uri: string; ratio?: number },
-    allowDownload: boolean
-  ) => {
-    if (media.type === "video") {
-      return (
-        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
+	  const renderMedia = (
+	    media: { type: "image" | "video"; uri: string; ratio?: number },
+	    allowDownload: boolean
+	  ) => {
+    const isDownloading = downloadingMediaUri === media.uri;
+	    if (media.type === "video") {
+	      return (
+	        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
           <Video
             source={{ uri: media.uri }}
             style={styles.mediaFill}
@@ -1169,16 +1176,22 @@ export default function HomeFeed() {
             shouldPlay={false}
             useNativeControls
           />
-          {allowDownload ? (
-            <Pressable
-              style={styles.mediaDownload}
-              onPress={() => downloadMedia(media.uri)}
-            >
-              <FontAwesome name="download" size={14} color="#fff" />
-            </Pressable>
-          ) : null}
-        </View>
-      );
+	          {allowDownload ? (
+	            <Pressable
+	              style={[styles.mediaDownload, isDownloading && styles.mediaDownloadBusy]}
+	              onPress={() => downloadMedia(media.uri)}
+                disabled={isDownloading}
+                hitSlop={12}
+	            >
+                {isDownloading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+	                <FontAwesome name="download" size={20} color="#fff" />
+                )}
+	            </Pressable>
+	          ) : null}
+	        </View>
+	      );
     }
 
     return (
@@ -1449,7 +1462,7 @@ export default function HomeFeed() {
             isSheetOpen && activeBanterId === item.id && styles.banterCardShrunk,
           ]}
         >
-          <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
+          <View style={styles.banterMedia}>
             {media ? (
               isVideo ? (
 	                withinWindow ? (
@@ -1529,7 +1542,7 @@ export default function HomeFeed() {
     const stayDropBottom = 12 + insets.bottom + 20 + controlsPad + (isVideo ? 30 : 0);
     const sideActionsBottom = stayDropBottom + 96;
     const metaBottom = stayDropBottom + 120;
-    const banterActionIconSize = 30;
+    const banterActionIconSize = 34;
     const isSheetOpen = !!banterCommentTarget;
     const seekBarThumbSize = 12;
     const seekBarWidth = seekBarWidthById[item.id] ?? 0;
@@ -1568,7 +1581,7 @@ export default function HomeFeed() {
           isSheetOpen && activeBanterId === item.id && styles.banterCardShrunk,
         ]}
       >
-        <View style={[styles.banterMedia, isVideo && { paddingBottom: tabBarHeight }]}>
+        <View style={styles.banterMedia}>
           {media ? (
             isVideo ? (
 	              withinWindow ? (
@@ -1717,11 +1730,19 @@ export default function HomeFeed() {
             </Pressable>
             {media ? (
               <Pressable
-                style={styles.banterAction}
+                style={[styles.banterAction, downloadingMediaUri === media.uri && styles.banterActionBusy]}
                 onPress={() => downloadMedia(media.uri)}
+                disabled={downloadingMediaUri === media.uri}
+                hitSlop={12}
               >
-                <FontAwesome name="download" size={banterActionIconSize} color="#fff" />
-                <Text style={styles.banterActionText}>Save</Text>
+                {downloadingMediaUri === media.uri ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <FontAwesome name="download" size={banterActionIconSize} color="#fff" />
+                )}
+                <Text style={styles.banterActionText}>
+                  {downloadingMediaUri === media.uri ? "Saving..." : "Save"}
+                </Text>
               </Pressable>
             ) : null}
             <Pressable style={styles.banterAction} onPress={() => handleShare(item)}>
@@ -2654,8 +2675,15 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     right: 8,
     top: 8,
     backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 6,
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
     borderRadius: 999,
+  },
+  mediaDownloadBusy: {
+    backgroundColor: "rgba(0,0,0,0.78)",
   },
   voteActions: {
     flexDirection: "row",
@@ -2862,7 +2890,8 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
   banterGaugeCompact: {
     width: "54%",
   },
-    banterAction: { alignItems: "center", gap: 3 },
+    banterAction: { alignItems: "center", gap: 3, minWidth: 52, paddingVertical: 4 },
+    banterActionBusy: { opacity: 0.92 },
     banterActionText: { color: colors.text, fontSize: 12 },
   banterStayDropRow: {
     flexDirection: "row",
