@@ -1482,7 +1482,11 @@ export default function HomeFeed() {
                   size={16}
                   color={loveActive ? "#f59e0b" : "#9ca3af"}
                 />
-                <Text style={styles.actionText}>{loveCount}</Text>
+                <Text
+                  style={[styles.actionText, loveActive ? { color: "#f59e0b" } : null]}
+                >
+                  {loveCount}
+                </Text>
               </Pressable>
               <Pressable
                 style={styles.actionItem}
@@ -1493,7 +1497,11 @@ export default function HomeFeed() {
                   size={16}
                   color={dislikeActive ? "#ef4444" : "#9ca3af"}
                 />
-                <Text style={styles.actionText}>{dislikeCount}</Text>
+                <Text
+                  style={[styles.actionText, dislikeActive ? { color: "#ef4444" } : null]}
+                >
+                  {dislikeCount}
+                </Text>
               </Pressable>
               <Pressable style={styles.actionItem} onPress={() => handleShare(item)}>
                 <FontAwesome name="share-alt" size={16} color="#9ca3af" />
@@ -1778,7 +1786,14 @@ export default function HomeFeed() {
                 size={banterActionIconSize}
                 color={loveActive ? "#f59e0b" : "#fff"}
               />
-              <Text style={styles.banterActionText}>{loveCount}</Text>
+              <Text
+                style={[
+                  styles.banterActionText,
+                  loveActive ? { color: "#f59e0b" } : null,
+                ]}
+              >
+                {loveCount}
+              </Text>
             </Pressable>
             <Pressable
               style={styles.banterAction}
@@ -1789,7 +1804,14 @@ export default function HomeFeed() {
                 size={banterActionIconSize}
                 color={dislikeActive ? "#ef4444" : "#fff"}
               />
-              <Text style={styles.banterActionText}>{dislikeCount}</Text>
+              <Text
+                style={[
+                  styles.banterActionText,
+                  dislikeActive ? { color: "#ef4444" } : null,
+                ]}
+              >
+                {dislikeCount}
+              </Text>
             </Pressable>
             {media ? (
               <Pressable

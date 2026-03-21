@@ -757,7 +757,14 @@ socket.off("comment-deleted");
                   size={16}
                   color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
                 />
-                <Text style={styles.metaText}>{post.reactionBreakdown?.LOVE ?? 0}</Text>
+                <Text
+                  style={[
+                    styles.metaText,
+                    post.userReaction === "LOVE" ? { color: "#f59e0b" } : null,
+                  ]}
+                >
+                  {post.reactionBreakdown?.LOVE ?? 0}
+                </Text>
               </Pressable>
               <Pressable style={styles.metaItem} onPress={() => handleReaction("ANGRY")}>
                 <FontAwesome
@@ -765,7 +772,14 @@ socket.off("comment-deleted");
                   size={16}
                   color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
                 />
-                <Text style={styles.metaText}>{post.reactionBreakdown?.ANGRY ?? 0}</Text>
+                <Text
+                  style={[
+                    styles.metaText,
+                    post.userReaction === "ANGRY" ? { color: "#ef4444" } : null,
+                  ]}
+                >
+                  {post.reactionBreakdown?.ANGRY ?? 0}
+                </Text>
               </Pressable>
               <Pressable
                 style={styles.metaItem}
