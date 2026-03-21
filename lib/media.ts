@@ -246,18 +246,32 @@ function resolvePlayableMediaUrl(url?: string | null) {
   return replaceHlsManifestWithMp4(normalized);
 }
 
-function resolveDownloadableMediaUrl(url?: string | null) {
+async function resolveDownloadableMediaUrl(url?: string | null) {
   const normalized = normalizeMediaUrl(url);
   if (!normalized) return undefined;
-  if (/\.m3u8($|\?)/i.test(normalized)) {
-    return replaceHlsManifestWithMp4(normalized);
+
+  const result = (await apiFetch(
+    "/media/download-url",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        mediaUrl: url || normalized,
+      }),
+    },
+    true
+  )) as {
+    success?: boolean;
+    downloadUrl?: string;
+    key?: string;
+    strategy?: string;
+  };
+
+  if (typeof result?.downloadUrl === "string" && result.downloadUrl) {
+    return result.downloadUrl;
   }
 
   const key = extractMediaKey(url) || extractMediaKey(normalized);
-  if (key) {
-    return toBackendPublicViewUrl(key);
-  }
-
+  if (key) return toBackendPublicViewUrl(key);
   return normalized;
 }
 
@@ -269,7 +283,7 @@ export async function saveMediaToLibrary(
     preferredExtension?: string;
   }
 ) {
-  const sourceUrl = resolveDownloadableMediaUrl(url);
+  const sourceUrl = await resolveDownloadableMediaUrl(url);
   if (!sourceUrl) {
     throw new Error("Media URL is missing.");
   }
