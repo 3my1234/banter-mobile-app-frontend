@@ -205,16 +205,20 @@ export default function HomeFeed() {
   );
   const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
   const commentSheetY = useRef(new Animated.Value(0)).current;
-  const lastTapRef = useRef<Record<string, number>>({});
+  const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
   const pendingCountRef = useRef(0);
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
   const videoRefs = useRef<Map<string, Video>>(new Map());
+  const inlineVideoRefs = useRef<Map<string, Video>>(new Map());
   const lastSeekRef = useRef<Record<string, number>>({});
   const pauseAllVideos = useCallback(() => {
     videoRefs.current.forEach((ref) => {
+      ref.pauseAsync().catch(() => {});
+    });
+    inlineVideoRefs.current.forEach((ref) => {
       ref.pauseAsync().catch(() => {});
     });
   }, []);
@@ -1169,13 +1173,20 @@ export default function HomeFeed() {
 	    if (media.type === "video") {
 	      return (
 	        <View style={[styles.mediaWrapper, styles.mediaFrame]}>
-          <Video
-            source={{ uri: media.uri }}
-            style={styles.mediaFill}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            useNativeControls
-          />
+                  <Video
+                    source={{ uri: media.uri }}
+                    style={styles.mediaFill}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={false}
+                    useNativeControls
+                    ref={(ref) => {
+                      if (ref) {
+                        inlineVideoRefs.current.set(media.uri, ref);
+                      } else {
+                        inlineVideoRefs.current.delete(media.uri);
+                      }
+                    }}
+                  />
 	          {allowDownload ? (
 	            <Pressable
 	              style={[styles.mediaDownload, isDownloading && styles.mediaDownloadBusy]}
@@ -1271,6 +1282,7 @@ export default function HomeFeed() {
             showToast("Still uploading. Please wait.");
             return;
           }
+          pauseAllVideos();
           router.push(`/post/${item.id}`);
         }}
       >

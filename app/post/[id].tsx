@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
 import { Image as RNImage } from "react-native";
@@ -123,6 +124,7 @@ export default function PostDetail() {
   const [detailAspect, setDetailAspect] = useState<number | null>(null);
   const [showRepostModal, setShowRepostModal] = useState(false);
   const [quoteText, setQuoteText] = useState("");
+  const detailVideoRefs = React.useRef<Map<string, Video>>(new Map());
 
   const [meId, setMeId] = useState<string | null>(null);
   const [showPostActions, setShowPostActions] = useState(false);
@@ -132,6 +134,12 @@ export default function PostDetail() {
   const [showCommentActions, setShowCommentActions] = useState(false);
   const [showEditComment, setShowEditComment] = useState(false);
   const [editCommentText, setEditCommentText] = useState("");
+
+  const pauseDetailVideos = React.useCallback(() => {
+    detailVideoRefs.current.forEach((ref) => {
+      ref.pauseAsync().catch(() => {});
+    });
+  }, []);
   const loadPost = useCallback(async () => {
     if (!id) return;
     try {
@@ -525,6 +533,14 @@ socket.off("comment-deleted");
     };
   }, [id]);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        pauseDetailVideos();
+      };
+    }, [pauseDetailVideos])
+  );
+
   const header = useMemo(() => {
     if (!post) return null;
     const isRepost = !!post.repostOf;
@@ -566,6 +582,14 @@ socket.off("comment-deleted");
 	                    style={[styles.media, { aspectRatio: detailAspect || 16 / 9 }]}
 	                    resizeMode={ResizeMode.COVER}
 	                    useNativeControls
+                      ref={(ref) => {
+                        const key = `post:${post.id}`;
+                        if (ref) {
+                          detailVideoRefs.current.set(key, ref);
+                        } else {
+                          detailVideoRefs.current.delete(key);
+                        }
+                      }}
 	                  />
                 </View>
               ) : (
@@ -615,12 +639,20 @@ socket.off("comment-deleted");
                 {originalMediaUrl ? (
 	                  <View style={styles.mediaWrapper}>
 	                    {originalMediaType === "video" ? (
-	                      <Video
-	                        source={{ uri: originalMediaUrl }}
-	                        style={[styles.media, { aspectRatio: 16 / 9 }]}
-	                        resizeMode={ResizeMode.COVER}
-	                        useNativeControls
-	                      />
+		                      <Video
+		                        source={{ uri: originalMediaUrl }}
+		                        style={[styles.media, { aspectRatio: 16 / 9 }]}
+		                        resizeMode={ResizeMode.COVER}
+		                        useNativeControls
+                            ref={(ref) => {
+                              const key = `repost:${original.id}`;
+                              if (ref) {
+                                detailVideoRefs.current.set(key, ref);
+                              } else {
+                                detailVideoRefs.current.delete(key);
+                              }
+                            }}
+		                      />
 	                    ) : (
                       <ExpoImage
                         source={{ uri: originalMediaUrl }}
