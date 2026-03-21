@@ -502,18 +502,24 @@ export default function HomeFeed() {
   useFocusEffect(
     useCallback(() => {
       if (mainTab === "posts") {
-        loadPosts("posts", postTab);
+        if (!posts.length) {
+          loadPosts("posts", postTab);
+        }
       } else {
-        loadPosts("banter", banterTab);
+        if (!banters.length) {
+          loadPosts("banter", banterTab);
+        }
       }
-      loadMe();
+      if (!meId) {
+        loadMe();
+      }
       if (mainTab === "banter" && lastActiveBanterIdRef.current) {
         setActiveBanterId(lastActiveBanterIdRef.current);
       }
       return () => {
         pauseAllVideos();
       };
-    }, [loadPosts, loadMe, mainTab, postTab, banterTab, pauseAllVideos])
+    }, [loadPosts, loadMe, mainTab, postTab, banterTab, pauseAllVideos, posts.length, banters.length, meId])
   );
 
   const handleRefresh = () => {
