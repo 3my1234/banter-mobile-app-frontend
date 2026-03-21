@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -165,12 +165,30 @@ export default function ComposeScreen() {
     setTags((prev) => prev.filter((t) => t !== tag));
   };
 
+  const mergePickedImages = useCallback((pickedItems: PickedMedia[]) => {
+    setMediaItems((prev) => {
+      const imageOnlyPrev = prev.filter((item) => !item.isVideo);
+      const merged = [...imageOnlyPrev];
+      pickedItems.forEach((item) => {
+        const exists = merged.some(
+          (current) =>
+            current.uri === item.uri ||
+            (current.fileName === item.fileName && current.mimeType === item.mimeType)
+        );
+        if (!exists) {
+          merged.push({ ...item, isVideo: false });
+        }
+      });
+      return merged.slice(0, 6);
+    });
+  }, []);
+
   const handlePick = async (kind: "image" | "video") => {
     try {
       if (kind === "image" && mode === "banter") {
         const pickedItems = await pickMultipleImages(6);
         if (pickedItems.length) {
-          setMediaItems(pickedItems.map((item) => ({ ...item, isVideo: false })));
+          mergePickedImages(pickedItems);
         }
         return;
       }

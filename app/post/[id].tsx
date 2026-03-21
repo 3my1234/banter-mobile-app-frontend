@@ -755,7 +755,7 @@ socket.off("comment-deleted");
                 <FontAwesome
                   name="heart"
                   size={16}
-                  color={post.userReaction === "LOVE" ? "#ef4444" : "#9ca3af"}
+                  color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
                 />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.LOVE ?? 0}</Text>
               </Pressable>
@@ -763,7 +763,7 @@ socket.off("comment-deleted");
                 <FontAwesome
                   name="thumbs-down"
                   size={16}
-                  color={post.userReaction === "ANGRY" ? "#f59e0b" : "#9ca3af"}
+                  color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
                 />
                 <Text style={styles.metaText}>{post.reactionBreakdown?.ANGRY ?? 0}</Text>
               </Pressable>

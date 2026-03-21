@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -108,6 +108,7 @@ export default function TabLayout() {
   useColorScheme();
   const [notificationUnread, setNotificationUnread] = useState(getNotificationUnreadCount());
   const [messageUnread, setMessageUnread] = useState(getMessageUnreadCount());
+  const unreadRefreshRef = useRef({ inFlight: false, lastAt: 0 });
 
   const loadNotificationUnread = useCallback(async () => {
     try {
@@ -128,6 +129,24 @@ export default function TabLayout() {
     }
   }, []);
 
+  const refreshUnreadBadges = useCallback(
+    async (force = false) => {
+      const now = Date.now();
+      if (unreadRefreshRef.current.inFlight) return;
+      if (!force && now - unreadRefreshRef.current.lastAt < 30000) return;
+
+      unreadRefreshRef.current.inFlight = true;
+      unreadRefreshRef.current.lastAt = now;
+      try {
+        await Promise.all([loadNotificationUnread(), loadMessageUnread()]);
+      } finally {
+        unreadRefreshRef.current.inFlight = false;
+        unreadRefreshRef.current.lastAt = Date.now();
+      }
+    },
+    [loadMessageUnread, loadNotificationUnread]
+  );
+
   useEffect(() => {
     const unsubscribe = subscribeNotificationUnreadCount(setNotificationUnread);
     return unsubscribe;
@@ -139,11 +158,9 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
-    loadNotificationUnread();
-    loadMessageUnread();
+    refreshUnreadBadges(true);
     const retry = setTimeout(() => {
-      loadNotificationUnread();
-      loadMessageUnread();
+      refreshUnreadBadges(true);
     }, 1500);
     let socket: any;
     let disposed = false;
@@ -192,20 +209,19 @@ export default function TabLayout() {
         socket.off("messages.request_resolved");
       }
     };
-  }, [loadMessageUnread, loadNotificationUnread]);
+  }, [loadMessageUnread, loadNotificationUnread, refreshUnreadBadges]);
 
   useEffect(() => {
     const onAppStateChange = (nextState: string) => {
       if (nextState === "active") {
-        loadNotificationUnread();
-        loadMessageUnread();
+        refreshUnreadBadges();
       }
     };
     const sub = AppState.addEventListener("change", onAppStateChange);
     return () => {
       sub.remove();
     };
-  }, [loadMessageUnread, loadNotificationUnread]);
+  }, [refreshUnreadBadges]);
 
   return (
     <Tabs

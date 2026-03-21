@@ -1480,7 +1480,7 @@ export default function HomeFeed() {
                 <FontAwesome
                   name="heart"
                   size={16}
-                  color={loveActive ? "#ef4444" : "#9ca3af"}
+                  color={loveActive ? "#f59e0b" : "#9ca3af"}
                 />
                 <Text style={styles.actionText}>{loveCount}</Text>
               </Pressable>
@@ -1491,7 +1491,7 @@ export default function HomeFeed() {
                 <FontAwesome
                   name="thumbs-down"
                   size={16}
-                  color={dislikeActive ? "#f59e0b" : "#9ca3af"}
+                  color={dislikeActive ? "#ef4444" : "#9ca3af"}
                 />
                 <Text style={styles.actionText}>{dislikeCount}</Text>
               </Pressable>
@@ -1776,7 +1776,7 @@ export default function HomeFeed() {
               <FontAwesome
                 name="heart"
                 size={banterActionIconSize}
-                color={loveActive ? "#ef4444" : "#fff"}
+                color={loveActive ? "#f59e0b" : "#fff"}
               />
               <Text style={styles.banterActionText}>{loveCount}</Text>
             </Pressable>
@@ -1787,7 +1787,7 @@ export default function HomeFeed() {
               <FontAwesome
                 name="thumbs-down"
                 size={banterActionIconSize}
-                color={dislikeActive ? "#f59e0b" : "#fff"}
+                color={dislikeActive ? "#ef4444" : "#fff"}
               />
               <Text style={styles.banterActionText}>{dislikeCount}</Text>
             </Pressable>
@@ -2181,9 +2181,7 @@ export default function HomeFeed() {
                 progressBackgroundColor="transparent"
               />
 	            }
-	            drawDistance={windowHeight * 2}
-	            viewabilityConfig={viewabilityConfig.current}
-	            onViewableItemsChanged={onViewableItemsChanged}
+            drawDistance={Math.round(windowHeight * 1.5)}
           />
         ) : (
             <FlashList
@@ -2210,7 +2208,7 @@ export default function HomeFeed() {
                   progressBackgroundColor="transparent"
                 />
 	              }
-	              drawDistance={windowHeight * 2}
+              drawDistance={Math.round(windowHeight * 1.5)}
 	              viewabilityConfig={viewabilityConfig.current}
 	              onViewableItemsChanged={onViewableItemsChanged}
               onMomentumScrollEnd={(event) => {
