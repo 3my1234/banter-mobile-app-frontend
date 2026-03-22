@@ -122,7 +122,7 @@ export default function ConversationScreen() {
       >
         <View style={styles.container}>
           <View style={styles.headerRow}>
-            <Pressable onPress={() => router.back()}>
+            <Pressable onPress={() => router.back()} hitSlop={16}>
               <Text style={styles.back}>Back</Text>
             </Pressable>
             <Text style={styles.title}>

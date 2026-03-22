@@ -751,7 +751,13 @@ socket.off("comment-deleted");
                 <FontAwesome name="retweet" size={16} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.repostCount ?? 0}</Text>
               </Pressable>
-              <Pressable style={styles.metaItem} onPress={() => handleReaction("LOVE")}>
+              <Pressable
+                style={[
+                  styles.metaItem,
+                  post.userReaction === "LOVE" && styles.metaReactionLoveActive,
+                ]}
+                onPress={() => handleReaction("LOVE")}
+              >
                 <FontAwesome
                   name="heart"
                   size={16}
@@ -766,7 +772,13 @@ socket.off("comment-deleted");
                   {post.reactionBreakdown?.LOVE ?? 0}
                 </Text>
               </Pressable>
-              <Pressable style={styles.metaItem} onPress={() => handleReaction("ANGRY")}>
+              <Pressable
+                style={[
+                  styles.metaItem,
+                  post.userReaction === "ANGRY" && styles.metaReactionDislikeActive,
+                ]}
+                onPress={() => handleReaction("ANGRY")}
+              >
                 <FontAwesome
                   name="thumbs-down"
                   size={16}
@@ -856,7 +868,7 @@ socket.off("comment-deleted");
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => router.back()} hitSlop={16}>
           <FontAwesome name="arrow-left" size={18} color="#fff" />
         </Pressable>
         <View style={styles.headerSpacer} />
@@ -1220,8 +1232,25 @@ const createStyles = (colors: AppThemeColors) =>
   },
   voteBtnText: { color: colors.text, fontWeight: "700" },
   metaRow: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
-  metaItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  metaItem: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
   metaText: { color: colors.textMuted, fontSize: 12 },
+  metaReactionLoveActive: {
+    backgroundColor: "rgba(245,158,11,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.35)",
+  },
+  metaReactionDislikeActive: {
+    backgroundColor: "rgba(239,68,68,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.35)",
+  },
   repostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostCard: {
     marginTop: 8,

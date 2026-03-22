@@ -205,6 +205,10 @@ export default function HomeFeed() {
   const [meId, setMeId] = useState<string | null>(null);
   const [activeBanterId, setActiveBanterId] = useState<string | null>(null);
   const lastActiveBanterIdRef = useRef<string | null>(null);
+  const loadedFeedKeysRef = useRef<{ posts: string | null; banter: string | null }>({
+    posts: null,
+    banter: null,
+  });
   const [repostTarget, setRepostTarget] = useState<Post | null>(null);
   const [quoteText, setQuoteText] = useState<string>("");
   const [showRepostModal, setShowRepostModal] = useState(false);
@@ -385,9 +389,11 @@ export default function HomeFeed() {
       const mapped = (data.posts || []).map(mapPost);
       if (type === "posts") {
         setPosts(mapped);
+        loadedFeedKeysRef.current.posts = feed;
         setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
       } else {
         setBanters(mapped);
+        loadedFeedKeysRef.current.banter = feed;
         setActiveBanterId(mapped[0]?.id || null);
         setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
       }
@@ -414,12 +420,18 @@ export default function HomeFeed() {
   React.useEffect(() => {
     if (mainTab === "posts") {
       setActiveBanterId(null);
-      loadPosts("posts", postTab);
+      if (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0) {
+        loadPosts("posts", postTab);
+      }
     } else {
-      loadPosts("banter", banterTab);
+      if (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0) {
+        loadPosts("banter", banterTab);
+      }
     }
-    loadMe();
-  }, [loadPosts, loadMe, mainTab, postTab, banterTab]);
+    if (!meId) {
+      loadMe();
+    }
+  }, [loadPosts, loadMe, mainTab, postTab, banterTab, posts.length, banters.length, meId]);
 
   const applyReactionOptimistic = useCallback(
     (
@@ -1474,7 +1486,10 @@ export default function HomeFeed() {
                 <Text style={styles.actionText}>{item.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable
-                style={styles.actionItem}
+                style={[
+                  styles.actionItem,
+                  loveActive && styles.reactionActiveLove,
+                ]}
                 onPress={() => handleReaction(item.id, "LOVE")}
               >
                 <FontAwesome
@@ -1489,7 +1504,10 @@ export default function HomeFeed() {
                 </Text>
               </Pressable>
               <Pressable
-                style={styles.actionItem}
+                style={[
+                  styles.actionItem,
+                  dislikeActive && styles.reactionActiveDislike,
+                ]}
                 onPress={() => handleReaction(item.id, "ANGRY")}
               >
                 <FontAwesome
@@ -1778,7 +1796,10 @@ export default function HomeFeed() {
               <Text style={styles.banterActionText}>{item.repostCount ?? 0}</Text>
             </Pressable>
             <Pressable
-              style={styles.banterAction}
+              style={[
+                styles.banterAction,
+                loveActive && styles.banterReactionActiveLove,
+              ]}
               onPress={() => handleReaction(item.id, "LOVE")}
             >
               <FontAwesome
@@ -1796,7 +1817,10 @@ export default function HomeFeed() {
               </Text>
             </Pressable>
             <Pressable
-              style={styles.banterAction}
+              style={[
+                styles.banterAction,
+                dislikeActive && styles.banterReactionActiveDislike,
+              ]}
               onPress={() => handleReaction(item.id, "ANGRY")}
             >
               <FontAwesome
@@ -2091,7 +2115,14 @@ export default function HomeFeed() {
                 mainTab === "banter" && styles.tabsOverlay,
               ]}
             >
-              <Pressable onPress={() => setMainTab("posts")}>
+              <Pressable
+                hitSlop={14}
+                onPress={() => {
+                  pauseAllVideos();
+                  setActiveBanterId(null);
+                  setMainTab("posts");
+                }}
+              >
                 <Text
                   style={[
                     styles.mainTab,
@@ -2102,7 +2133,13 @@ export default function HomeFeed() {
                   Posts
                 </Text>
               </Pressable>
-              <Pressable onPress={() => setMainTab("banter")}>
+              <Pressable
+                hitSlop={14}
+                onPress={() => {
+                  pauseAllVideos();
+                  setMainTab("banter");
+                }}
+              >
                 <Text
                   style={[
                     styles.mainTab,
@@ -2714,8 +2751,25 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
   },
   tagText: { color: "#ff6b35", fontSize: 12, fontWeight: "700" },
   actions: { flexDirection: "row", gap: 18, marginTop: 10, alignItems: "center" },
-  actionItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  actionItem: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
   actionText: { color: colors.textMuted, fontSize: 13 },
+  reactionActiveLove: {
+    backgroundColor: "rgba(245,158,11,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.35)",
+  },
+  reactionActiveDislike: {
+    backgroundColor: "rgba(239,68,68,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.35)",
+  },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -2974,9 +3028,26 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
   banterGaugeCompact: {
     width: "54%",
   },
-    banterAction: { alignItems: "center", gap: 3, minWidth: 52, paddingVertical: 4 },
+    banterAction: {
+      alignItems: "center",
+      gap: 3,
+      minWidth: 52,
+      paddingVertical: 6,
+      paddingHorizontal: 6,
+      borderRadius: 14,
+    },
     banterActionBusy: { opacity: 0.92 },
     banterActionText: { color: colors.text, fontSize: 12 },
+  banterReactionActiveLove: {
+    backgroundColor: "rgba(245,158,11,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.42)",
+  },
+  banterReactionActiveDislike: {
+    backgroundColor: "rgba(239,68,68,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.42)",
+  },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,

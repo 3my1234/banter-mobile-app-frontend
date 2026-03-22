@@ -72,7 +72,7 @@ export default function NewMessageScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.container}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()}>
+          <Pressable onPress={() => router.back()} hitSlop={16}>
             <Text style={styles.back}>Back</Text>
           </Pressable>
           <Text style={styles.title}>New Message</Text>

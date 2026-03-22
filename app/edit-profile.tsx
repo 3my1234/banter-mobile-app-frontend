@@ -128,7 +128,7 @@ export default function EditProfile() {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => router.back()} hitSlop={16}>
           <FontAwesome name="arrow-left" size={18} color="#fff" />
         </Pressable>
         <View style={styles.headerSpacer} />
