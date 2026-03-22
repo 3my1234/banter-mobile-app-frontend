@@ -177,6 +177,84 @@ const buildMediaItems = (
 const stripRoastPrefix = (content: string) =>
   content.replace(/^\[ROAST\]\s*/i, "");
 
+type ThreadedComment = {
+  id: string;
+  createdAt?: string | null;
+  replyCount?: number;
+  replies?: ThreadedComment[];
+  [key: string]: any;
+};
+
+const sortThreadedComments = <T extends { createdAt?: string | null }>(items: T[]) =>
+  [...items].sort((a, b) => {
+    const left = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const right = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return left - right;
+  });
+
+const mergeThreadedItems = <T extends { id: string; createdAt?: string | null }>(
+  items: T[],
+  incoming: T
+) => {
+  const index = items.findIndex((item) => item.id === incoming.id);
+  const next =
+    index === -1
+      ? [...items, incoming]
+      : items.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...incoming } : item
+        );
+  return sortThreadedComments(next);
+};
+
+const attachReplyToThread = <T extends ThreadedComment>(
+  comments: T[],
+  parentId: string,
+  reply: T
+) =>
+  comments.map((comment) =>
+    comment.id !== parentId
+      ? comment
+      : {
+          ...comment,
+          replyCount: Math.max(comment.replyCount ?? 0, (comment.replies?.length ?? 0) + 1),
+          replies: mergeThreadedItems((comment.replies || []) as T[], reply),
+        }
+  );
+
+const updateThreadedItem = <T extends ThreadedComment>(comments: T[], updated: T) =>
+  comments.map((comment) => {
+    if (comment.id === updated.id) {
+      return { ...comment, ...updated };
+    }
+    if (comment.replies?.some((reply) => reply.id === updated.id)) {
+      return {
+        ...comment,
+        replies: mergeThreadedItems((comment.replies || []) as T[], updated),
+      };
+    }
+    return comment;
+  });
+
+const removeThreadedItem = <T extends ThreadedComment>(comments: T[], targetId: string) => {
+  const topLevelRemoved = comments.some((comment) => comment.id === targetId);
+  if (topLevelRemoved) {
+    return comments.filter((comment) => comment.id !== targetId);
+  }
+
+  return comments.map((comment) => {
+    const existingReplies = (comment.replies || []) as T[];
+    if (!existingReplies.some((reply) => reply.id === targetId)) {
+      return comment;
+    }
+    const nextReplies = existingReplies.filter((reply) => reply.id !== targetId);
+    return {
+      ...comment,
+      replies: nextReplies,
+      replyCount: Math.max(0, nextReplies.length),
+    };
+  });
+};
+
 export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -253,6 +331,7 @@ export default function HomeFeed() {
     {}
   );
   const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
+  const [expandedMediaUri, setExpandedMediaUri] = useState<string | null>(null);
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -1018,17 +1097,23 @@ export default function HomeFeed() {
     setBanterCommentLoading(true);
     try {
       const data = await apiFetch(`/comments/${item.id}?page=1&limit=50&includeReplies=1`);
-      const comments = data.comments || [];
+      const comments = sortThreadedComments(data.comments || []);
       setBanterComments(comments);
       const initialReactions: Record<string, string> = {};
+      const initialReplies: Record<string, any[]> = {};
       comments.forEach((comment: any) => {
         if (comment?.userReaction) {
           initialReactions[comment.id] = comment.userReaction;
         }
+        if (Array.isArray(comment?.replies) && comment.replies.length) {
+          initialReplies[comment.id] = sortThreadedComments(comment.replies);
+        }
       });
       setCommentReactions(initialReactions);
+      setRepliesByComment(initialReplies);
     } catch {
       setBanterComments([]);
+      setRepliesByComment({});
     } finally {
       setBanterCommentLoading(false);
     }
@@ -1050,6 +1135,8 @@ export default function HomeFeed() {
     setCommentActionTargetId(null);
     setReactionTargetId(null);
     setReplyTarget(null);
+    setExpandedReplies({});
+    setRepliesByComment({});
     commentSheetY.setValue(0);
     if (nextId) {
       setTimeout(() => resumeBanterVideo(nextId), 80);
@@ -1106,10 +1193,16 @@ export default function HomeFeed() {
         }),
       });
       const created = data.comment || data;
-      setBanterComments((prev) => {
-        const exists = prev.some((c) => c.id === created.id);
-        return exists ? prev : [...prev, created];
-      });
+      if (replyTarget?.id) {
+        setBanterComments((prev) => attachReplyToThread(prev, replyTarget.id, created));
+        setRepliesByComment((prev) => ({
+          ...prev,
+          [replyTarget.id]: mergeThreadedItems(prev[replyTarget.id] || [], created),
+        }));
+        setExpandedReplies((prev) => ({ ...prev, [replyTarget.id]: true }));
+      } else {
+        setBanterComments((prev) => mergeThreadedItems(prev, created));
+      }
       if (typeof data?.commentCount === "number") {
         setBanters((prev) =>
           prev.map((p) =>
@@ -1129,7 +1222,7 @@ export default function HomeFeed() {
   const loadReplies = async (commentId: string) => {
     try {
       const data = await apiFetch(`/comments/replies/${commentId}?page=1&limit=20`);
-      const replies = data.replies || [];
+      const replies = sortThreadedComments(data.replies || []);
       setRepliesByComment((prev) => ({
         ...prev,
         [commentId]: replies,
@@ -1209,7 +1302,15 @@ export default function HomeFeed() {
   const deleteComment = async (commentId: string) => {
     try {
       await apiFetch(`/comments/${commentId}`, { method: "DELETE" });
-      setBanterComments((prev) => prev.filter((c) => c.id !== commentId));
+      setBanterComments((prev) => removeThreadedItem(prev, commentId));
+      setRepliesByComment((prev) => {
+        const next = { ...prev };
+        delete next[commentId];
+        Object.keys(next).forEach((parentId) => {
+          next[parentId] = next[parentId].filter((reply) => reply.id !== commentId);
+        });
+        return next;
+      });
       setCommentActionTargetId(null);
     } catch (e: any) {
       setError(e.message);
@@ -1258,14 +1359,16 @@ export default function HomeFeed() {
 
     return (
       <View style={[styles.mediaWrapper, styles.mediaFrame]}>
-        <ExpoImage
-          source={{ uri: media.uri }}
-          style={styles.mediaFill}
-          contentFit="cover"
-          contentPosition="center"
-          transition={180}
-          cachePolicy="memory-disk"
-        />
+        <Pressable style={styles.mediaFill} onPress={() => setExpandedMediaUri(media.uri)}>
+          <ExpoImage
+            source={{ uri: media.uri }}
+            style={styles.mediaFill}
+            contentFit="cover"
+            contentPosition="center"
+            transition={180}
+            cachePolicy="memory-disk"
+          />
+        </Pressable>
       </View>
     );
   };
@@ -1282,6 +1385,7 @@ export default function HomeFeed() {
           height={postMediaHeight}
           onDownload={allowDownload ? downloadMedia : undefined}
           downloadingUri={downloadingMediaUri}
+          onPressItem={(uri) => setExpandedMediaUri(uri)}
         />
       </View>
     );
@@ -2335,6 +2439,40 @@ export default function HomeFeed() {
             </View>
           </Modal>
         ) : null}
+
+        {expandedMediaUri ? (
+          <Modal transparent animationType="fade" visible>
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => setExpandedMediaUri(null)}
+            />
+            <View style={styles.modalContent}>
+              <ExpoImage
+                source={{ uri: expandedMediaUri }}
+                style={styles.modalImage}
+                contentFit="contain"
+                transition={180}
+                cachePolicy="memory-disk"
+              />
+            </View>
+            <View style={[styles.modalActionsRow, { paddingBottom: 12 + insets.bottom }]}>
+              <Pressable style={styles.modalAction} onPress={() => setExpandedMediaUri(null)}>
+                <Text style={styles.modalActionText}>Close</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalActionPrimary}
+                onPress={() => downloadMedia(expandedMediaUri)}
+                disabled={downloadingMediaUri === expandedMediaUri}
+              >
+                {downloadingMediaUri === expandedMediaUri ? (
+                  <ActivityIndicator color="#0d0d0d" />
+                ) : (
+                  <Text style={styles.modalActionPrimaryText}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </Modal>
+        ) : null}
         {banterCommentTarget ? (
           <Modal transparent animationType="fade" visible>
             <View style={styles.commentModal}>
@@ -3183,6 +3321,47 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     justifyContent: "flex-end",
     backgroundColor: colors.overlay,
   },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.86)",
+  },
+  modalContent: {
+    flex: 1,
+    alignSelf: "stretch",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 96,
+  },
+  modalImage: { width: "100%", height: "100%" },
+  modalActionsRow: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 0,
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalAction: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    minHeight: 48,
+  },
+  modalActionText: { color: colors.text, fontWeight: "700" },
+  modalActionPrimary: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: "#ff6b35",
+    minHeight: 48,
+  },
+  modalActionPrimaryText: { color: "#0d0d0d", fontWeight: "700" },
   commentBackdrop: {
     ...StyleSheet.absoluteFillObject,
   },

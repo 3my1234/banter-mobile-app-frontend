@@ -135,8 +135,13 @@ type Post = {
 
 type Comment = {
   id: string;
+  postId?: string;
+  userId?: string;
+  parentId?: string | null;
   content: string;
   createdAt: string;
+  replyCount?: number;
+  replies?: Comment[];
   user?: {
     id: string;
     displayName?: string | null;
@@ -147,6 +152,72 @@ type Comment = {
 
 const stripRoastPrefix = (content: string) =>
   content.replace(/^\[ROAST\]\s*/i, "");
+
+const sortCommentsAsc = <T extends { createdAt?: string | null }>(items: T[]) =>
+  [...items].sort((a, b) => {
+    const left = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const right = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return left - right;
+  });
+
+const mergeCommentsById = <T extends { id: string; createdAt?: string | null }>(
+  items: T[],
+  incoming: T
+) => {
+  const index = items.findIndex((item) => item.id === incoming.id);
+  const next =
+    index === -1
+      ? [...items, incoming]
+      : items.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...incoming } : item
+        );
+  return sortCommentsAsc(next);
+};
+
+const attachReply = (comments: Comment[], parentId: string, reply: Comment) =>
+  comments.map((comment) =>
+    comment.id !== parentId
+      ? comment
+      : {
+          ...comment,
+          replyCount: Math.max(comment.replyCount ?? 0, (comment.replies?.length ?? 0) + 1),
+          replies: mergeCommentsById(comment.replies || [], reply),
+        }
+  );
+
+const updateCommentTree = (comments: Comment[], updated: Comment) =>
+  comments.map((comment) => {
+    if (comment.id === updated.id) {
+      return { ...comment, ...updated };
+    }
+    if (comment.replies?.some((reply) => reply.id === updated.id)) {
+      return {
+        ...comment,
+        replies: mergeCommentsById(comment.replies || [], updated),
+      };
+    }
+    return comment;
+  });
+
+const removeCommentTree = (comments: Comment[], targetId: string) => {
+  const topLevelRemoved = comments.some((comment) => comment.id === targetId);
+  if (topLevelRemoved) {
+    return comments.filter((comment) => comment.id !== targetId);
+  }
+
+  return comments.map((comment) => {
+    const existingReplies = comment.replies || [];
+    if (!existingReplies.some((reply) => reply.id === targetId)) {
+      return comment;
+    }
+    const nextReplies = existingReplies.filter((reply) => reply.id !== targetId);
+    return {
+      ...comment,
+      replies: nextReplies,
+      replyCount: Math.max(0, nextReplies.length),
+    };
+  });
+};
 
 export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -161,7 +232,7 @@ export default function PostDetail() {
   const [error, setError] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [showMedia, setShowMedia] = useState(false);
+  const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
   const [savingMedia, setSavingMedia] = useState(false);
   const [detailAspect, setDetailAspect] = useState<number | null>(null);
   const [showRepostModal, setShowRepostModal] = useState(false);
@@ -176,6 +247,9 @@ export default function PostDetail() {
   const [showCommentActions, setShowCommentActions] = useState(false);
   const [showEditComment, setShowEditComment] = useState(false);
   const [editCommentText, setEditCommentText] = useState("");
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [repliesByComment, setRepliesByComment] = useState<Record<string, Comment[]>>({});
 
   const pauseDetailVideos = React.useCallback(() => {
     detailVideoRefs.current.forEach((ref) => {
@@ -199,12 +273,34 @@ export default function PostDetail() {
   const loadComments = useCallback(async () => {
     if (!id) return;
     try {
-      const data = await apiFetch(`/comments/${id}?page=1&limit=50`);
-      setComments(data.comments || []);
+      const data = await apiFetch(`/comments/${id}?page=1&limit=50&includeReplies=1`);
+      const nextComments = sortCommentsAsc<Comment>(((data.comments || []) as Comment[]));
+      setComments(nextComments);
+      setRepliesByComment(
+        nextComments.reduce<Record<string, Comment[]>>((acc, comment) => {
+          if (Array.isArray(comment?.replies) && comment.replies.length) {
+            acc[comment.id] = sortCommentsAsc<Comment>(comment.replies);
+          }
+          return acc;
+        }, {})
+      );
     } catch {
       setComments([]);
+      setRepliesByComment({});
     }
   }, [id]);
+
+  const loadReplies = useCallback(async (commentId: string) => {
+    try {
+      const data = await apiFetch(`/comments/replies/${commentId}?page=1&limit=20`);
+      setRepliesByComment((prev) => ({
+        ...prev,
+        [commentId]: sortCommentsAsc<Comment>(((data.replies || []) as Comment[])),
+      }));
+    } catch {
+      setRepliesByComment((prev) => ({ ...prev, [commentId]: [] }));
+    }
+  }, []);
 
   useEffect(() => {
     loadPost();
@@ -335,19 +431,30 @@ export default function PostDetail() {
     try {
       const data = await apiFetch("/comments", {
         method: "POST",
-        body: JSON.stringify({ postId: post.id, content: commentText.trim() }),
+        body: JSON.stringify({
+          postId: post.id,
+          content: commentText.trim(),
+          parentId: replyTarget?.id ?? null,
+        }),
       });
       const created = data.comment || data;
-      setComments((prev) => {
-        const exists = prev.some((c) => c.id === created.id);
-        return exists ? prev : [...prev, created];
-      });
+      if (replyTarget?.id) {
+        setComments((prev) => attachReply(prev, replyTarget.id!, created));
+        setRepliesByComment((prev) => ({
+          ...prev,
+          [replyTarget.id!]: mergeCommentsById(prev[replyTarget.id!] || [], created),
+        }));
+        setExpandedReplies((prev) => ({ ...prev, [replyTarget.id!]: true }));
+      } else {
+        setComments((prev) => mergeCommentsById(prev, created));
+      }
       if (typeof data?.commentCount === "number") {
         setPost((prev) =>
           prev ? { ...prev, commentCount: data.commentCount } : prev
         );
       }
       setCommentText("");
+      setReplyTarget(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -485,10 +592,15 @@ export default function PostDetail() {
       const onCommentCreated = (payload: any) => {
         const { postId, comment, commentCount } = payload || {};
         if (!postId || postId !== id || !comment?.id) return;
-        setComments((prev) => {
-          const exists = prev.some((c) => c.id === comment.id);
-          return exists ? prev : [...prev, comment];
-        });
+        if (comment.parentId) {
+          setComments((prev) => attachReply(prev, comment.parentId, comment));
+          setRepliesByComment((prev) => ({
+            ...prev,
+            [comment.parentId]: mergeCommentsById(prev[comment.parentId] || [], comment),
+          }));
+        } else {
+          setComments((prev) => mergeCommentsById(prev, comment));
+        }
         if (typeof commentCount === "number") {
           setPost((prev) =>
             prev ? { ...prev, commentCount } : prev
@@ -499,15 +611,27 @@ export default function PostDetail() {
       const onCommentUpdated = (payload: any) => {
         const { postId, comment } = payload || {};
         if (!postId || postId !== id || !comment?.id) return;
-        setComments((prev) =>
-          prev.map((c) => (c.id === comment.id ? { ...c, content: comment.content } : c))
-        );
+        setComments((prev) => updateCommentTree(prev, comment));
+        if (comment.parentId) {
+          setRepliesByComment((prev) => ({
+            ...prev,
+            [comment.parentId]: mergeCommentsById(prev[comment.parentId] || [], comment),
+          }));
+        }
       };
 
       const onCommentDeleted = (payload: any) => {
         const { postId, commentId, commentCount } = payload || {};
         if (!postId || postId !== id || !commentId) return;
-        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        setComments((prev) => removeCommentTree(prev, commentId));
+        setRepliesByComment((prev) => {
+          const next = { ...prev };
+          delete next[commentId];
+          Object.keys(next).forEach((parentId) => {
+            next[parentId] = next[parentId].filter((reply) => reply.id !== commentId);
+          });
+          return next;
+        });
         if (typeof commentCount === "number") {
           setPost((prev) => (prev ? { ...prev, commentCount } : prev));
         }
@@ -630,6 +754,8 @@ socket.off("comment-deleted");
                   <ImageCarousel
                     items={mediaItems.map((item) => ({ uri: item.uri }))}
                     aspectRatio={detailAspect || 16 / 9}
+                    onPressItem={(uri) => setSelectedMediaUri(uri)}
+                    onDownload={(uri) => saveMedia(uri)}
                   />
                 </View>
               ) : mediaType === "video" ? (
@@ -652,7 +778,7 @@ socket.off("comment-deleted");
               ) : (
                 <Pressable
                   style={styles.mediaWrapper}
-                  onPress={() => setShowMedia(true)}
+                  onPress={() => setSelectedMediaUri(mediaUrl)}
                 >
                   <ExpoImage
                     source={{ uri: mediaUrl }}
@@ -699,6 +825,8 @@ socket.off("comment-deleted");
                         <ImageCarousel
                           items={originalMediaItems.map((item) => ({ uri: item.uri }))}
                           aspectRatio={16 / 9}
+                          onPressItem={(uri) => setSelectedMediaUri(uri)}
+                          onDownload={(uri) => saveMedia(uri)}
                         />
                       ) : originalMediaType === "video" ? (
 		                      <Video
@@ -716,14 +844,16 @@ socket.off("comment-deleted");
                             }}
 		                      />
 	                    ) : (
-                      <ExpoImage
-                        source={{ uri: originalMediaUrl }}
-                        style={[styles.media, { aspectRatio: 16 / 9 }]}
-                        contentFit="cover"
-                        contentPosition="center"
-                        transition={180}
-                        cachePolicy="memory-disk"
-                      />
+                      <Pressable onPress={() => setSelectedMediaUri(originalMediaUrl || null)}>
+                        <ExpoImage
+                          source={{ uri: originalMediaUrl }}
+                          style={[styles.media, { aspectRatio: 16 / 9 }]}
+                          contentFit="cover"
+                          contentPosition="center"
+                          transition={180}
+                          cachePolicy="memory-disk"
+                        />
+                      </Pressable>
                     )}
                   </View>
                 ) : null}
@@ -842,12 +972,13 @@ socket.off("comment-deleted");
     comments.length,
   ]);
 
-  const saveMedia = async () => {
-    if (!mediaUrl) return;
+  const saveMedia = async (uri?: string | null) => {
+    const targetUri = uri || selectedMediaUri || mediaUrl;
+    if (!targetUri) return;
     setSavingMedia(true);
     showToast("Downloading...");
     try {
-      await saveMediaToLibrary(mediaUrl);
+      await saveMediaToLibrary(targetUri);
       showToast("Saved to gallery.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message || "Could not save media.");
@@ -915,6 +1046,67 @@ socket.off("comment-deleted");
                   {item.user?.displayName || item.user?.username || "User"}
                 </Text>
                 <Text style={styles.commentText}>{item.content}</Text>
+                <View style={styles.commentMetaRow}>
+                  <Text style={styles.commentMetaText}>
+                    {formatRelativeTime(item.createdAt)}
+                  </Text>
+                  <Pressable
+                    style={styles.commentReplyBtn}
+                    onPress={() => setReplyTarget(item)}
+                  >
+                    <Text style={styles.commentReplyText}>Reply</Text>
+                  </Pressable>
+                </View>
+                {item.replyCount ? (
+                  <Pressable
+                    style={styles.commentRepliesToggle}
+                    onPress={() => {
+                      const expanded = !!expandedReplies[item.id];
+                      setExpandedReplies((prev) => ({
+                        ...prev,
+                        [item.id]: !expanded,
+                      }));
+                      if (!expanded && !repliesByComment[item.id]) {
+                        loadReplies(item.id);
+                      }
+                    }}
+                  >
+                    <Text style={styles.commentRepliesText}>
+                      {expandedReplies[item.id]
+                        ? "Hide replies"
+                        : `View ${item.replyCount} replies`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {expandedReplies[item.id] &&
+                (repliesByComment[item.id] || item.replies)?.length ? (
+                  <View style={styles.commentRepliesWrap}>
+                    {(repliesByComment[item.id] || item.replies || []).map((reply) => (
+                      <View key={reply.id} style={styles.replyRow}>
+                        {reply.user?.avatarUrl ? (
+                          <ExpoImage
+                            source={{ uri: normalizeMediaUrl(reply.user.avatarUrl) }}
+                            style={styles.replyAvatar}
+                            contentFit="cover"
+                            transition={180}
+                            cachePolicy="memory-disk"
+                          />
+                        ) : (
+                          <View style={styles.replyAvatar} />
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.replyName}>
+                            {reply.user?.displayName || reply.user?.username || "User"}
+                          </Text>
+                          <Text style={styles.replyText}>{reply.content}</Text>
+                          <Text style={styles.commentMetaText}>
+                            {formatRelativeTime(reply.createdAt)}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
               {item.user?.id && item.user.id === meId ? (
                 <Pressable
@@ -950,7 +1142,15 @@ socket.off("comment-deleted");
         >
           <TextInput
             style={styles.commentInput}
-            placeholder="Write a comment..."
+            placeholder={
+              replyTarget
+                ? `Reply to @${
+                    replyTarget.user?.username ||
+                    replyTarget.user?.displayName ||
+                    "user"
+                  }...`
+                : "Write a comment..."
+            }
             placeholderTextColor="#777"
             value={commentText}
             onChangeText={setCommentText}
@@ -963,24 +1163,33 @@ socket.off("comment-deleted");
             )}
           </Pressable>
         </View>
+        {replyTarget ? (
+          <Pressable style={styles.commentCancel} onPress={() => setReplyTarget(null)}>
+            <Text style={styles.commentCancelText}>Cancel reply</Text>
+          </Pressable>
+        ) : null}
       </KeyboardAvoidingView>
 
-      {mediaUrl && mediaType !== "video" && mediaItems.length <= 1 ? (
-        <Modal transparent visible={showMedia} animationType="fade">
+      {selectedMediaUri ? (
+        <Modal transparent visible animationType="fade">
           <View style={styles.modalBackdrop}>
             <View style={styles.modalMediaWrap}>
               <RNImage
-                source={{ uri: mediaUrl }}
+                source={{ uri: selectedMediaUri }}
                 style={styles.modalMediaImage}
                 resizeMode="contain"
               />
             </View>
           </View>
           <View style={[styles.modalActions, { paddingBottom: 12 + insets.bottom }]}>
-            <Pressable style={styles.modalBtn} onPress={() => setShowMedia(false)}>
+            <Pressable style={styles.modalBtn} onPress={() => setSelectedMediaUri(null)}>
               <Text style={styles.modalBtnText}>Close</Text>
             </Pressable>
-            <Pressable style={styles.modalBtnPrimary} onPress={saveMedia} disabled={savingMedia}>
+            <Pressable
+              style={styles.modalBtnPrimary}
+              onPress={() => saveMedia(selectedMediaUri)}
+              disabled={savingMedia}
+            >
               {savingMedia ? (
                 <ActivityIndicator color="#0d0d0d" />
               ) : (
@@ -1289,6 +1498,38 @@ const createStyles = (colors: AppThemeColors) =>
   },
   commentName: { color: colors.text, fontWeight: "700" },
   commentText: { color: colors.textSoft, marginTop: 2 },
+  commentMetaRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 6,
+    alignItems: "center",
+  },
+  commentMetaText: { color: colors.textMuted, fontSize: 12 },
+  commentReplyBtn: { paddingVertical: 2 },
+  commentReplyText: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
+  commentRepliesToggle: { marginTop: 6 },
+  commentRepliesText: { color: "#ff6b35", fontSize: 12, fontWeight: "600" },
+  commentRepliesWrap: {
+    marginTop: 8,
+    paddingLeft: 8,
+    borderLeftColor: colors.border,
+    borderLeftWidth: 1,
+    gap: 8,
+  },
+  replyRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  replyAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: "#ff6b35",
+  },
+  replyName: { color: colors.text, fontWeight: "600", fontSize: 12 },
+  replyText: { color: colors.textSoft, marginTop: 2, fontSize: 12 },
   commentComposer: {
     position: "absolute",
     left: 0,
@@ -1317,6 +1558,18 @@ const createStyles = (colors: AppThemeColors) =>
     borderRadius: 999,
   },
   commentSendText: { color: "#0d0d0d", fontWeight: "700" },
+  commentCancel: {
+    position: "absolute",
+    right: 16,
+    bottom: 62,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  commentCancelText: { color: colors.textMuted, fontSize: 12 },
   muted: { color: colors.textMuted, marginTop: 8 },
   error: { color: "#ff6b35", paddingHorizontal: 16, paddingTop: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -1458,10 +1711,3 @@ const createStyles = (colors: AppThemeColors) =>
     paddingVertical: 4,
   },
 });
-
-
-
-
-
-
-
