@@ -6,6 +6,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Keyboard,
+  LayoutChangeEvent,
   PanResponder,
   Modal,
   Platform,
@@ -369,7 +370,11 @@ export default function HomeFeed() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
-  const banterHeight = Math.max(360, windowHeight - tabBarHeight);
+  const [feedViewportHeight, setFeedViewportHeight] = useState<number | null>(null);
+  const banterHeight = Math.max(
+    360,
+    Math.round(feedViewportHeight || (windowHeight - tabBarHeight))
+  );
   const postMediaHeight = Math.min(Math.max(windowHeight * 0.5, 300), 520);
   const themeColors = useAppThemeColors();
   const styles = useMemo(
@@ -478,6 +483,14 @@ export default function HomeFeed() {
       if (next?.item?.id) setActiveBanterId(next.item.id);
     }
   ).current;
+  const handleFeedViewportLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextHeight = Math.round(event.nativeEvent.layout.height || 0);
+      if (!nextHeight) return;
+      setFeedViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    },
+    []
+  );
 
   const mapPost = (post: any): Post => {
     const isRoast =
@@ -2437,34 +2450,36 @@ export default function HomeFeed() {
           />
         ) : null}
 
-        <PostsFeedPane
-          visible={mainTab === "posts"}
-          visiblePosts={visiblePosts}
-          refreshing={refreshing && mainTab === "posts"}
-          handleRefresh={handleRefresh}
-          renderPostItem={renderPostItem}
-          windowHeight={windowHeight}
-        />
+        <View style={styles.feedViewport} onLayout={handleFeedViewportLayout}>
+          <PostsFeedPane
+            visible={mainTab === "posts"}
+            visiblePosts={visiblePosts}
+            refreshing={refreshing && mainTab === "posts"}
+            handleRefresh={handleRefresh}
+            renderPostItem={renderPostItem}
+            windowHeight={windowHeight}
+          />
 
-        <BanterFeedPane
-          visible={mainTab === "banter"}
-          visibleBanters={visibleBanters}
-          renderBanterItem={renderBanterItem}
-          banterHeight={banterHeight}
-          refreshing={refreshing && mainTab === "banter"}
-          handleRefresh={handleRefresh}
-          handleBanterScroll={handleBanterScroll}
-          isSeeking={isSeeking}
-          viewabilityConfig={viewabilityConfig.current}
-          onViewableItemsChanged={onViewableItemsChanged}
-          onMomentumScrollEnd={(event) => {
-            const offsetY = event.nativeEvent.contentOffset.y || 0;
-            const index = Math.round(offsetY / banterHeight);
-            const next = visibleBanters[index];
-            if (next?.id) setActiveBanterId(next.id);
-          }}
-          windowHeight={windowHeight}
-        />
+          <BanterFeedPane
+            visible={mainTab === "banter"}
+            visibleBanters={visibleBanters}
+            renderBanterItem={renderBanterItem}
+            banterHeight={banterHeight}
+            refreshing={refreshing && mainTab === "banter"}
+            handleRefresh={handleRefresh}
+            handleBanterScroll={handleBanterScroll}
+            isSeeking={isSeeking}
+            viewabilityConfig={viewabilityConfig.current}
+            onViewableItemsChanged={onViewableItemsChanged}
+            onMomentumScrollEnd={(event) => {
+              const offsetY = event.nativeEvent.contentOffset.y || 0;
+              const index = Math.round(offsetY / banterHeight);
+              const next = visibleBanters[index];
+              if (next?.id) setActiveBanterId(next.id);
+            }}
+            windowHeight={windowHeight}
+          />
+        </View>
 
         {mainTab === "posts" ? (
           <Pressable
@@ -2882,8 +2897,12 @@ export default function HomeFeed() {
 
 const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
   StyleSheet.create({
-    safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.background },
     container: { flex: 1, backgroundColor: colors.background },
+  feedViewport: {
+    flex: 1,
+    overflow: "hidden",
+  },
   topBar: {
     paddingTop: 6,
     paddingBottom: 8,

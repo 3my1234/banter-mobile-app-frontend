@@ -149,6 +149,12 @@ type StakePosition = {
   daily_results: StakeDailyResult[];
 };
 
+type PendingFlutterwaveState = {
+  paymentId: string;
+  amount: number;
+  days: number;
+};
+
 const ROLLEY_SERVICE_URL =
   process.env.EXPO_PUBLIC_ROLLEY_SERVICE_URL ?? "https://sportbanter.online/rolley";
 const MOVEMENT_EXPLORER_BASE =
@@ -199,7 +205,7 @@ const formatAmount = (value?: number, asset: "USD" | "USDC" | "ROL" = "USD") => 
   return asset === "USD" ? `$${formatted}` : `${formatted} ${asset}`;
 };
 
-const pollRolleyFlutterwaveStatus = async (paymentId: string, attempts: number = 15) => {
+const pollRolleyFlutterwaveStatus = async (paymentId: string, attempts: number = 15, delayMs: number = 2000) => {
   for (let i = 0; i < attempts; i += 1) {
     const statusData = await apiFetch(`/payments/flutterwave/rolley/status/${paymentId}`);
     const status = statusData?.payment?.status;
@@ -209,7 +215,7 @@ const pollRolleyFlutterwaveStatus = async (paymentId: string, attempts: number =
     if (status === "FAILED") {
       return "FAILED";
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   return "PENDING";
 };
@@ -291,6 +297,7 @@ export default function RolleyBotScreen() {
   const [isNigeria, setIsNigeria] = useState(false);
   const [flutterwaveCurrency, setFlutterwaveCurrency] = useState<"NGN" | "USD" | "GBP" | "EUR">("USD");
   const [confirmingFlutterwave, setConfirmingFlutterwave] = useState(false);
+  const [pendingFlutterwave, setPendingFlutterwave] = useState<PendingFlutterwaveState | null>(null);
   const [stakeSuccessState, setStakeSuccessState] = useState<{
     amount: number;
     asset: StakeAsset;
@@ -372,20 +379,35 @@ export default function RolleyBotScreen() {
   );
 
   const confirmRolleyFlutterwaveCompletion = useCallback(
-    async (paymentId: string, amount: number, days: number) => {
-      setConfirmingFlutterwave(true);
+    async (
+      paymentId: string,
+      amount: number,
+      days: number,
+      options?: { blocking?: boolean; attempts?: number; delayMs?: number }
+    ) => {
+      const blocking = options?.blocking ?? false;
+      const attempts = options?.attempts ?? (blocking ? 12 : 3);
+      const delayMs = options?.delayMs ?? (blocking ? 1500 : 1000);
+      if (blocking) {
+        setConfirmingFlutterwave(true);
+      }
       try {
-        const finalStatus = await pollRolleyFlutterwaveStatus(paymentId, 30);
+        const finalStatus = await pollRolleyFlutterwaveStatus(paymentId, attempts, delayMs);
         if (finalStatus === "COMPLETED") {
+          setPendingFlutterwave(null);
           await completeStakeSuccess(amount, "USD", days);
           return true;
         }
         if (finalStatus === "FAILED") {
+          setPendingFlutterwave(null);
           throw new Error("Payment failed.");
         }
+        setPendingFlutterwave({ paymentId, amount, days });
         return false;
       } finally {
-        setConfirmingFlutterwave(false);
+        if (blocking) {
+          setConfirmingFlutterwave(false);
+        }
       }
     },
     [completeStakeSuccess]
@@ -511,6 +533,7 @@ export default function RolleyBotScreen() {
     try {
       setStakeBusy(true);
         if (stakeAsset === "USD") {
+          setPendingFlutterwave(null);
           const redirectUrl = ExpoLinking.createURL("payments/flutterwave/rolley");
           const created = await apiFetch("/payments/flutterwave/rolley/create", {
             method: "POST",
@@ -535,11 +558,17 @@ export default function RolleyBotScreen() {
               | undefined;
             txRef = (parsed.queryParams?.tx_ref || parsed.queryParams?.txRef) as string | undefined;
           } else if (result.type === "cancel" || result.type === "dismiss") {
-            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays, {
+              blocking: false,
+              attempts: 2,
+              delayMs: 800,
+            });
             if (!confirmed) {
-              throw new Error(
-                "Checkout was closed before confirmation. If your card was debited, wait a moment and refresh this screen."
+              Alert.alert(
+                "Checkout interrupted",
+                "Payment was not confirmed. If your card was debited, tap Check payment status or refresh shortly."
               );
+              return;
             }
           }
 
@@ -553,17 +582,34 @@ export default function RolleyBotScreen() {
               }),
             });
             if (verified?.payment?.status !== "COMPLETED") {
-              const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+              const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays, {
+                blocking: false,
+                attempts: 3,
+                delayMs: 1000,
+              });
               if (!confirmed) {
-                throw new Error("Payment is still being confirmed. If you were charged, refresh this screen shortly.");
+                Alert.alert(
+                  "Payment pending",
+                  "Flutterwave has not confirmed this rollover yet. You can continue using the app and check again shortly."
+                );
+                return;
               }
             } else {
+              setPendingFlutterwave(null);
               await completeStakeSuccess(amount, "USD", stakeDays);
             }
           } else {
-            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays);
+            const confirmed = await confirmRolleyFlutterwaveCompletion(created.paymentId, amount, stakeDays, {
+              blocking: false,
+              attempts: 2,
+              delayMs: 800,
+            });
             if (!confirmed) {
-              throw new Error("Payment is still being confirmed. If you were charged, refresh this screen shortly.");
+              Alert.alert(
+                "Payment pending",
+                "No payment confirmation was returned. If you were charged, tap Check payment status or refresh shortly."
+              );
+              return;
             }
           }
         } else {
@@ -816,6 +862,34 @@ export default function RolleyBotScreen() {
           <Text style={styles.guideStep}>2. Send the exact USDC amount to the address and include the memo.</Text>
           <Text style={styles.guideStep}>3. Paste the transaction hash in the app and tap Verify.</Text>
         </View>
+
+        {pendingFlutterwave ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Pending payment check</Text>
+            <Text style={styles.metaSub}>
+              Flutterwave has not confirmed this rollover yet. You can keep using the app and check again when ready.
+            </Text>
+            <Pressable
+              style={styles.stakeButton}
+              disabled={confirmingFlutterwave}
+              onPress={() =>
+                void confirmRolleyFlutterwaveCompletion(
+                  pendingFlutterwave.paymentId,
+                  pendingFlutterwave.amount,
+                  pendingFlutterwave.days,
+                  { blocking: true, attempts: 12, delayMs: 1500 }
+                )
+              }
+            >
+              <Text style={styles.stakeButtonText}>
+                {confirmingFlutterwave ? "Checking..." : "Check payment status"}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setPendingFlutterwave(null)}>
+              <Text style={styles.chainLink}>Dismiss</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {stakes.length > 0 ? (
           <View style={styles.card}>
