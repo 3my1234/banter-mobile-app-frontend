@@ -889,7 +889,7 @@ socket.off("comment-deleted");
                 onPress={() => handleReaction("LOVE")}
               >
                 <FontAwesome
-                  name="heart"
+                  name={post.userReaction === "LOVE" ? "heart" : "heart-o"}
                   size={16}
                   color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
                 />
@@ -910,7 +910,7 @@ socket.off("comment-deleted");
                 onPress={() => handleReaction("ANGRY")}
               >
                 <FontAwesome
-                  name="thumbs-down"
+                  name={post.userReaction === "ANGRY" ? "thumbs-down" : "thumbs-o-down"}
                   size={16}
                   color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
                 />

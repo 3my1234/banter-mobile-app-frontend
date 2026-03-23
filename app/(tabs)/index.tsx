@@ -255,6 +255,115 @@ const removeThreadedItem = <T extends ThreadedComment>(comments: T[], targetId: 
   });
 };
 
+const PostsFeedPane = React.memo(function PostsFeedPane({
+  visible,
+  visiblePosts,
+  refreshing,
+  handleRefresh,
+  renderPostItem,
+  windowHeight,
+}: {
+  visible: boolean;
+  visiblePosts: Post[];
+  refreshing: boolean;
+  handleRefresh: () => void;
+  renderPostItem: ({ item }: { item: Post }) => React.ReactElement | null;
+  windowHeight: number;
+}) {
+  return (
+    <View
+      style={{ flex: 1, display: visible ? "flex" : "none" }}
+      pointerEvents={visible ? "auto" : "none"}
+    >
+      <FlashList
+        data={visiblePosts}
+        keyExtractor={(item) => item.id}
+        renderItem={renderPostItem}
+        ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: "transparent" }} />}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+        drawDistance={Math.round(windowHeight * 1.5)}
+      />
+    </View>
+  );
+});
+
+const BanterFeedPane = React.memo(function BanterFeedPane({
+  visible,
+  visibleBanters,
+  renderBanterItem,
+  banterHeight,
+  refreshing,
+  handleRefresh,
+  handleBanterScroll,
+  isSeeking,
+  viewabilityConfig,
+  onViewableItemsChanged,
+  onMomentumScrollEnd,
+  windowHeight,
+}: {
+  visible: boolean;
+  visibleBanters: Post[];
+  renderBanterItem: ({ item, index }: { item: Post; index: number }) => React.ReactElement | null;
+  banterHeight: number;
+  refreshing: boolean;
+  handleRefresh: () => void;
+  handleBanterScroll: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
+  isSeeking: boolean;
+  viewabilityConfig: { itemVisiblePercentThreshold: number };
+  onViewableItemsChanged: ({
+    viewableItems,
+  }: {
+    viewableItems: Array<{ item: Post; isViewable: boolean }>;
+  }) => void;
+  onMomentumScrollEnd: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
+  windowHeight: number;
+}) {
+  return (
+    <View
+      style={{ flex: 1, display: visible ? "flex" : "none" }}
+      pointerEvents={visible ? "auto" : "none"}
+    >
+      <FlashList
+        data={visibleBanters}
+        keyExtractor={(item) => item.id}
+        renderItem={renderBanterItem}
+        style={{ height: banterHeight }}
+        pagingEnabled
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 0 }}
+        snapToInterval={banterHeight}
+        snapToAlignment="start"
+        onScroll={handleBanterScroll}
+        scrollEventThrottle={16}
+        scrollEnabled={visible && !isSeeking}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+        drawDistance={Math.round(windowHeight * 1.5)}
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+      />
+    </View>
+  );
+});
+
 export default function HomeFeed() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -1597,7 +1706,7 @@ export default function HomeFeed() {
                 onPress={() => handleReaction(item.id, "LOVE")}
               >
                 <FontAwesome
-                  name="heart"
+                  name={loveActive ? "heart" : "heart-o"}
                   size={16}
                   color={loveActive ? "#f59e0b" : "#9ca3af"}
                 />
@@ -1615,7 +1724,7 @@ export default function HomeFeed() {
                 onPress={() => handleReaction(item.id, "ANGRY")}
               >
                 <FontAwesome
-                  name="thumbs-down"
+                  name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
                   size={16}
                   color={dislikeActive ? "#ef4444" : "#9ca3af"}
                 />
@@ -1907,7 +2016,7 @@ export default function HomeFeed() {
               onPress={() => handleReaction(item.id, "LOVE")}
             >
               <FontAwesome
-                name="heart"
+                name={loveActive ? "heart" : "heart-o"}
                 size={banterActionIconSize}
                 color={loveActive ? "#f59e0b" : "#fff"}
               />
@@ -1928,7 +2037,7 @@ export default function HomeFeed() {
               onPress={() => handleReaction(item.id, "ANGRY")}
             >
               <FontAwesome
-                name="thumbs-down"
+                name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
                 size={banterActionIconSize}
                 color={dislikeActive ? "#ef4444" : "#fff"}
               />
@@ -2328,60 +2437,34 @@ export default function HomeFeed() {
           />
         ) : null}
 
-        {mainTab === "posts" ? (
-          <FlashList
-            data={visiblePosts}
-            keyExtractor={(item) => item.id}
-            renderItem={renderPostItem}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor="transparent"
-                colors={["transparent"]}
-                progressBackgroundColor="transparent"
-              />
-	            }
-            drawDistance={Math.round(windowHeight * 1.5)}
-          />
-        ) : (
-            <FlashList
-              data={visibleBanters}
-              keyExtractor={(item) => item.id}
-              renderItem={renderBanterItem}
-              extraData={{ followedUserIds, followLoadingById, meId }}
-              style={{ height: banterHeight }}
-              pagingEnabled
-              decelerationRate="fast"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 0 }}
-              snapToInterval={banterHeight}
-              snapToAlignment="start"
-              onScroll={handleBanterScroll}
-              scrollEventThrottle={16}
-              scrollEnabled={!isSeeking}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={handleRefresh}
-                  tintColor="transparent"
-                  colors={["transparent"]}
-                  progressBackgroundColor="transparent"
-                />
-	              }
-              drawDistance={Math.round(windowHeight * 1.5)}
-	              viewabilityConfig={viewabilityConfig.current}
-	              onViewableItemsChanged={onViewableItemsChanged}
-              onMomentumScrollEnd={(event) => {
-                const offsetY = event.nativeEvent.contentOffset.y || 0;
-                const index = Math.round(offsetY / banterHeight);
-                const next = visibleBanters[index];
-                if (next?.id) setActiveBanterId(next.id);
-              }}
-            />
-        )}
+        <PostsFeedPane
+          visible={mainTab === "posts"}
+          visiblePosts={visiblePosts}
+          refreshing={refreshing && mainTab === "posts"}
+          handleRefresh={handleRefresh}
+          renderPostItem={renderPostItem}
+          windowHeight={windowHeight}
+        />
+
+        <BanterFeedPane
+          visible={mainTab === "banter"}
+          visibleBanters={visibleBanters}
+          renderBanterItem={renderBanterItem}
+          banterHeight={banterHeight}
+          refreshing={refreshing && mainTab === "banter"}
+          handleRefresh={handleRefresh}
+          handleBanterScroll={handleBanterScroll}
+          isSeeking={isSeeking}
+          viewabilityConfig={viewabilityConfig.current}
+          onViewableItemsChanged={onViewableItemsChanged}
+          onMomentumScrollEnd={(event) => {
+            const offsetY = event.nativeEvent.contentOffset.y || 0;
+            const index = Math.round(offsetY / banterHeight);
+            const next = visibleBanters[index];
+            if (next?.id) setActiveBanterId(next.id);
+          }}
+          windowHeight={windowHeight}
+        />
 
         {mainTab === "posts" ? (
           <Pressable
