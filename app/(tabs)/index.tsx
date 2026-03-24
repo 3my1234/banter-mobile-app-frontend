@@ -35,7 +35,7 @@ import {
   saveMediaToLibrary,
 } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
-import { PendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
+import { PendingPost, removePendingPost, subscribePendingPosts } from "@/lib/uploadQueue";
 import {
   getFollowStatus,
   setFollowStatus,
@@ -1163,7 +1163,21 @@ export default function HomeFeed() {
 
   const deletePost = async (postId: string, type: "posts" | "banter") => {
     try {
+      console.log("[DELETE DEBUG] request", { postId, type });
+      if (postId.startsWith("pending-")) {
+        removePendingPost(postId);
+        if (type === "banter") {
+          setBanters((prev) => prev.filter((post) => post.id !== postId));
+          setActiveBanterId((prev) => (prev === postId ? null : prev));
+        } else {
+          setPosts((prev) => prev.filter((post) => post.id !== postId));
+        }
+        console.log("[DELETE DEBUG] removed pending", { postId, type });
+        showToast("Pending post removed");
+        return;
+      }
       await apiFetch(`/posts/${postId}`, { method: "DELETE" });
+      console.log("[DELETE DEBUG] success", { postId, type });
       if (type === "posts") {
         setPosts((prev) => prev.filter((post) => post.id !== postId));
       } else {
@@ -1176,6 +1190,11 @@ export default function HomeFeed() {
       }
       showToast("Post deleted");
     } catch (e: any) {
+      console.log("[DELETE DEBUG] failed", {
+        postId,
+        type,
+        message: e?.message || "Failed to delete post",
+      });
       showToast(e.message || "Failed to delete post");
     }
   };
@@ -1790,6 +1809,7 @@ export default function HomeFeed() {
 	                      key={`${item.id}-${media.uri}`}
 	                      source={{ uri: media.uri }}
 	                      style={styles.banterMediaFill}
+	                      pointerEvents="none"
 	                      resizeMode={ResizeMode.COVER}
 	                      shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                      isLooping
@@ -1909,6 +1929,7 @@ export default function HomeFeed() {
 	                    key={`${item.id}-${media.uri}`}
 	                    source={{ uri: media.uri }}
 	                    style={styles.banterMediaFill}
+	                    pointerEvents="none"
 	                    resizeMode={ResizeMode.COVER}
 	                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                    isLooping
@@ -2008,7 +2029,16 @@ export default function HomeFeed() {
             {isMine ? (
               <Pressable
                 style={styles.banterAction}
-                onPress={() => deletePost(item.id, "banter")}
+                onPress={() => {
+                  console.log("[DELETE DEBUG] tap", {
+                    postId: item.id,
+                    isMine,
+                    isPending: !!item.raw?.pending,
+                    mediaType: media?.type || null,
+                  });
+                  showToast("Delete tapped");
+                  deletePost(item.id, "banter");
+                }}
               >
                 <FontAwesome name="trash" size={banterActionIconSize} color="#fff" />
                 <Text style={styles.banterActionText}>Delete</Text>
@@ -3228,6 +3258,8 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     bottom: 120,
     alignItems: "center",
     gap: 16,
+    zIndex: 12,
+    elevation: 12,
   },
   banterSeekBarWrap: {
     position: "absolute",
