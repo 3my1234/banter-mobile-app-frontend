@@ -172,46 +172,60 @@ export default function ProfileScreen() {
     return numeric.toLocaleString();
   };
 
+  const normalizeTransactions = (rawTransactions: any[]) => {
+    const deduped: any[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < rawTransactions.length; i += 1) {
+      const item = rawTransactions[i] || {};
+      const key = (item.txHash || item.id || `${item.tokenSymbol}-${item.createdAt}-${i}`).toString();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+    return deduped.filter((item) => {
+      const symbol = (item?.tokenSymbol || "").toString().toUpperCase();
+      return symbol !== "USDC.E" && symbol !== "MOVE";
+    });
+  };
+
   const fetchWalletData = async () => {
     try {
       const data = await apiFetch("/wallet/balances");
       setBalances(data?.balances || null);
 
+      setTransactionsLoading(true);
+      const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
+      setTransactions(normalizeTransactions(tx?.transactions || []));
+
       if (!walletsSynced && data?.wallets?.length) {
         setSyncingWallets(true);
-        await Promise.all(
-          data.wallets.map((wallet: any) =>
-            apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
-          )
-        );
-        const refreshed = await apiFetch("/wallet/balances");
-        setBalances(refreshed?.balances || null);
-        setWalletsSynced(true);
-        setSyncingWallets(false);
-      }
+        void (async () => {
+          try {
+            await Promise.allSettled(
+              data.wallets.map((wallet: any) =>
+                apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
+              )
+            );
+            const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
+              apiFetch("/wallet/balances"),
+              apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1"),
+            ]);
 
-      setTransactionsLoading(true);
-      const tx = await apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1");
-      const rawTransactions = tx?.transactions || [];
-      const deduped: any[] = [];
-      const seen = new Set<string>();
-      for (let i = 0; i < rawTransactions.length; i += 1) {
-        const item = rawTransactions[i] || {};
-        const key = (item.txHash || item.id || `${item.tokenSymbol}-${item.createdAt}-${i}`).toString();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.push(item);
+            if (refreshedBalances.status === "fulfilled") {
+              setBalances(refreshedBalances.value?.balances || null);
+            }
+            if (refreshedTransactions.status === "fulfilled") {
+              setTransactions(normalizeTransactions(refreshedTransactions.value?.transactions || []));
+            }
+            setWalletsSynced(true);
+          } finally {
+            setSyncingWallets(false);
+          }
+        })();
       }
-      const filtered = deduped.filter((item) => {
-        const symbol = (item?.tokenSymbol || "").toString().toUpperCase();
-        return symbol !== "USDC.E" && symbol !== "MOVE";
-      });
-      setTransactions(filtered);
-      setTransactionsLoading(false);
     } catch (e: any) {
       showToast(e.message || "Failed to sync wallet");
     } finally {
-      setSyncingWallets(false);
       setTransactionsLoading(false);
     }
   };
@@ -624,7 +638,7 @@ export default function ProfileScreen() {
 
         <View style={[styles.card, cardStyle]}>
           <Text style={[styles.sectionTitle, textPrimaryStyle]}>Transactions</Text>
-          {transactionsLoading || syncingWallets ? (
+          {transactionsLoading ? (
             <View style={styles.txLoading}>
               <ActivityIndicator color="#ff6b35" />
               <Text style={[styles.muted, textMutedStyle]}>Loading transactions...</Text>

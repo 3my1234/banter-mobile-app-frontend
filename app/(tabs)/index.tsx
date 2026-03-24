@@ -1546,7 +1546,7 @@ export default function HomeFeed() {
     }
     const isRoast = item.type === "roast";
     const ownerId = item.raw?.user?.id || item.raw?.userId;
-    const isMine = !!meId && ownerId === meId;
+    const isMine = item.raw?.ownedByViewer === true || (!!meId && ownerId === meId);
     const isFollowing = ownerId
       ? followedUserIds[ownerId] ?? getFollowStatus(ownerId) ?? false
       : false;
@@ -1842,7 +1842,7 @@ export default function HomeFeed() {
       );
     }
     const ownerId = item.raw?.user?.id || item.raw?.userId;
-    const isMine = !!meId && ownerId === meId;
+    const isMine = item.raw?.ownedByViewer === true || (!!meId && ownerId === meId);
     const isFollowing = ownerId
       ? followedUserIds[ownerId] ?? getFollowStatus(ownerId) ?? false
       : false;
