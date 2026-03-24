@@ -356,7 +356,7 @@ const BanterFeedPane = React.memo(function BanterFeedPane({
             progressBackgroundColor="transparent"
           />
         }
-        drawDistance={Math.round(windowHeight * 1.5)}
+        drawDistance={Math.round(windowHeight)}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         onMomentumScrollEnd={onMomentumScrollEnd}
@@ -1865,7 +1865,7 @@ export default function HomeFeed() {
     const isSheetOpen = !!banterCommentTarget;
     const seekBarThumbSize = 12;
     const seekBarWidth = seekBarWidthById[item.id] ?? 0;
-    const preloadAhead = 4;
+    const preloadAhead = 2;
     const preloadBehind = 1;
     const withinWindow =
       activeBanterIndex === -1
