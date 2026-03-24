@@ -583,10 +583,8 @@ export default function HomeFeed() {
   const loadPosts = useCallback(async (type: "posts" | "banter", feed: string) => {
     try {
       setError(null);
-      const [data] = await Promise.all([
-        apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`),
-        loadAds(),
-      ]);
+      const data = await apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`);
+      void loadAds();
       const mapped = (data.posts || []).map(mapPost);
       if (type === "posts") {
         setPosts(mapped);
