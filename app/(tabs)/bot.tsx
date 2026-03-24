@@ -892,8 +892,19 @@ export default function RolleyBotScreen() {
         ) : null}
 
         {stakes.length > 0 ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>My Stakes</Text>
+          <View style={styles.stakesSection}>
+            <View style={styles.stakesHeader}>
+              <View>
+                <Text style={styles.stakesEyebrow}>Active rollover</Text>
+                <Text style={styles.sectionTitle}>My Stakes</Text>
+              </View>
+              <View style={styles.stakesCountBadge}>
+                <Text style={styles.stakesCountText}>{stakes.length}</Text>
+              </View>
+            </View>
+            <Text style={styles.stakesSubtext}>
+              Your funded rollover positions appear here and update as each daily pick settles.
+            </Text>
             {stakes.map((stake) => (
               <View key={stake.id} style={styles.stakeCard}>
                 <View style={styles.stakeHead}>
@@ -908,7 +919,7 @@ export default function RolleyBotScreen() {
                   Asset: {stake.stake_asset} • Principal: {formatAmount(stake.principal_amount, stake.stake_asset)} • Current: {formatAmount(stake.current_amount, stake.stake_asset)}
                 </Text>
                 <Text style={styles.stakeLine}>
-                  Period: {stake.lock_days}d • Ends: {stake.ends_on}
+                  Target: {stake.lock_days} prediction day(s) - Started: {stake.starts_on}
                 </Text>
                 <Text style={styles.stakeLine}>
                   Progress: {stake.days_completed}/{stake.lock_days} day(s) • Remaining: {stake.days_remaining}
@@ -1380,15 +1391,53 @@ const createStyles = (colors: AppThemeColors) =>
     stakeButtonDisabled: { opacity: 0.6 },
     stakeButtonText: { color: "#16120c", fontWeight: "800", fontSize: 13 },
     disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 8, lineHeight: 16 },
+    stakesSection: {
+      backgroundColor: "rgba(255,107,53,0.10)",
+      borderWidth: 1,
+      borderColor: "rgba(255,107,53,0.35)",
+      borderRadius: 16,
+      padding: 12,
+      gap: 8,
+      shadowColor: "#ff6b35",
+      shadowOpacity: 0.12,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 3,
+    },
+    stakesHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+    },
+    stakesEyebrow: {
+      color: "#ff6b35",
+      fontSize: 11,
+      fontWeight: "800",
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+      marginBottom: 2,
+    },
+    stakesSubtext: { color: colors.textSoft, fontSize: 11, lineHeight: 16 },
+    stakesCountBadge: {
+      minWidth: 34,
+      height: 34,
+      borderRadius: 999,
+      backgroundColor: "#ff6b35",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 10,
+    },
+    stakesCountText: { color: "#16120c", fontSize: 14, fontWeight: "800" },
     guideLabel: { color: colors.text, fontSize: 12, fontWeight: "700", marginTop: 10 },
     guideStep: { color: colors.textSoft, fontSize: 11, marginTop: 4, lineHeight: 16 },
     stakeCard: {
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: "rgba(255,107,53,0.28)",
       borderRadius: 10,
       padding: 10,
       marginTop: 8,
-      backgroundColor: colors.surfaceAlt,
+      backgroundColor: colors.surface,
     },
     stakeHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     stakeSport: { color: colors.text, fontSize: 12, fontWeight: "700" },
@@ -1595,3 +1644,5 @@ const createStyles = (colors: AppThemeColors) =>
       fontWeight: "700",
     },
   });
+
+
