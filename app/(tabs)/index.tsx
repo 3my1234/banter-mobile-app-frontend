@@ -1912,7 +1912,7 @@ export default function HomeFeed() {
 	                    resizeMode={ResizeMode.COVER}
 	                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                    isLooping
-	                    useNativeControls
+	                    useNativeControls={false}
 	                    isMuted={false}
 	                    volume={1.0}
 	                    onPlaybackStatusUpdate={(status) => {
