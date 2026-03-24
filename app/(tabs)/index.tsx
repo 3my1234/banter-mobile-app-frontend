@@ -1068,9 +1068,15 @@ export default function HomeFeed() {
       reactionBreakdown: {},
       repostCount: 0,
       repostOf: null,
-      raw: { pending: true, isRoast: pending.isRoast, progress: pending.progress },
+      raw: {
+        pending: true,
+        isRoast: pending.isRoast,
+        progress: pending.progress,
+        ownedByViewer: true,
+        userId: meId,
+      },
     }));
-  }, [pendingPosts, meAvatar]);
+  }, [pendingPosts, meAvatar, meId]);
 
   const injectAds = useCallback(
     (items: Post[], ads: AdCampaign[], frequency: number | undefined) => {
