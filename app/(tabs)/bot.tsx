@@ -905,6 +905,14 @@ export default function RolleyBotScreen() {
             <Text style={styles.stakesSubtext}>
               Your funded rollover positions appear here and update as each daily pick settles.
             </Text>
+            <View style={styles.progressExplainBox}>
+              <Text style={styles.progressExplainTitle}>How progress works</Text>
+              <Text style={styles.progressExplainText}>
+                Rolley counts prediction days, not calendar days. If no qualifying Rolley pick is published for a day,
+                that day does not count against your rollover. Progress only moves when a daily pick is published and
+                later settled.
+              </Text>
+            </View>
             {stakes.map((stake) => (
               <View key={stake.id} style={styles.stakeCard}>
                 <View style={styles.stakeHead}>
@@ -1419,6 +1427,24 @@ const createStyles = (colors: AppThemeColors) =>
       marginBottom: 2,
     },
     stakesSubtext: { color: colors.textSoft, fontSize: 11, lineHeight: 16 },
+    progressExplainBox: {
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.08)",
+      backgroundColor: "rgba(0,0,0,0.16)",
+      padding: 10,
+      gap: 4,
+    },
+    progressExplainTitle: {
+      color: "#ffd1bf",
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    progressExplainText: {
+      color: colors.textSoft,
+      fontSize: 11,
+      lineHeight: 16,
+    },
     stakesCountBadge: {
       minWidth: 34,
       height: 34,
