@@ -1119,6 +1119,15 @@ export default function HomeFeed() {
     const injected = injectAds(banters, banterAds, adSettings?.banterFrequency);
     return [...videoPending, ...injected];
   }, [pendingPostItems, banters, injectAds, banterAds, adSettings?.banterFrequency]);
+  const activeOwnedBanter = useMemo(() => {
+    if (!activeBanterId) return null;
+    const current = visibleBanters.find((banter) => banter.id === activeBanterId) ?? null;
+    if (!current) return null;
+    if (current.raw?.adCampaignId) return null;
+    const ownerId = current.raw?.user?.id || current.raw?.userId;
+    const isMine = current.raw?.ownedByViewer === true || (!!meId && ownerId === meId);
+    return isMine ? current : null;
+  }, [visibleBanters, activeBanterId, meId]);
   const activeBanterIndex = useMemo(
     () => visibleBanters.findIndex((banter) => banter.id === activeBanterId),
     [visibleBanters, activeBanterId]
@@ -2350,13 +2359,13 @@ export default function HomeFeed() {
           ]}
           pointerEvents="box-none"
         >
-          <View
-            style={[
-              styles.topBar,
-              mainTab === "banter" && styles.topBarOverlay,
-            ]}
-          >
-            <Pressable onPress={() => router.push("/(tabs)/profile")}>
+	          <View
+	            style={[
+	              styles.topBar,
+	              mainTab === "banter" && styles.topBarOverlay,
+	            ]}
+	          >
+	            <Pressable onPress={() => router.push("/(tabs)/profile")}>
               {meAvatar ? (
                 <ExpoImage
                   source={{ uri: meAvatar }}
@@ -2369,12 +2378,12 @@ export default function HomeFeed() {
                 <View style={styles.avatarSmall} />
               )}
             </Pressable>
-            <View
-              style={[
-                styles.mainTabs,
-                mainTab === "banter" && styles.tabsOverlay,
-              ]}
-            >
+	            <View
+	              style={[
+	                styles.mainTabs,
+	                mainTab === "banter" && styles.tabsOverlay,
+	              ]}
+	            >
               <Pressable
                 hitSlop={14}
                 onPress={() => {
@@ -2408,11 +2417,23 @@ export default function HomeFeed() {
                   ]}
                 >
                   Banter
-                </Text>
-              </Pressable>
-            </View>
-            {/* Settings button removed from Home to avoid duplicate entry points. */}
-          </View>
+	                </Text>
+	              </Pressable>
+	            </View>
+	            <View style={styles.topBarActionSlot}>
+	              {mainTab === "banter" && activeOwnedBanter ? (
+	                <Pressable
+	                  onPress={() => deletePost(activeOwnedBanter.id, "banter")}
+	                  hitSlop={12}
+	                  style={styles.topBarDeleteButton}
+	                >
+	                  <FontAwesome name="trash" size={18} color="#fff" />
+	                </Pressable>
+	              ) : (
+	                <View style={styles.topBarActionPlaceholder} />
+	              )}
+	            </View>
+	          </View>
 
           <View
             style={[
@@ -2960,6 +2981,23 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: "#ff6b35",
+  },
+  topBarActionSlot: {
+    width: 40,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  topBarActionPlaceholder: {
+    width: 28,
+    height: 28,
+  },
+  topBarDeleteButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
   mainTabs: {
     flexDirection: "row",

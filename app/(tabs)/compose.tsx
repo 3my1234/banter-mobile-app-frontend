@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  ToastAndroid,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,6 +32,14 @@ import { addPendingPost, removePendingPost, updatePendingPost } from "@/lib/uplo
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 const ROAST_PREFIX = "[ROAST]";
+
+const showToast = (message: string) => {
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert("Notice", message);
+  }
+};
 
 export default function ComposeScreen() {
   const router = useRouter();
@@ -217,15 +226,19 @@ export default function ComposeScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!text.trim()) {
-      setError("Post content is required.");
+    const trimmedText = text.trim();
+    const hasMedia = mediaItems.length > 0;
+    if (!trimmedText && !hasMedia) {
+      const message = "Add text or media before posting.";
+      setError(message);
+      showToast(message);
       return;
     }
     setLoading(true);
     setError(null);
     const tempId = `pending-${Date.now()}`;
     const content =
-      mode === "roast" ? `${ROAST_PREFIX} ${text.trim()}` : text.trim();
+      mode === "roast" ? `${ROAST_PREFIX} ${trimmedText}` : trimmedText;
     const pendingPreviewItems = mediaItems.map((item) => ({
       type: item.isVideo ? "video" : "image",
       uri: item.uri,
@@ -242,6 +255,7 @@ export default function ComposeScreen() {
       media: pendingPreviewItems[0],
       mediaItems: pendingPreviewItems,
     });
+    showToast("Posting...");
     bypassDiscardGuardRef.current = true;
     router.back();
     try {
@@ -293,6 +307,7 @@ export default function ComposeScreen() {
       if (mountedRef.current) {
         setError(e.message);
       }
+      showToast(e?.message || "Failed to create post.");
     } finally {
       if (mountedRef.current) {
         setLoading(false);
@@ -313,7 +328,12 @@ export default function ComposeScreen() {
               <FontAwesome name="close" size={20} color="#fff" />
             </Pressable>
             <Text style={styles.title}>Create</Text>
-            <Pressable style={styles.postBtn} onPress={handleSubmit} disabled={loading}>
+            <Pressable
+              style={styles.postBtn}
+              onPress={handleSubmit}
+              disabled={loading}
+              hitSlop={10}
+            >
               {loading ? (
                 <ActivityIndicator color="#0d0d0d" />
               ) : (
