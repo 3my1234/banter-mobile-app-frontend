@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
@@ -12,6 +21,7 @@ export default function NewMessageScreen() {
     recipientId?: string;
     displayName?: string;
   }>();
+  const insets = useSafeAreaInsets();
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [body, setBody] = useState("");
@@ -70,39 +80,48 @@ export default function NewMessageScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={16}>
-            <Text style={styles.back}>Back</Text>
-          </Pressable>
-          <Text style={styles.title}>New Message</Text>
-          <View style={{ width: 32 }} />
-        </View>
-        {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator />
-          </View>
-        ) : (
-          <>
-            <Text style={styles.label}>To</Text>
-            <Text style={styles.name}>{displayName || "User"}</Text>
-            <Text style={styles.helper}>
-              Your first message needs approval before the conversation becomes active.
-            </Text>
-            <TextInput
-              value={body}
-              onChangeText={setBody}
-              placeholder="Write your message"
-              placeholderTextColor={themeColors.textMuted}
-              multiline
-              style={styles.input}
-            />
-            <Pressable style={[styles.button, submitting && styles.buttonDisabled]} onPress={sendFirstMessage}>
-              <Text style={styles.buttonText}>{submitting ? "Sending..." : "Send request"}</Text>
+      <KeyboardAvoidingView
+        style={styles.safe}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+      >
+        <View style={styles.container}>
+          <View style={styles.headerRow}>
+            <Pressable onPress={() => router.back()} hitSlop={16}>
+              <Text style={styles.back}>Back</Text>
             </Pressable>
-          </>
-        )}
-      </View>
+            <Text style={styles.title}>New Message</Text>
+            <View style={{ width: 32 }} />
+          </View>
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator />
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>To</Text>
+              <Text style={styles.name}>{displayName || "User"}</Text>
+              <Text style={styles.helper}>
+                Your first message needs approval before the conversation becomes active.
+              </Text>
+              <TextInput
+                value={body}
+                onChangeText={setBody}
+                placeholder="Write your message"
+                placeholderTextColor={themeColors.textMuted}
+                multiline
+                style={[styles.input, { marginBottom: Math.max(insets.bottom, 10) }]}
+              />
+              <Pressable
+                style={[styles.button, submitting && styles.buttonDisabled]}
+                onPress={sendFirstMessage}
+              >
+                <Text style={styles.buttonText}>{submitting ? "Sending..." : "Send request"}</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

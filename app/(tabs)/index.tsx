@@ -446,6 +446,7 @@ export default function HomeFeed() {
   );
   const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
   const [expandedMediaUri, setExpandedMediaUri] = useState<string | null>(null);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -619,13 +620,12 @@ export default function HomeFeed() {
   React.useEffect(() => {
     if (mainTab === "posts") {
       setActiveBanterId(null);
-      if (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0) {
-        loadPosts("posts", postTab);
-      }
-    } else {
-      if (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0) {
-        loadPosts("banter", banterTab);
-      }
+    }
+    if (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0) {
+      loadPosts("posts", postTab);
+    }
+    if (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0) {
+      loadPosts("banter", banterTab);
     }
     if (!meId) {
       loadMe();
@@ -1171,7 +1171,9 @@ export default function HomeFeed() {
   };
 
   const deletePost = async (postId: string, type: "posts" | "banter") => {
+    if (deletingPostId === postId) return;
     try {
+      setDeletingPostId(postId);
       if (postId.startsWith("pending-")) {
         removePendingPost(postId);
         if (type === "banter") {
@@ -1183,6 +1185,7 @@ export default function HomeFeed() {
         showToast("Pending post removed");
         return;
       }
+      showToast("Deleting...");
       await apiFetch(`/posts/${postId}`, { method: "DELETE" });
       if (type === "posts") {
         setPosts((prev) => prev.filter((post) => post.id !== postId));
@@ -1197,6 +1200,8 @@ export default function HomeFeed() {
       showToast("Post deleted");
     } catch (e: any) {
       showToast(e.message || "Failed to delete post");
+    } finally {
+      setDeletingPostId((current) => (current === postId ? null : current));
     }
   };
 
@@ -2394,18 +2399,23 @@ export default function HomeFeed() {
 	                </Text>
 	              </Pressable>
 	            </View>
-	            <View style={styles.topBarActionSlot}>
-	              {mainTab === "banter" && activeOwnedBanter ? (
-	                <Pressable
-	                  onPress={() => deletePost(activeOwnedBanter.id, "banter")}
-	                  hitSlop={12}
-	                  style={styles.topBarDeleteButton}
-	                >
-	                  <FontAwesome name="trash" size={18} color="#fff" />
-	                </Pressable>
-	              ) : (
-	                <View style={styles.topBarActionPlaceholder} />
-	              )}
+		            <View style={styles.topBarActionSlot}>
+		              {mainTab === "banter" && activeOwnedBanter ? (
+		                <Pressable
+		                  onPress={() => deletePost(activeOwnedBanter.id, "banter")}
+		                  hitSlop={12}
+		                  style={styles.topBarDeleteButton}
+		                  disabled={deletingPostId === activeOwnedBanter.id}
+		                >
+		                  {deletingPostId === activeOwnedBanter.id ? (
+		                    <ActivityIndicator size="small" color="#fff" />
+		                  ) : (
+		                    <FontAwesome name="trash" size={24} color="#fff" />
+		                  )}
+		                </Pressable>
+		              ) : (
+		                <View style={styles.topBarActionPlaceholder} />
+		              )}
 	            </View>
 	          </View>
 
@@ -2957,18 +2967,18 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     borderColor: "#ff6b35",
   },
   topBarActionSlot: {
-    width: 40,
+    width: 48,
     alignItems: "flex-end",
     justifyContent: "center",
   },
   topBarActionPlaceholder: {
-    width: 28,
-    height: 28,
+    width: 40,
+    height: 40,
   },
   topBarDeleteButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.35)",

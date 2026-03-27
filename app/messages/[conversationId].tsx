@@ -10,12 +10,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { setMessageUnreadCount } from "@/lib/messageBadge";
+import { getSocket } from "@/lib/socket";
 
 type ConversationMessage = {
   id: string;
@@ -40,6 +41,7 @@ type ConversationPayload = {
 export default function ConversationScreen() {
   const router = useRouter();
   const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
+  const insets = useSafeAreaInsets();
   const themeColors = useAppThemeColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +74,39 @@ export default function ConversationScreen() {
   useEffect(() => {
     loadConversation();
   }, [loadConversation]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    let socket: any;
+    let disposed = false;
+    const syncIfMatch = (payload?: { conversationId?: string }) => {
+      if (disposed) return;
+      if (payload?.conversationId && payload.conversationId !== conversationId) return;
+      void loadConversation();
+    };
+    const setup = async () => {
+      try {
+        socket = await getSocket();
+        if (disposed || !socket) return;
+        socket.on("messages.new", syncIfMatch);
+        socket.on("messages.requested", syncIfMatch);
+        socket.on("messages.request_resolved", syncIfMatch);
+        socket.on("messages.read", syncIfMatch);
+      } catch {
+        // ignore socket errors
+      }
+    };
+    setup();
+    return () => {
+      disposed = true;
+      if (socket) {
+        socket.off("messages.new", syncIfMatch);
+        socket.off("messages.requested", syncIfMatch);
+        socket.off("messages.request_resolved", syncIfMatch);
+        socket.off("messages.read", syncIfMatch);
+      }
+    };
+  }, [conversationId, loadConversation]);
 
   const handleAction = async (action: "accept" | "reject") => {
     if (!conversationId) return;
@@ -118,7 +153,8 @@ export default function ConversationScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.safe}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
       >
         <View style={styles.container}>
           <View style={styles.headerRow}>
@@ -177,6 +213,7 @@ export default function ConversationScreen() {
                 data={conversation?.messages || []}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
+                keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => (
                   <View style={[styles.bubble, item.mine ? styles.bubbleMine : styles.bubbleOther]}>
                     <Text style={[styles.bubbleText, item.mine && styles.bubbleTextMine]}>{item.body}</Text>
@@ -185,13 +222,14 @@ export default function ConversationScreen() {
               />
 
               {conversation?.status === "ACTIVE" ? (
-                <View style={styles.composeRow}>
+                <View style={[styles.composeRow, { paddingBottom: Math.max(insets.bottom, 10) }]}>
                   <TextInput
                     value={body}
                     onChangeText={setBody}
                     placeholder="Write a message"
                     placeholderTextColor={themeColors.textMuted}
                     style={styles.input}
+                    multiline
                   />
                   <Pressable
                     style={[styles.primaryButton, sending && styles.buttonDisabled]}

@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { setMessageUnreadCount } from "@/lib/messageBadge";
+import { getSocket } from "@/lib/socket";
 
 type InboxItem = {
   id: string;
@@ -53,6 +54,38 @@ export default function MessagesScreen() {
       loadMessages();
     }, [loadMessages])
   );
+
+  React.useEffect(() => {
+    let socket: any;
+    let disposed = false;
+    const sync = () => {
+      if (!disposed) {
+        void loadMessages();
+      }
+    };
+    const setup = async () => {
+      try {
+        socket = await getSocket();
+        if (disposed || !socket) return;
+        socket.on("messages.new", sync);
+        socket.on("messages.requested", sync);
+        socket.on("messages.request_resolved", sync);
+        socket.on("messages.read", sync);
+      } catch {
+        // ignore socket errors
+      }
+    };
+    setup();
+    return () => {
+      disposed = true;
+      if (socket) {
+        socket.off("messages.new", sync);
+        socket.off("messages.requested", sync);
+        socket.off("messages.request_resolved", sync);
+        socket.off("messages.read", sync);
+      }
+    };
+  }, [loadMessages]);
 
   const handleRefresh = async () => {
     try {
