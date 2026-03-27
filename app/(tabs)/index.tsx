@@ -1172,7 +1172,6 @@ export default function HomeFeed() {
 
   const deletePost = async (postId: string, type: "posts" | "banter") => {
     try {
-      console.log("[DELETE DEBUG] request", { postId, type });
       if (postId.startsWith("pending-")) {
         removePendingPost(postId);
         if (type === "banter") {
@@ -1181,12 +1180,10 @@ export default function HomeFeed() {
         } else {
           setPosts((prev) => prev.filter((post) => post.id !== postId));
         }
-        console.log("[DELETE DEBUG] removed pending", { postId, type });
         showToast("Pending post removed");
         return;
       }
       await apiFetch(`/posts/${postId}`, { method: "DELETE" });
-      console.log("[DELETE DEBUG] success", { postId, type });
       if (type === "posts") {
         setPosts((prev) => prev.filter((post) => post.id !== postId));
       } else {
@@ -1199,11 +1196,6 @@ export default function HomeFeed() {
       }
       showToast("Post deleted");
     } catch (e: any) {
-      console.log("[DELETE DEBUG] failed", {
-        postId,
-        type,
-        message: e?.message || "Failed to delete post",
-      });
       showToast(e.message || "Failed to delete post");
     }
   };
@@ -2035,24 +2027,6 @@ export default function HomeFeed() {
             ) : null}
           </View>
           <View style={[styles.banterSideActions, { bottom: sideActionsBottom }]}>
-            {isMine ? (
-              <Pressable
-                style={styles.banterAction}
-                onPress={() => {
-                  console.log("[DELETE DEBUG] tap", {
-                    postId: item.id,
-                    isMine,
-                    isPending: !!item.raw?.pending,
-                    mediaType: media?.type || null,
-                  });
-                  showToast("Delete tapped");
-                  deletePost(item.id, "banter");
-                }}
-              >
-                <FontAwesome name="trash" size={banterActionIconSize} color="#fff" />
-                <Text style={styles.banterActionText}>Delete</Text>
-              </Pressable>
-            ) : null}
             <Pressable
               style={styles.banterAction}
               onPress={() => openBanterComments(item)}
