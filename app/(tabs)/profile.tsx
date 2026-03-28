@@ -140,19 +140,19 @@ export default function ProfileScreen() {
     }
   };
 
-  const fetchMe = async () => {
+  const fetchMe = async (showSpinner: boolean = false) => {
     if (!session?.token) {
       setLoading(false);
       return;
     }
     try {
-      setLoading(true);
+      if (showSpinner || !me) setLoading(true);
       const data = await apiFetch("/auth/me", undefined, true);
       setMe(data.user || data);
     } catch (e: any) {
       showToast(e.message || "Failed to load profile");
     } finally {
-      setLoading(false);
+      if (showSpinner || !me) setLoading(false);
     }
   };
 
@@ -191,6 +191,12 @@ export default function ProfileScreen() {
   };
 
   const fetchWalletData = async () => {
+    if (!session?.token) {
+      setBalances(null);
+      setTransactions([]);
+      setTransactionsLoading(false);
+      return;
+    }
     try {
       const data = await apiFetch("/wallet/balances");
       setBalances(data?.balances || null);
@@ -233,14 +239,14 @@ export default function ProfileScreen() {
   };
 
   useEffect(() => {
-    fetchMe();
+    void fetchMe(true);
   }, [session]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (sessionLoaded) {
-        fetchMe();
-        fetchWalletData();
+        void fetchMe(false);
+        void fetchWalletData();
       }
     }, [sessionLoaded, session?.token])
   );

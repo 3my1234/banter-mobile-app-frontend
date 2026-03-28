@@ -29,9 +29,10 @@ export async function apiFetch(
     if (DEBUG_AUTH) {
       console.log("[AUTH DEBUG] JWT from session:", session?.token || "<none>");
     }
-    if (session?.token) {
-      headers.set("Authorization", `Bearer ${session.token}`);
+    if (!session?.token) {
+      throw new Error("Not authenticated");
     }
+    headers.set("Authorization", `Bearer ${session.token}`);
   }
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
