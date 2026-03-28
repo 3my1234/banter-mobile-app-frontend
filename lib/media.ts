@@ -271,7 +271,7 @@ export function normalizeMediaUrl(url?: string | null) {
 export function resolvePlayableMediaUrl(url?: string | null) {
   const normalized = normalizeMediaUrl(url);
   if (!normalized) return undefined;
-  return replaceHlsManifestWithMp4(normalized);
+  return normalized;
 }
 
 async function resolveDownloadableMediaUrl(url?: string | null) {

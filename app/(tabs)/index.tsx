@@ -1818,7 +1818,6 @@ export default function HomeFeed() {
 	                      key={`${item.id}-${media.uri}`}
 	                      source={{ uri: media.uri }}
 	                      style={styles.banterMediaFill}
-	                      pointerEvents="none"
 	                      resizeMode={ResizeMode.COVER}
 	                      shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                      isLooping
@@ -1938,11 +1937,10 @@ export default function HomeFeed() {
 	                    key={`${item.id}-${media.uri}`}
 	                    source={{ uri: media.uri }}
 	                    style={styles.banterMediaFill}
-	                    pointerEvents="none"
 	                    resizeMode={ResizeMode.COVER}
 	                    shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
 	                    isLooping
-	                    useNativeControls={false}
+	                    useNativeControls
 	                    isMuted={false}
 	                    volume={1.0}
 	                    onPlaybackStatusUpdate={(status) => {
