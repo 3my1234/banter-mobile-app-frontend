@@ -361,7 +361,7 @@ export default function RolleyBotScreen() {
       const data = await response.json();
       setStakes(Array.isArray(data?.stakes) ? data.stakes : []);
     } catch {
-      setStakes([]);
+      // Preserve the current stake list on transient Rolley fetch failures.
     }
   }, [userId]);
 
