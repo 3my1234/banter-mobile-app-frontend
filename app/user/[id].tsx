@@ -9,7 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text, View } from "@/components/Themed";
 import { apiFetch } from "@/lib/api";
-import { normalizeMediaUrl } from "@/lib/media";
+import { normalizeMediaUrl, resolvePlayableMediaUrl } from "@/lib/media";
 import { Image as ExpoImage } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
@@ -50,8 +50,9 @@ export default function UserProfileScreen() {
       ? rawMediaItems
           .map((item) => {
             if (!item || typeof item !== "object") return null;
-            const uri = normalizeMediaUrl((item as any).url);
-            const type = detectMediaType(uri, (item as any).type || null);
+            const normalizedUrl = normalizeMediaUrl((item as any).url);
+            const type = detectMediaType(normalizedUrl, (item as any).type || null);
+            const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
             if (!uri || !type) return null;
             return { uri, type };
           })
@@ -59,8 +60,9 @@ export default function UserProfileScreen() {
       : [];
 
     if (normalized.length) return normalized;
-    const uri = normalizeMediaUrl(fallbackUrl);
-    const type = detectMediaType(uri, fallbackType || null);
+    const normalizedUrl = normalizeMediaUrl(fallbackUrl);
+    const type = detectMediaType(normalizedUrl, fallbackType || null);
+    const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
     if (!uri || !type) return [];
     return [{ uri, type }];
   };

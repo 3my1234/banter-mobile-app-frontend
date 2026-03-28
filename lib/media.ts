@@ -37,6 +37,21 @@ function toPickedMedia(
 }
 
 const MAX_IMAGE_SIZE_MB = 10;
+const DOWNLOAD_TIMEOUT_MS = 45000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function pickMedia(
   kind: "image" | "video" | "both"
@@ -253,7 +268,7 @@ export function normalizeMediaUrl(url?: string | null) {
   return normalized;
 }
 
-function resolvePlayableMediaUrl(url?: string | null) {
+export function resolvePlayableMediaUrl(url?: string | null) {
   const normalized = normalizeMediaUrl(url);
   if (!normalized) return undefined;
   return replaceHlsManifestWithMp4(normalized);
@@ -296,7 +311,11 @@ export async function saveMediaToLibrary(
     preferredExtension?: string;
   }
 ) {
-  const sourceUrl = await resolveDownloadableMediaUrl(url);
+  const sourceUrl = await withTimeout(
+    resolveDownloadableMediaUrl(url),
+    15000,
+    "Timed out while preparing the download."
+  );
   if (!sourceUrl) {
     throw new Error("Media URL is missing.");
   }
@@ -316,12 +335,20 @@ export async function saveMediaToLibrary(
   const prefix = options?.fileNamePrefix || "banter";
   const albumName = options?.albumName || "Banter";
   const fileUri = `${FileSystem.documentDirectory}${prefix}-${Date.now()}.${extension}`;
-  const download = await FileSystem.downloadAsync(downloadUrl, fileUri);
+  const download = await withTimeout(
+    FileSystem.downloadAsync(downloadUrl, fileUri),
+    DOWNLOAD_TIMEOUT_MS,
+    "Download timed out. Check your connection and try again."
+  );
   if (download.status < 200 || download.status >= 300) {
     throw new Error(`Download failed (${download.status})`);
   }
 
-  const asset = await MediaLibrary.createAssetAsync(download.uri);
+  const asset = await withTimeout(
+    MediaLibrary.createAssetAsync(download.uri),
+    15000,
+    "Timed out while saving the file to your gallery."
+  );
   await MediaLibrary.createAlbumAsync(albumName, asset, false).catch(() => {});
   return asset.uri;
 }

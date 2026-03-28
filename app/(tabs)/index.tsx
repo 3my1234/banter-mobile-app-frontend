@@ -32,6 +32,7 @@ import ImageCarousel from "@/components/ImageCarousel";
 import { apiFetch } from "@/lib/api";
 import {
   normalizeMediaUrl,
+  resolvePlayableMediaUrl,
   saveMediaToLibrary,
 } from "@/lib/media";
 import { formatRelativeTime } from "@/lib/time";
@@ -151,10 +152,11 @@ const buildMediaItems = (
       const rawUrl = normalizeMediaUrl((item as any).url);
       const rawType =
         normalizeMediaType((item as any).type) || detectMediaType(rawUrl);
-      if (!rawUrl || !rawType) return;
+      const playableUrl = rawType === "video" ? resolvePlayableMediaUrl(rawUrl) : rawUrl;
+      if (!playableUrl || !rawType) return;
       normalized.push({
         type: rawType as "image" | "video",
-        uri: rawUrl,
+        uri: playableUrl,
         ratio: 16 / 9,
       });
     });
@@ -162,8 +164,9 @@ const buildMediaItems = (
 
   if (normalized.length) return normalized;
 
-  const mediaUrl = normalizeMediaUrl(fallbackUrl);
-  const mediaType = normalizeMediaType(fallbackType) || detectMediaType(mediaUrl);
+  const normalizedFallbackUrl = normalizeMediaUrl(fallbackUrl);
+  const mediaType = normalizeMediaType(fallbackType) || detectMediaType(normalizedFallbackUrl);
+  const mediaUrl = mediaType === "video" ? resolvePlayableMediaUrl(normalizedFallbackUrl) : normalizedFallbackUrl;
   if (!mediaUrl || !mediaType) return [];
 
   return [

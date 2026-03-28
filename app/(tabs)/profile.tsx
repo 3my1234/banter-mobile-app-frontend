@@ -17,7 +17,7 @@ import * as SecureStore from "expo-secure-store";
 import { Text, View } from "@/components/Themed";
 import { Image as ExpoImage } from "expo-image";
 import { apiFetch } from "@/lib/api";
-import { normalizeMediaUrl, pickMedia, presignUpload, uploadToS3 } from "@/lib/media";
+import { normalizeMediaUrl, pickMedia, presignUpload, resolvePlayableMediaUrl, uploadToS3 } from "@/lib/media";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
@@ -94,8 +94,9 @@ export default function ProfileScreen() {
       ? rawMediaItems
           .map((item) => {
             if (!item || typeof item !== "object") return null;
-            const uri = normalizeMediaUrl((item as any).url);
-            const type = detectMediaType(uri, (item as any).type || null);
+            const normalizedUrl = normalizeMediaUrl((item as any).url);
+            const type = detectMediaType(normalizedUrl, (item as any).type || null);
+            const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
             if (!uri || !type) return null;
             return { uri, type };
           })
@@ -103,8 +104,9 @@ export default function ProfileScreen() {
       : [];
 
     if (normalized.length) return normalized;
-    const uri = normalizeMediaUrl(fallbackUrl);
-    const type = detectMediaType(uri, fallbackType || null);
+    const normalizedUrl = normalizeMediaUrl(fallbackUrl);
+    const type = detectMediaType(normalizedUrl, fallbackType || null);
+    const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
     if (!uri || !type) return [];
     return [{ uri, type }];
   };

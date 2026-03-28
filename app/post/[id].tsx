@@ -27,6 +27,7 @@ import VoteGauge from "@/components/VoteGauge";
 import ImageCarousel from "@/components/ImageCarousel";
 import {
   normalizeMediaUrl,
+  resolvePlayableMediaUrl,
   saveMediaToLibrary,
 } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
@@ -71,9 +72,10 @@ const buildMediaItems = (
     ? rawMediaItems
         .map((item) => {
           if (!item || typeof item !== "object") return null;
-          const uri = normalizeMediaUrl((item as any).url);
+          const normalizedUrl = normalizeMediaUrl((item as any).url);
           const type =
-            normalizeMediaType((item as any).type) || detectMediaType(uri);
+            normalizeMediaType((item as any).type) || detectMediaType(normalizedUrl);
+          const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
           if (!uri || !type) return null;
           return { uri, type: type as "image" | "video" };
         })
@@ -82,8 +84,9 @@ const buildMediaItems = (
 
   if (normalized.length) return normalized;
 
-  const uri = normalizeMediaUrl(fallbackUrl);
-  const type = normalizeMediaType(fallbackType) || detectMediaType(uri);
+  const normalizedUrl = normalizeMediaUrl(fallbackUrl);
+  const type = normalizeMediaType(fallbackType) || detectMediaType(normalizedUrl);
+  const uri = type === "video" ? resolvePlayableMediaUrl(normalizedUrl) : normalizedUrl;
   if (!uri || !type) return [];
   return [{ uri, type: type as "image" | "video" }];
 };
