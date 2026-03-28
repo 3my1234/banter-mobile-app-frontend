@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -61,6 +61,7 @@ export default function ProfileScreen() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawSending, setWithdrawSending] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const logoutInFlightRef = useRef(false);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
@@ -278,22 +279,38 @@ export default function ProfileScreen() {
   };
 
   const logout = async () => {
-    try {
-      await privyLogout();
-    } catch {
-      // Keep local logout path even if Privy session teardown fails.
-    }
-    try {
-      await WebBrowser.dismissAuthSession();
-    } catch {
-      // ignore
-    }
-    await SecureStore.deleteItemAsync("banter_session");
-    await SecureStore.deleteItemAsync("banter_pending_registration");
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
+
     disconnectSocket();
-    setSession(null);
+    setRefreshing(false);
+    setLoading(false);
+    setTransactionsLoading(false);
+    setSyncingWallets(false);
+    setWalletsSynced(false);
+    setBalances(null);
+    setTransactions([]);
+    setUserPosts([]);
     setMe(null);
+    setSession(null);
+
+    await Promise.allSettled([
+      SecureStore.deleteItemAsync("banter_session"),
+      SecureStore.deleteItemAsync("banter_pending_registration"),
+    ]);
+
     router.replace("/(auth)/login");
+
+    void (async () => {
+      await Promise.allSettled([
+        Promise.race([
+          privyLogout(),
+          new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+        ]),
+        WebBrowser.dismissAuthSession(),
+      ]);
+      logoutInFlightRef.current = false;
+    })();
   };
 
   const updateProfileLock = async (nextLocked: boolean) => {
