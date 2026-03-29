@@ -23,7 +23,6 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Text } from "@/components/Themed";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
 import { useRouter } from "expo-router";
@@ -151,7 +150,44 @@ const normalizeMediaType = (raw?: string | null) => {
 const normalizeReactionType = (value?: string | null) => {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
-  return normalized || null;
+  if (
+    !normalized ||
+    normalized === "NULL" ||
+    normalized === "NONE" ||
+    normalized === "UNSET" ||
+    normalized === "UNREACTED"
+  ) {
+    return null;
+  }
+  if (
+    normalized === "ANGRY" ||
+    normalized === "DISLIKE" ||
+    normalized === "DISLIKED" ||
+    normalized === "THUMBS_DOWN" ||
+    normalized === "THUMB_DOWN" ||
+    normalized === "DOWNVOTE" ||
+    normalized.includes("DISLIKE") ||
+    normalized.includes("THUMB") ||
+    normalized.includes("DOWNVOTE") ||
+    normalized.includes("ANGRY") ||
+    normalized.includes("HATE")
+  ) {
+    return "ANGRY";
+  }
+  if (
+    normalized === "LOVE" ||
+    normalized === "LIKE" ||
+    normalized === "LIKED" ||
+    normalized === "FAVORITE" ||
+    normalized === "FAVOURITE" ||
+    normalized.includes("LOVE") ||
+    normalized.includes("LIKE") ||
+    normalized.includes("FAVOR") ||
+    normalized.includes("HEART")
+  ) {
+    return "LOVE";
+  }
+  return null;
 };
 
 const buildMediaItems = (
@@ -932,13 +968,24 @@ export default function HomeFeed() {
       });
       const reactionCount = data?.reactionCount;
       const reactionBreakdown = data?.reactionBreakdown;
-      const serverReaction =
-        Object.prototype.hasOwnProperty.call(data || {}, "reaction")
-          ? normalizeReactionType(data?.reaction?.type) ?? null
-          : optimisticReaction;
+      const hasReactionField = Object.prototype.hasOwnProperty.call(
+        data || {},
+        "reaction"
+      );
+      let serverReaction: "LOVE" | "ANGRY" | null = optimisticReaction;
+      if (hasReactionField) {
+        if (data?.reaction === null) {
+          // Keep optimistic UI state when server omits concrete reaction type.
+          // This preserves dislike/like color transitions reliably on tap.
+          serverReaction = optimisticReaction;
+        } else {
+          const normalized = normalizeReactionType(data?.reaction?.type);
+          serverReaction = (normalized as "LOVE" | "ANGRY" | null) ?? optimisticReaction;
+        }
+      }
       setReactionOverrideById((prev) => ({
         ...prev,
-        [postId]: (serverReaction as "LOVE" | "ANGRY" | null) ?? null,
+        [postId]: serverReaction,
       }));
       setPosts((prev) =>
         prev.map((p) =>
@@ -1682,9 +1729,10 @@ export default function HomeFeed() {
     const normalizedReaction = getDisplayReaction(item.id, item.userReaction);
     const loveActive = normalizedReaction === "LOVE";
     const dislikeActive = normalizedReaction === "ANGRY";
-    const loveColor = loveActive ? "#ff8a00" : "#9ca3af";
-    const dislikeColor = dislikeActive ? "#ef4444" : "#9ca3af";
+    const loveColor = loveActive ? "#fe2c55" : "#9ca3af";
+    const dislikeColor = dislikeActive ? "#facc15" : "#9ca3af";
     const loveGlyph = loveActive ? "♥" : "♡";
+    const dislikeEmoji = "\u{1F44E}";
     const isRepost = !!item.repostOf;
     const original = item.repostOf;
     const originalMediaItems = buildMediaItems(
@@ -1864,7 +1912,7 @@ export default function HomeFeed() {
                     transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                   }}
                 >
-                  <Text style={[styles.heartGlyph, { color: loveColor }]}>
+                  <Text style={[styles.reactionGlyph, { color: loveColor }]}>
                     {loveGlyph}
                   </Text>
                   <Text
@@ -1888,12 +1936,11 @@ export default function HomeFeed() {
                     transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
                   }}
                 >
-                  <MaterialIcons
-                    name={dislikeActive ? "thumb-down" : "thumb-down-off-alt"}
-                    size={16}
-                    color={dislikeColor}
-                    style={{ color: dislikeColor }}
-                  />
+                  {dislikeActive ? (
+                    <Text style={styles.reactionGlyph}>{dislikeEmoji}</Text>
+                  ) : (
+                    <FontAwesome name="thumbs-o-down" size={16} color={dislikeColor} />
+                  )}
                   <Text
                     style={[styles.actionText, dislikeActive ? { color: dislikeColor } : null]}
                   >
@@ -2005,9 +2052,10 @@ export default function HomeFeed() {
     const normalizedReaction = getDisplayReaction(item.id, item.userReaction);
     const loveActive = normalizedReaction === "LOVE";
     const dislikeActive = normalizedReaction === "ANGRY";
-    const loveColor = loveActive ? "#ff8a00" : "#ffffff";
-    const dislikeColor = dislikeActive ? "#ef4444" : "#ffffff";
+    const loveColor = loveActive ? "#fe2c55" : "#ffffff";
+    const dislikeColor = dislikeActive ? "#facc15" : "#ffffff";
     const loveGlyph = loveActive ? "♥" : "♡";
+    const dislikeEmoji = "\u{1F44E}";
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
@@ -2183,7 +2231,7 @@ export default function HomeFeed() {
                   transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                 }}
               >
-                <Text style={[styles.banterHeartGlyph, { color: loveColor }]}>
+                <Text style={[styles.banterReactionGlyph, { color: loveColor }]}>
                   {loveGlyph}
                 </Text>
                 <Text
@@ -2209,12 +2257,15 @@ export default function HomeFeed() {
                   transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
                 }}
               >
-                <MaterialIcons
-                  name={dislikeActive ? "thumb-down" : "thumb-down-off-alt"}
-                  size={banterActionIconSize}
-                  color={dislikeColor}
-                  style={{ color: dislikeColor }}
-                />
+                {dislikeActive ? (
+                  <Text style={styles.banterReactionGlyph}>{dislikeEmoji}</Text>
+                ) : (
+                  <FontAwesome
+                    name="thumbs-o-down"
+                    size={banterActionIconSize}
+                    color={dislikeColor}
+                  />
+                )}
                 <Text
                   style={[
                     styles.banterActionText,
@@ -3195,14 +3246,14 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     paddingVertical: 4,
     borderRadius: 999,
   },
-  actionText: { color: colors.textMuted, fontSize: 13 },
-  heartGlyph: {
-    fontSize: 17,
-    fontWeight: "700",
+  reactionGlyph: {
+    fontSize: 18,
     lineHeight: 18,
     includeFontPadding: false,
     textAlignVertical: "center",
+    fontWeight: "700",
   },
+  actionText: { color: colors.textMuted, fontSize: 13 },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -3473,13 +3524,13 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     },
     banterActionBusy: { opacity: 0.92 },
     banterActionText: { color: colors.text, fontSize: 12 },
-  banterHeartGlyph: {
-    fontSize: 34,
-    fontWeight: "700",
-    lineHeight: 34,
-    includeFontPadding: false,
-    textAlignVertical: "center",
-  },
+    banterReactionGlyph: {
+      fontSize: 34,
+      lineHeight: 34,
+      includeFontPadding: false,
+      textAlignVertical: "center",
+      fontWeight: "700",
+    },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,
