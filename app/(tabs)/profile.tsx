@@ -189,46 +189,81 @@ export default function ProfileScreen() {
     return deduped;
   };
 
-  const fetchWalletData = async () => {
+  const hasNonZeroWalletBalance = (value?: string | null) => {
+    try {
+      return BigInt(value || "0") > 0n;
+    } catch {
+      return false;
+    }
+  };
+
+  const hasWalletSnapshot = (nextBalances: Record<string, any> | null, nextTransactions: any[]) => {
+    if (nextTransactions.length > 0) return true;
+    if (!nextBalances) return false;
+    return [nextBalances.SOL, nextBalances.USDC, nextBalances["USDC.E"]].some(
+      (entry) => hasNonZeroWalletBalance(entry?.balance)
+    );
+  };
+
+  const fetchWalletData = async (forceSync: boolean = false) => {
     if (!session?.token) {
       setBalances(null);
       setTransactions([]);
       setTransactionsLoading(false);
       return;
     }
+    setTransactionsLoading(true);
     try {
-      const data = await apiFetch("/wallet/balances");
-      setBalances(data?.balances || null);
+      const [data, tx] = await Promise.all([
+        apiFetch("/wallet/balances"),
+        apiFetch("/wallet/transactions?limit=20&page=1"),
+      ]);
+      const initialBalances = data?.balances || null;
+      const initialTransactions = normalizeTransactions(tx?.transactions || []);
+      const shouldSyncWallets =
+        Array.isArray(data?.wallets) &&
+        data.wallets.length > 0 &&
+        (!walletsSynced || forceSync);
+      const canRenderInitialSnapshot = hasWalletSnapshot(initialBalances, initialTransactions);
 
-      setTransactionsLoading(true);
-      const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
-      setTransactions(normalizeTransactions(tx?.transactions || []));
+      if (canRenderInitialSnapshot || !shouldSyncWallets) {
+        setBalances(initialBalances);
+        setTransactions(initialTransactions);
+      }
 
-      if (!walletsSynced && data?.wallets?.length) {
+      if (shouldSyncWallets) {
         setSyncingWallets(true);
-        void (async () => {
-          try {
-            await Promise.allSettled(
-              data.wallets.map((wallet: any) =>
-                apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
-              )
-            );
-            const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
-              apiFetch("/wallet/balances"),
-              apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1"),
-            ]);
+        try {
+          await Promise.allSettled(
+            data.wallets.map((wallet: any) =>
+              apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
+            )
+          );
+          const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
+            apiFetch("/wallet/balances"),
+            apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1"),
+          ]);
 
-            if (refreshedBalances.status === "fulfilled") {
-              setBalances(refreshedBalances.value?.balances || null);
-            }
-            if (refreshedTransactions.status === "fulfilled") {
-              setTransactions(normalizeTransactions(refreshedTransactions.value?.transactions || []));
-            }
-            setWalletsSynced(true);
-          } finally {
-            setSyncingWallets(false);
+          if (refreshedBalances.status === "fulfilled") {
+            setBalances(refreshedBalances.value?.balances || null);
           }
-        })();
+          if (refreshedTransactions.status === "fulfilled") {
+            setTransactions(normalizeTransactions(refreshedTransactions.value?.transactions || []));
+          }
+
+          if (
+            !canRenderInitialSnapshot &&
+            refreshedBalances.status !== "fulfilled" &&
+            refreshedTransactions.status !== "fulfilled"
+          ) {
+            setBalances(initialBalances);
+            setTransactions(initialTransactions);
+          }
+
+          setWalletsSynced(true);
+        } finally {
+          setSyncingWallets(false);
+        }
       }
     } catch (e: any) {
       showToast(e.message || "Failed to sync wallet");
@@ -271,7 +306,7 @@ export default function ProfileScreen() {
     try {
       setRefreshing(true);
       setWalletsSynced(false);
-      await Promise.all([fetchMe(), fetchWalletData()]);
+      await Promise.all([fetchMe(), fetchWalletData(true)]);
     } finally {
       setRefreshing(false);
     }
