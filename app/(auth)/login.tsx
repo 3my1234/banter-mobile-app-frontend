@@ -7,6 +7,7 @@ import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
+import { warmAppBootstrap } from "@/lib/bootstrap";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -294,6 +295,7 @@ const AuthLoginScreen = () => {
           console.log("[AUTH DEBUG] Session email:", sessionEmail);
         }
       }
+      void warmAppBootstrap({ force: true });
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {

@@ -32,6 +32,7 @@ import {
 } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
+import { getWarmPostById, rememberWarmPost } from "@/lib/bootstrap";
 
 const ROAST_PREFIX = "[ROAST]";
 
@@ -259,12 +260,23 @@ export default function PostDetail() {
       ref.pauseAsync().catch(() => {});
     });
   }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    const warm = getWarmPostById(String(id));
+    if (!warm) return;
+    setPost(warm as Post);
+    setLoading(false);
+  }, [id]);
+
   const loadPost = useCallback(async () => {
     if (!id) return;
     try {
       setError(null);
       const data = await apiFetch(`/posts/${id}`);
-      setPost(data.post || data);
+      const nextPost = data.post || data;
+      setPost(nextPost);
+      rememberWarmPost(nextPost);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -878,7 +890,7 @@ socket.off("comment-deleted");
             <View style={styles.metaRow}>
               <View style={styles.metaItem}>
                 <FontAwesome name="comment-o" size={16} color="#9ca3af" />
-                <Text style={styles.metaText}>{post.commentCount ?? comments.length}</Text>
+                <Text style={styles.metaText}>{post.commentCount ?? 0}</Text>
               </View>
               <Pressable style={styles.metaItem} onPress={openRepostModal}>
                 <FontAwesome name="retweet" size={16} color="#9ca3af" />
@@ -972,7 +984,6 @@ socket.off("comment-deleted");
     mediaUrl,
     mediaType,
     detailAspect,
-    comments.length,
   ]);
 
   const saveMedia = async (uri?: string | null) => {

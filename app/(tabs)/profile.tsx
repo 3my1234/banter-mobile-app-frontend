@@ -17,6 +17,10 @@ import * as SecureStore from "expo-secure-store";
 import { Text, View } from "@/components/Themed";
 import { Image as ExpoImage } from "expo-image";
 import { apiFetch, getCurrentUser, invalidateCurrentUserCache } from "@/lib/api";
+import {
+  fetchWalletOverview,
+  rememberWarmPost,
+} from "@/lib/bootstrap";
 import { normalizeMediaUrl, pickMedia, presignUpload, resolvePlayableMediaUrl, uploadToS3 } from "@/lib/media";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -189,6 +193,34 @@ export default function ProfileScreen() {
     return deduped;
   };
 
+  const applyWalletSnapshot = (snapshot: {
+    balances?: Record<string, any> | null;
+    transactions?: any[];
+  }) => {
+    const nextBalances = snapshot?.balances || null;
+    const nextTransactions = normalizeTransactions(snapshot?.transactions || []);
+    setBalances(nextBalances);
+    setTransactions(nextTransactions);
+  };
+
+  useEffect(() => {
+    if (!session?.token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await fetchWalletOverview({ limit: 20, page: 1 });
+        if (cancelled) return;
+        applyWalletSnapshot(snapshot);
+        setTransactionsLoading(false);
+      } catch {
+        // keep current values; fetchWalletData handles visible errors
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token]);
+
   const fetchWalletData = async (forceSync: boolean = false) => {
     if (!session?.token) {
       setBalances(null);
@@ -196,25 +228,51 @@ export default function ProfileScreen() {
       setTransactionsLoading(false);
       return;
     }
-    setTransactionsLoading(true);
+    const showBlockingLoader = forceSync || (!balances && transactions.length === 0);
+    if (showBlockingLoader) {
+      setTransactionsLoading(true);
+    }
+    let hasRenderedSnapshot = false;
     try {
-      const shouldRefresh = forceSync || !walletsSynced;
-      setSyncingWallets(shouldRefresh);
-      const data = await apiFetch(
-        shouldRefresh
-          ? "/wallet/overview?limit=20&page=1&refresh=1"
-          : "/wallet/overview?limit=20&page=1"
-      );
-      const nextBalances = data?.balances || null;
-      const nextTransactions = normalizeTransactions(data?.transactions || []);
-      setBalances(nextBalances);
-      setTransactions(nextTransactions);
+      const snapshot = await fetchWalletOverview({
+        force: forceSync,
+        limit: 20,
+        page: 1,
+      });
+      applyWalletSnapshot(snapshot);
+      hasRenderedSnapshot = true;
+    } catch (e: any) {
+      if (!hasRenderedSnapshot) {
+        showToast(e.message || "Failed to load wallet overview");
+      }
+    } finally {
+      if (showBlockingLoader) {
+        setTransactionsLoading(false);
+      }
+    }
+
+    const shouldRefresh = forceSync || !walletsSynced;
+    if (!shouldRefresh) {
+      setWalletsSynced(true);
+      return;
+    }
+
+    setSyncingWallets(true);
+    try {
+      const refreshed = await fetchWalletOverview({
+        force: true,
+        refresh: true,
+        limit: 20,
+        page: 1,
+      });
+      applyWalletSnapshot(refreshed);
       setWalletsSynced(true);
     } catch (e: any) {
-      showToast(e.message || "Failed to sync wallet");
+      if (!hasRenderedSnapshot) {
+        showToast(e.message || "Failed to sync wallet");
+      }
     } finally {
       setSyncingWallets(false);
-      setTransactionsLoading(false);
     }
   };
 
@@ -469,6 +527,7 @@ export default function ProfileScreen() {
   const rolFromWallet = balances?.ROL;
   const rolFallbackRaw = String(me?.rolBalanceRaw || "0");
   const banterPointsRaw = String(me?.banterPointsRaw || "0");
+  const walletBootstrapPending = syncingWallets && !walletsSynced;
   const rolBalance =
     rolFromWallet && String(rolFromWallet.balance || "0") !== "0"
       ? rolFromWallet
@@ -555,6 +614,8 @@ export default function ProfileScreen() {
             <Text style={[styles.balanceValue, textSoftStyle]}>
               {solBalance
                 ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
+                : walletBootstrapPending
+                ? "--"
                 : "0.00"}
             </Text>
           </View>
@@ -563,6 +624,8 @@ export default function ProfileScreen() {
             <Text style={[styles.balanceValue, textSoftStyle]}>
               {solanaUsdcBalance
                 ? `${formatTokenAmount(solanaUsdcBalance.balance, solanaUsdcBalance.decimals)}`
+                : walletBootstrapPending
+                ? "--"
                 : "0.00"}
             </Text>
           </View>
@@ -571,6 +634,8 @@ export default function ProfileScreen() {
             <Text style={[styles.balanceValue, textSoftStyle]}>
               {movementUsdcBalance
                 ? `${formatTokenAmount(movementUsdcBalance.balance, movementUsdcBalance.decimals)}`
+                : walletBootstrapPending
+                ? "--"
                 : "0.00"}
             </Text>
           </View>
@@ -589,6 +654,8 @@ export default function ProfileScreen() {
             <Text style={[styles.balanceValue, textSoftStyle]}>
               {rolBalance
                 ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
+                : walletBootstrapPending
+                ? "--"
                 : "0.00"}
             </Text>
           </View>
@@ -665,7 +732,13 @@ export default function ProfileScreen() {
               <Text style={[styles.muted, textMutedStyle]}>Loading transactions...</Text>
             </View>
           ) : transactions.length === 0 ? (
+            walletBootstrapPending ? (
+              <Text style={[styles.muted, textMutedStyle]}>
+                Syncing wallet activity...
+              </Text>
+            ) : (
             <Text style={[styles.muted, textMutedStyle]}>No transactions yet.</Text>
+            )
           ) : (
             <ScrollView
               style={styles.txList}
@@ -805,7 +878,17 @@ export default function ProfileScreen() {
                   <Pressable
                     key={post.id}
                     style={styles.postRow}
-                    onPress={() => router.push(`/post/${post.id}`)}
+                    onPress={() => {
+                      const topVideoUri = mediaItems.find((item) => item.type === "video")?.uri;
+                      if (topVideoUri) {
+                        void fetch(topVideoUri, {
+                          method: "GET",
+                          headers: { Range: "bytes=0-262143" },
+                        }).catch(() => undefined);
+                      }
+                      rememberWarmPost(post);
+                      router.push(`/post/${post.id}`);
+                    }}
                   >
                     {mediaUrl ? (
                       <RNView style={styles.postMediaWrap}>

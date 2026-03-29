@@ -17,6 +17,9 @@ import { Linking } from "react-native";
 import { Text } from "@/components/Themed";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { apiFetch, getCurrentUser } from "@/lib/api";
+import {
+  fetchRolleyStakeSnapshot,
+} from "@/lib/bootstrap";
 import * as Clipboard from "expo-clipboard";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -350,20 +353,19 @@ export default function RolleyBotScreen() {
 
 
 
-  const loadStakes = useCallback(async () => {
-    if (!userId) {
-      setStakes([]);
-      return;
-    }
+  const loadStakes = useCallback(async (options?: { force?: boolean }) => {
     try {
-      const response = await fetch(buildRolleyUrl(`/api/v1/stakes?user_id=${encodeURIComponent(userId)}`));
-      if (!response.ok) throw new Error(`Stake fetch failed (${response.status})`);
-      const data = await response.json();
-      setStakes(Array.isArray(data?.stakes) ? data.stakes : []);
+      const snapshot = await fetchRolleyStakeSnapshot({
+        force: options?.force === true,
+      });
+      if (snapshot?.userId) {
+        setUserId(snapshot.userId);
+      }
+      setStakes(Array.isArray(snapshot?.stakes) ? snapshot.stakes : []);
     } catch {
       // Preserve the current stake list on transient Rolley fetch failures.
     }
-  }, [userId]);
+  }, []);
 
   const completeStakeSuccess = useCallback(
     async (amount: number, asset: StakeAsset, days: number) => {
@@ -509,7 +511,7 @@ export default function RolleyBotScreen() {
   const onRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      const tasks = [loadPicks(), fetchUserContext(), loadStakes()];
+      const tasks = [loadPicks(), fetchUserContext(), loadStakes({ force: true })];
       if (historyExpanded) {
         tasks.push(loadHistory());
       }

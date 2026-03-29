@@ -31,6 +31,12 @@ import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import ImageCarousel from "@/components/ImageCarousel";
 import { apiFetch, getCurrentUser } from "@/lib/api";
 import {
+  fetchFeedSnapshot,
+  getCachedFeedSnapshot,
+  rememberWarmPost,
+  rememberWarmPosts,
+} from "@/lib/bootstrap";
+import {
   normalizeMediaUrl,
   resolvePlayableMediaUrl,
   saveMediaToLibrary,
@@ -584,22 +590,38 @@ export default function HomeFeed() {
     return next;
   };
 
-  const loadPosts = useCallback(async (type: "posts" | "banter", feed: string) => {
+  const applyFeedResponse = (type: "posts" | "banter", feed: string, data: any) => {
+    const rawPosts = Array.isArray(data?.posts) ? data.posts : [];
+    rememberWarmPosts(rawPosts);
+    const mapped = rawPosts.map(mapPost);
+    if (type === "posts") {
+      setPosts(mapped);
+      loadedFeedKeysRef.current.posts = feed;
+      setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
+      return;
+    }
+    setBanters(mapped);
+    loadedFeedKeysRef.current.banter = feed;
+    setActiveBanterId(mapped[0]?.id || null);
+    setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
+  };
+
+  const loadPosts = useCallback(async (
+    type: "posts" | "banter",
+    feed: string,
+    options?: { force?: boolean }
+  ) => {
+    const force = options?.force === true;
     try {
       setError(null);
-      const data = await apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`);
-      void loadAds();
-      const mapped = (data.posts || []).map(mapPost);
-      if (type === "posts") {
-        setPosts(mapped);
-        loadedFeedKeysRef.current.posts = feed;
-        setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
-      } else {
-        setBanters(mapped);
-        loadedFeedKeysRef.current.banter = feed;
-        setActiveBanterId(mapped[0]?.id || null);
-        setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
+      const cached = !force ? getCachedFeedSnapshot(type, feed) : null;
+      if (cached) {
+        applyFeedResponse(type, feed, cached);
+        setLoading(false);
       }
+      const data = await fetchFeedSnapshot(type, feed, { force });
+      void loadAds();
+      applyFeedResponse(type, feed, data);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -694,9 +716,9 @@ export default function HomeFeed() {
     pendingCountRef.current = pendingPosts.length;
     if (prevCount > 0 && pendingPosts.length === 0) {
       if (mainTab === "posts") {
-        loadPosts("posts", postTab);
+        loadPosts("posts", postTab, { force: true });
       } else {
-        loadPosts("banter", banterTab);
+        loadPosts("banter", banterTab, { force: true });
       }
     }
   }, [pendingPosts, mainTab, postTab, banterTab, loadPosts]);
@@ -771,9 +793,9 @@ export default function HomeFeed() {
   const handleRefresh = () => {
     setRefreshing(true);
     if (mainTab === "posts") {
-      loadPosts("posts", postTab);
+      loadPosts("posts", postTab, { force: true });
     } else {
-      loadPosts("banter", banterTab);
+      loadPosts("banter", banterTab, { force: true });
     }
   };
 
@@ -1603,6 +1625,14 @@ export default function HomeFeed() {
             showToast("Still uploading. Please wait.");
             return;
           }
+          const topVideoUri = item.mediaItems?.find((media) => media.type === "video")?.uri;
+          if (topVideoUri) {
+            void fetch(topVideoUri, {
+              method: "GET",
+              headers: { Range: "bytes=0-262143" },
+            }).catch(() => undefined);
+          }
+          rememberWarmPost(item.raw || item);
           pauseAllVideos();
           router.push(`/post/${item.id}`);
         }}
