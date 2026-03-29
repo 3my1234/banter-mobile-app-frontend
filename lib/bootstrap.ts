@@ -1,6 +1,7 @@
 import { Image as ExpoImage } from "expo-image";
 import { apiFetch, getCurrentUser, getSession } from "./api";
 import { normalizeMediaUrl, resolvePlayableMediaUrl } from "./media";
+import { registerDevicePushToken } from "./pushNotifications";
 
 type FeedType = "posts" | "banter";
 
@@ -408,6 +409,7 @@ export async function warmAppBootstrap(options?: { force?: boolean }) {
   bootstrapInFlight = (async () => {
     await Promise.allSettled([
       getCurrentUser(),
+      registerDevicePushToken(),
       fetchWalletOverview({ force }),
       fetchFeedSnapshot("posts", "forYou", { force }),
       fetchFeedSnapshot("banter", "hot", { force }),

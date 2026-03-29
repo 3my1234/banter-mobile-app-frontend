@@ -32,6 +32,7 @@ import { disconnectSocket } from "@/lib/socket";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import { useThemePreference } from "@/components/theme";
 import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
+import { unregisterDevicePushToken } from "@/lib/pushNotifications";
 
 type Session = { token: string; email?: string };
 const LOGOUT_MARKER_KEY = "banter_logged_out";
@@ -527,6 +528,7 @@ export default function ProfileScreen() {
 
     void (async () => {
       const asyncTasks: Promise<unknown>[] = [
+        unregisterDevicePushToken().catch(() => undefined),
         Promise.race([
           privyLogout(),
           new Promise<void>((resolve) => setTimeout(resolve, 1500)),

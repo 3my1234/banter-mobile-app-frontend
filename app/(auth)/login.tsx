@@ -8,6 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { warmAppBootstrap } from "@/lib/bootstrap";
+import { registerDevicePushToken } from "@/lib/pushNotifications";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
@@ -296,6 +297,9 @@ const AuthLoginScreen = () => {
         }
       }
       void warmAppBootstrap();
+      void registerDevicePushToken().catch(() => {
+        // ignore push token registration failures
+      });
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {
