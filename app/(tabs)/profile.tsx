@@ -188,10 +188,7 @@ export default function ProfileScreen() {
       seen.add(key);
       deduped.push(item);
     }
-    return deduped.filter((item) => {
-      const symbol = (item?.tokenSymbol || "").toString().toUpperCase();
-      return symbol !== "USDC.E" && symbol !== "MOVE";
-    });
+    return deduped;
   };
 
   const fetchWalletData = async () => {
@@ -435,7 +432,7 @@ export default function ProfileScreen() {
         toAddress,
         amount,
         tokenMint: solanaUsdcMint,
-        decimals: usdcBalance?.decimals ?? 6,
+        decimals: solanaUsdcBalance?.decimals ?? 6,
       });
       if (result?.signature) {
         showToast("USDC withdrawal sent.");
@@ -497,7 +494,8 @@ export default function ProfileScreen() {
   const username = me?.username ? `@${me.username}` : "@user";
   const bio = me?.bio || "No bio yet.";
   const solBalance = balances?.SOL;
-  const usdcBalance = balances?.USDC;
+  const solanaUsdcBalance = balances?.USDC;
+  const movementUsdcBalance = balances?.["USDC.E"];
   const rolFromWallet = balances?.ROL;
   const rolFallbackRaw = String(me?.rolBalanceRaw || "0");
   const banterPointsRaw = String(me?.banterPointsRaw || "0");
@@ -593,8 +591,16 @@ export default function ProfileScreen() {
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>USDC (Solana)</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
-              {usdcBalance
-                ? `${formatTokenAmount(usdcBalance.balance, usdcBalance.decimals)}`
+              {solanaUsdcBalance
+                ? `${formatTokenAmount(solanaUsdcBalance.balance, solanaUsdcBalance.decimals)}`
+                : "0.00"}
+            </Text>
+          </View>
+          <View style={styles.balanceRow}>
+            <Text style={[styles.balanceLabel, textMutedStyle]}>USDC.e (Movement)</Text>
+            <Text style={[styles.balanceValue, textSoftStyle]}>
+              {movementUsdcBalance
+                ? `${formatTokenAmount(movementUsdcBalance.balance, movementUsdcBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
