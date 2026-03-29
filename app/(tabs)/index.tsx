@@ -130,6 +130,7 @@ const showToast = (message: string) => {
 };
 
 const ROAST_PREFIX = "[ROAST]";
+const REACTION_POP_SCALE = 1.22;
 
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
@@ -460,6 +461,7 @@ export default function HomeFeed() {
   const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
   const pendingCountRef = useRef(0);
+  const reactionScaleByKeyRef = useRef<Record<string, Animated.Value>>({});
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
@@ -474,6 +476,38 @@ export default function HomeFeed() {
       ref.pauseAsync().catch(() => {});
     });
   }, []);
+  const getReactionScaleValue = useCallback(
+    (postId: string, type: "LOVE" | "ANGRY") => {
+      const key = `${postId}:${type}`;
+      if (!reactionScaleByKeyRef.current[key]) {
+        reactionScaleByKeyRef.current[key] = new Animated.Value(1);
+      }
+      return reactionScaleByKeyRef.current[key];
+    },
+    []
+  );
+  const triggerReactionPop = useCallback(
+    (postId: string, type: "LOVE" | "ANGRY") => {
+      const scale = getReactionScaleValue(postId, type);
+      scale.stopAnimation();
+      scale.setValue(1);
+      Animated.sequence([
+        Animated.spring(scale, {
+          toValue: REACTION_POP_SCALE,
+          useNativeDriver: true,
+          speed: 28,
+          bounciness: 12,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          useNativeDriver: true,
+          speed: 26,
+          bounciness: 8,
+        }),
+      ]).start();
+    },
+    [getReactionScaleValue]
+  );
   const resumeBanterVideo = useCallback((id?: string | null) => {
     if (!id) return;
     const ref = videoRefs.current.get(id);
@@ -1774,40 +1808,56 @@ export default function HomeFeed() {
                 <Text style={styles.actionText}>{item.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable
-                style={[
-                  styles.actionItem,
-                  loveActive && styles.reactionActiveLove,
-                ]}
-                onPress={() => handleReaction(item.id, "LOVE")}
+                style={styles.actionItem}
+                onPress={() => {
+                  triggerReactionPop(item.id, "LOVE");
+                  void handleReaction(item.id, "LOVE");
+                }}
               >
-                <FontAwesome
-                  name={loveActive ? "heart" : "heart-o"}
-                  size={16}
-                  color={loveActive ? "#f59e0b" : "#9ca3af"}
-                />
-                <Text
-                  style={[styles.actionText, loveActive ? { color: "#f59e0b" } : null]}
+                <Animated.View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
+                  }}
                 >
-                  {loveCount}
-                </Text>
+                  <FontAwesome
+                    name={loveActive ? "heart" : "heart-o"}
+                    size={16}
+                    color={loveActive ? "#f59e0b" : "#9ca3af"}
+                  />
+                  <Text
+                    style={[styles.actionText, loveActive ? { color: "#f59e0b" } : null]}
+                  >
+                    {loveCount}
+                  </Text>
+                </Animated.View>
               </Pressable>
               <Pressable
-                style={[
-                  styles.actionItem,
-                  dislikeActive && styles.reactionActiveDislike,
-                ]}
-                onPress={() => handleReaction(item.id, "ANGRY")}
+                style={styles.actionItem}
+                onPress={() => {
+                  triggerReactionPop(item.id, "ANGRY");
+                  void handleReaction(item.id, "ANGRY");
+                }}
               >
-                <FontAwesome
-                  name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
-                  size={16}
-                  color={dislikeActive ? "#ef4444" : "#9ca3af"}
-                />
-                <Text
-                  style={[styles.actionText, dislikeActive ? { color: "#ef4444" } : null]}
+                <Animated.View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
+                  }}
                 >
-                  {dislikeCount}
-                </Text>
+                  <FontAwesome
+                    name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
+                    size={16}
+                    color={dislikeActive ? "#ef4444" : "#9ca3af"}
+                  />
+                  <Text
+                    style={[styles.actionText, dislikeActive ? { color: "#ef4444" } : null]}
+                  >
+                    {dislikeCount}
+                  </Text>
+                </Animated.View>
               </Pressable>
               <Pressable style={styles.actionItem} onPress={() => handleShare(item)}>
                 <FontAwesome name="share-alt" size={16} color="#9ca3af" />
@@ -2075,46 +2125,60 @@ export default function HomeFeed() {
               <Text style={styles.banterActionText}>{item.repostCount ?? 0}</Text>
             </Pressable>
             <Pressable
-              style={[
-                styles.banterAction,
-                loveActive && styles.banterReactionActiveLove,
-              ]}
-              onPress={() => handleReaction(item.id, "LOVE")}
+              style={styles.banterAction}
+              onPress={() => {
+                triggerReactionPop(item.id, "LOVE");
+                void handleReaction(item.id, "LOVE");
+              }}
             >
-              <FontAwesome
-                name={loveActive ? "heart" : "heart-o"}
-                size={banterActionIconSize}
-                color={loveActive ? "#f59e0b" : "#fff"}
-              />
-              <Text
-                style={[
-                  styles.banterActionText,
-                  loveActive ? { color: "#f59e0b" } : null,
-                ]}
+              <Animated.View
+                style={{
+                  alignItems: "center",
+                  transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
+                }}
               >
-                {loveCount}
-              </Text>
+                <FontAwesome
+                  name={loveActive ? "heart" : "heart-o"}
+                  size={banterActionIconSize}
+                  color={loveActive ? "#f59e0b" : "#fff"}
+                />
+                <Text
+                  style={[
+                    styles.banterActionText,
+                    loveActive ? { color: "#f59e0b" } : null,
+                  ]}
+                >
+                  {loveCount}
+                </Text>
+              </Animated.View>
             </Pressable>
             <Pressable
-              style={[
-                styles.banterAction,
-                dislikeActive && styles.banterReactionActiveDislike,
-              ]}
-              onPress={() => handleReaction(item.id, "ANGRY")}
+              style={styles.banterAction}
+              onPress={() => {
+                triggerReactionPop(item.id, "ANGRY");
+                void handleReaction(item.id, "ANGRY");
+              }}
             >
-              <FontAwesome
-                name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
-                size={banterActionIconSize}
-                color={dislikeActive ? "#ef4444" : "#fff"}
-              />
-              <Text
-                style={[
-                  styles.banterActionText,
-                  dislikeActive ? { color: "#ef4444" } : null,
-                ]}
+              <Animated.View
+                style={{
+                  alignItems: "center",
+                  transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
+                }}
               >
-                {dislikeCount}
-              </Text>
+                <FontAwesome
+                  name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
+                  size={banterActionIconSize}
+                  color={dislikeActive ? "#ef4444" : "#fff"}
+                />
+                <Text
+                  style={[
+                    styles.banterActionText,
+                    dislikeActive ? { color: "#ef4444" } : null,
+                  ]}
+                >
+                  {dislikeCount}
+                </Text>
+              </Animated.View>
             </Pressable>
             {media ? (
               <Pressable
@@ -3087,16 +3151,6 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     borderRadius: 999,
   },
   actionText: { color: colors.textMuted, fontSize: 13 },
-  reactionActiveLove: {
-    backgroundColor: "rgba(245,158,11,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.35)",
-  },
-  reactionActiveDislike: {
-    backgroundColor: "rgba(239,68,68,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.35)",
-  },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -3367,16 +3421,6 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     },
     banterActionBusy: { opacity: 0.92 },
     banterActionText: { color: colors.text, fontSize: 12 },
-  banterReactionActiveLove: {
-    backgroundColor: "rgba(245,158,11,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.42)",
-  },
-  banterReactionActiveDislike: {
-    backgroundColor: "rgba(239,68,68,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.42)",
-  },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,

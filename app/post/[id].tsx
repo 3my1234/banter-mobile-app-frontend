@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -36,6 +37,7 @@ import { getWarmPostById, rememberWarmPost } from "@/lib/bootstrap";
 
 const ROAST_PREFIX = "[ROAST]";
 const VIDEO_PRIME_RANGE_BYTES = 1024 * 1024;
+const REACTION_POP_SCALE = 1.22;
 
 const showToast = (message: string) => {
   if (Platform.OS === "android") {
@@ -315,12 +317,34 @@ export default function PostDetail() {
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
   const [repliesByComment, setRepliesByComment] = useState<Record<string, Comment[]>>({});
+  const loveReactionScale = React.useRef(new Animated.Value(1)).current;
+  const angryReactionScale = React.useRef(new Animated.Value(1)).current;
 
   const pauseDetailVideos = React.useCallback(() => {
     detailVideoRefs.current.forEach((ref) => {
       ref.pauseAsync().catch(() => {});
     });
   }, []);
+
+  const triggerDetailReactionPop = React.useCallback((type: "LOVE" | "ANGRY") => {
+    const scale = type === "LOVE" ? loveReactionScale : angryReactionScale;
+    scale.stopAnimation();
+    scale.setValue(1);
+    Animated.sequence([
+      Animated.spring(scale, {
+        toValue: REACTION_POP_SCALE,
+        useNativeDriver: true,
+        speed: 28,
+        bounciness: 12,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 26,
+        bounciness: 8,
+      }),
+    ]).start();
+  }, [angryReactionScale, loveReactionScale]);
 
   useEffect(() => {
     if (!id) return;
@@ -971,46 +995,62 @@ socket.off("comment-deleted");
                 <Text style={styles.metaText}>{post.repostCount ?? 0}</Text>
               </Pressable>
               <Pressable
-                style={[
-                  styles.metaItem,
-                  post.userReaction === "LOVE" && styles.metaReactionLoveActive,
-                ]}
-                onPress={() => handleReaction("LOVE")}
+                style={styles.metaItem}
+                onPress={() => {
+                  triggerDetailReactionPop("LOVE");
+                  void handleReaction("LOVE");
+                }}
               >
-                <FontAwesome
-                  name={post.userReaction === "LOVE" ? "heart" : "heart-o"}
-                  size={16}
-                  color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
-                />
-                <Text
-                  style={[
-                    styles.metaText,
-                    post.userReaction === "LOVE" ? { color: "#f59e0b" } : null,
-                  ]}
+                <Animated.View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    transform: [{ scale: loveReactionScale }],
+                  }}
                 >
-                  {post.reactionBreakdown?.LOVE ?? 0}
-                </Text>
+                  <FontAwesome
+                    name={post.userReaction === "LOVE" ? "heart" : "heart-o"}
+                    size={16}
+                    color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
+                  />
+                  <Text
+                    style={[
+                      styles.metaText,
+                      post.userReaction === "LOVE" ? { color: "#f59e0b" } : null,
+                    ]}
+                  >
+                    {post.reactionBreakdown?.LOVE ?? 0}
+                  </Text>
+                </Animated.View>
               </Pressable>
               <Pressable
-                style={[
-                  styles.metaItem,
-                  post.userReaction === "ANGRY" && styles.metaReactionDislikeActive,
-                ]}
-                onPress={() => handleReaction("ANGRY")}
+                style={styles.metaItem}
+                onPress={() => {
+                  triggerDetailReactionPop("ANGRY");
+                  void handleReaction("ANGRY");
+                }}
               >
-                <FontAwesome
-                  name={post.userReaction === "ANGRY" ? "thumbs-down" : "thumbs-o-down"}
-                  size={16}
-                  color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
-                />
-                <Text
-                  style={[
-                    styles.metaText,
-                    post.userReaction === "ANGRY" ? { color: "#ef4444" } : null,
-                  ]}
+                <Animated.View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    transform: [{ scale: angryReactionScale }],
+                  }}
                 >
-                  {post.reactionBreakdown?.ANGRY ?? 0}
-                </Text>
+                  <FontAwesome
+                    name={post.userReaction === "ANGRY" ? "thumbs-down" : "thumbs-o-down"}
+                    size={16}
+                    color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
+                  />
+                  <Text
+                    style={[
+                      styles.metaText,
+                      post.userReaction === "ANGRY" ? { color: "#ef4444" } : null,
+                    ]}
+                  >
+                    {post.reactionBreakdown?.ANGRY ?? 0}
+                  </Text>
+                </Animated.View>
               </Pressable>
               <Pressable
                 style={styles.metaItem}
@@ -1058,6 +1098,9 @@ socket.off("comment-deleted");
     mediaUrl,
     mediaType,
     detailAspect,
+    angryReactionScale,
+    loveReactionScale,
+    triggerDetailReactionPop,
   ]);
 
   const saveMedia = async (uri?: string | null) => {
@@ -1538,16 +1581,6 @@ const createStyles = (colors: AppThemeColors) =>
     borderRadius: 999,
   },
   metaText: { color: colors.textMuted, fontSize: 12 },
-  metaReactionLoveActive: {
-    backgroundColor: "rgba(245,158,11,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.35)",
-  },
-  metaReactionDislikeActive: {
-    backgroundColor: "rgba(239,68,68,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.35)",
-  },
   repostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostCard: {
     marginTop: 8,
