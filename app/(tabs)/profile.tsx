@@ -191,7 +191,7 @@ export default function ProfileScreen() {
     return deduped;
   };
 
-  const fetchWalletData = async () => {
+  const fetchWalletData = async (forceSync: boolean = false) => {
     if (!session?.token) {
       setBalances(null);
       setTransactions([]);
@@ -210,10 +210,9 @@ export default function ProfileScreen() {
       const lastSyncedAt = activeUserId ? lastWalletSyncByUser.get(activeUserId) || 0 : 0;
       const shouldSyncWallets =
         !!activeUserId &&
-        !walletsSynced &&
         Array.isArray(data?.wallets) &&
         data.wallets.length > 0 &&
-        Date.now() - lastSyncedAt > WALLET_SYNC_TTL_MS;
+        (forceSync || (!walletsSynced && Date.now() - lastSyncedAt > WALLET_SYNC_TTL_MS));
 
       if (shouldSyncWallets) {
         setSyncingWallets(true);
@@ -225,9 +224,10 @@ export default function ProfileScreen() {
               )
             );
             lastWalletSyncByUser.set(activeUserId, Date.now());
+            const refreshNonce = Date.now();
             const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
-              apiFetch("/wallet/balances"),
-              apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1&sync=1"),
+              apiFetch(`/wallet/balances?refresh=${refreshNonce}`),
+              apiFetch(`/wallet/transactions?limit=20&page=1&includeIndexer=1&sync=1&refresh=${refreshNonce}`),
             ]);
 
             if (refreshedBalances.status === "fulfilled") {
@@ -282,7 +282,11 @@ export default function ProfileScreen() {
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
-      await Promise.all([fetchMe(), fetchWalletData()]);
+      if (me?.id) {
+        lastWalletSyncByUser.delete(String(me.id));
+      }
+      setWalletsSynced(false);
+      await Promise.all([fetchMe(), fetchWalletData(true)]);
     } finally {
       setRefreshing(false);
     }
@@ -291,6 +295,10 @@ export default function ProfileScreen() {
   const logout = async () => {
     if (logoutInFlightRef.current) return;
     logoutInFlightRef.current = true;
+    const activeUserId = (me?.id || "").toString();
+    if (activeUserId) {
+      lastWalletSyncByUser.delete(activeUserId);
+    }
 
     disconnectSocket();
     setRefreshing(false);
