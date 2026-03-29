@@ -30,6 +30,7 @@ import { useThemePreference } from "@/components/theme";
 import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Session = { token: string; email?: string };
+const LOGOUT_MARKER_KEY = "banter_logged_out";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -297,18 +298,22 @@ export default function ProfileScreen() {
     await Promise.allSettled([
       SecureStore.deleteItemAsync("banter_session"),
       SecureStore.deleteItemAsync("banter_pending_registration"),
+      SecureStore.setItemAsync(LOGOUT_MARKER_KEY, "1"),
     ]);
 
     router.replace("/(auth)/login");
 
     void (async () => {
-      await Promise.allSettled([
+      const asyncTasks: Promise<unknown>[] = [
         Promise.race([
           privyLogout(),
           new Promise<void>((resolve) => setTimeout(resolve, 1500)),
         ]),
-        WebBrowser.dismissAuthSession(),
-      ]);
+      ];
+      if (Platform.OS !== "android") {
+        asyncTasks.push(Promise.resolve(WebBrowser.dismissAuthSession()));
+      }
+      await Promise.allSettled(asyncTasks);
       logoutInFlightRef.current = false;
     })();
   };

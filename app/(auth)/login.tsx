@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { usePrivy, useLoginWithOAuth, useEmbeddedSolanaWallet } from "@privy-io/expo";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
@@ -15,6 +16,7 @@ const API_BASE_URL =
 const processingPrivyUserIds = new Set<string>();
 const walletProvisionAttemptedUserIds = new Set<string>();
 let oauthFlowInProgress = false;
+const LOGOUT_MARKER_KEY = "banter_logged_out";
 
 const AuthLoginScreen = () => {
   const router = useRouter();
@@ -30,6 +32,7 @@ const AuthLoginScreen = () => {
   const [redirecting, setRedirecting] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [authFlowActive, setAuthFlowActive] = useState(oauthFlowInProgress);
+  const [logoutMarkerActive, setLogoutMarkerActive] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
 
@@ -55,6 +58,7 @@ const AuthLoginScreen = () => {
     const checkExistingSession = async () => {
       try {
         const raw = await SecureStore.getItemAsync("banter_session");
+        const logoutMarker = await SecureStore.getItemAsync(LOGOUT_MARKER_KEY);
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
@@ -62,6 +66,7 @@ const AuthLoginScreen = () => {
             if (typeof token === "string" && token.length > 0) {
               const valid = await validateStoredSession(token);
               if (valid) {
+                await SecureStore.deleteItemAsync(LOGOUT_MARKER_KEY);
                 setRedirecting(true);
                 router.replace("/(tabs)");
                 return;
@@ -73,6 +78,7 @@ const AuthLoginScreen = () => {
           await SecureStore.deleteItemAsync("banter_session");
           await sleep(50);
         }
+        setLogoutMarkerActive(logoutMarker === "1");
       } finally {
         setCheckingSession(false);
         setIsInitializing(false);
@@ -278,6 +284,8 @@ const AuthLoginScreen = () => {
         "banter_session",
         JSON.stringify({ token: verified.token, email: sessionEmail })
       );
+      await SecureStore.deleteItemAsync(LOGOUT_MARKER_KEY);
+      setLogoutMarkerActive(false);
       if (process.env.EXPO_PUBLIC_DEBUG_AUTH === "1") {
         if (__DEV__) {
           console.log("[AUTH DEBUG] Stored JWT:", verified.token);
@@ -304,11 +312,15 @@ const AuthLoginScreen = () => {
       setLoginLoading(true);
       oauthFlowInProgress = true;
       setAuthFlowActive(true);
+      await SecureStore.deleteItemAsync(LOGOUT_MARKER_KEY);
+      setLogoutMarkerActive(false);
       // Ensure any stale auth session is closed before starting a new one.
-      try {
-        await WebBrowser.dismissAuthSession();
-      } catch {
-        // ignore
+      if (Platform.OS !== "android") {
+        try {
+          await WebBrowser.dismissAuthSession();
+        } catch {
+          // ignore
+        }
       }
       if (isReady && userRef.current) {
         await processAuthenticatedUser(userRef.current);
@@ -342,9 +354,9 @@ const AuthLoginScreen = () => {
   };
 
   useEffect(() => {
-    if (!isReady || !user || handledLoginRef.current) return;
+    if (!isReady || !user || handledLoginRef.current || logoutMarkerActive) return;
     processAuthenticatedUser(user);
-  }, [isReady, user]);
+  }, [isReady, user, logoutMarkerActive]);
 
   useEffect(() => {
     if (!oauthState || oauthState.status !== "error") return;
