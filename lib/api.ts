@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
 const DEBUG_AUTH = process.env.EXPO_PUBLIC_DEBUG_AUTH === "1";
-const DEDUPED_GET_PREFIXES = ["/auth/me", "/wallet/balances", "/wallet/transactions"];
+const DEDUPED_GET_PREFIXES = ["/auth/me"];
 const SHORT_CACHE_TTL_MS = 1500;
 const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const inFlightRequests = new Map<string, Promise<any>>();
