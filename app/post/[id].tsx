@@ -62,6 +62,12 @@ const normalizeMediaType = (value?: string | null) => {
   return undefined;
 };
 
+const normalizeReactionType = (value?: string | null) => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  return normalized || null;
+};
+
 type MediaItem = {
   type: "image" | "video";
   uri: string;
@@ -359,7 +365,17 @@ export default function PostDetail() {
     try {
       setError(null);
       const data = await apiFetch(`/posts/${id}`);
-      const nextPost = data.post || data;
+      const rawPost = data.post || data;
+      const nextPost = {
+        ...rawPost,
+        userReaction: normalizeReactionType(rawPost?.userReaction),
+        repostOf: rawPost?.repostOf
+          ? {
+              ...rawPost.repostOf,
+              userReaction: normalizeReactionType(rawPost.repostOf?.userReaction),
+            }
+          : rawPost?.repostOf,
+      };
       setPost((prev) => {
         const merged = mergePostKeepingWarmMedia(prev, nextPost);
         rememberWarmPost(merged);
@@ -447,7 +463,7 @@ export default function PostDetail() {
   const handleReaction = async (type: "LOVE" | "ANGRY") => {
     if (!post) return;
     try {
-      const currentReaction = post.userReaction ?? null;
+      const currentReaction = normalizeReactionType(post.userReaction) ?? null;
       const nextReaction = currentReaction === type ? null : type;
       const breakdown = { ...(post.reactionBreakdown || {}) } as Record<
         string,
@@ -495,7 +511,9 @@ export default function PostDetail() {
           prev
             ? {
                 ...prev,
-                userReaction: data.reaction ? data.reaction.type : null,
+                userReaction: data.reaction
+                  ? normalizeReactionType(data.reaction.type)
+                  : null,
               }
             : prev
         );
@@ -986,6 +1004,14 @@ socket.off("comment-deleted");
               </View>
             )}
             <View style={styles.metaRow}>
+              {(() => {
+                const normalizedReaction = normalizeReactionType(post.userReaction);
+                const loveActive = normalizedReaction === "LOVE";
+                const dislikeActive = normalizedReaction === "ANGRY";
+                const loveColor = loveActive ? "#ff8a00" : "#9ca3af";
+                const dislikeColor = dislikeActive ? "#ef4444" : "#9ca3af";
+                return (
+                  <>
               <View style={styles.metaItem}>
                 <FontAwesome name="comment-o" size={16} color="#9ca3af" />
                 <Text style={styles.metaText}>{post.commentCount ?? 0}</Text>
@@ -1009,14 +1035,15 @@ socket.off("comment-deleted");
                   }}
                 >
                   <FontAwesome
-                    name={post.userReaction === "LOVE" ? "heart" : "heart-o"}
+                    name={loveActive ? "heart" : "heart-o"}
                     size={16}
-                    color={post.userReaction === "LOVE" ? "#f59e0b" : "#9ca3af"}
+                    color={loveColor}
+                    style={{ color: loveColor }}
                   />
                   <Text
                     style={[
                       styles.metaText,
-                      post.userReaction === "LOVE" ? { color: "#f59e0b" } : null,
+                      loveActive ? { color: loveColor } : null,
                     ]}
                   >
                     {post.reactionBreakdown?.LOVE ?? 0}
@@ -1038,20 +1065,24 @@ socket.off("comment-deleted");
                   }}
                 >
                   <FontAwesome
-                    name={post.userReaction === "ANGRY" ? "thumbs-down" : "thumbs-o-down"}
+                    name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
                     size={16}
-                    color={post.userReaction === "ANGRY" ? "#ef4444" : "#9ca3af"}
+                    color={dislikeColor}
+                    style={{ color: dislikeColor }}
                   />
                   <Text
                     style={[
                       styles.metaText,
-                      post.userReaction === "ANGRY" ? { color: "#ef4444" } : null,
+                      dislikeActive ? { color: dislikeColor } : null,
                     ]}
                   >
                     {post.reactionBreakdown?.ANGRY ?? 0}
                   </Text>
                 </Animated.View>
               </Pressable>
+                  </>
+                );
+              })()}
               <Pressable
                 style={styles.metaItem}
                 onPress={async () => {

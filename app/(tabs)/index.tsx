@@ -147,6 +147,12 @@ const normalizeMediaType = (raw?: string | null) => {
   return undefined;
 };
 
+const normalizeReactionType = (value?: string | null) => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  return normalized || null;
+};
+
 const buildMediaItems = (
   rawMediaItems: unknown,
   fallbackUrl?: string | null,
@@ -560,7 +566,7 @@ export default function HomeFeed() {
       reactionCount: post.reactionCount ?? 0,
       shareCount: post.shareCount ?? 0,
       reactionBreakdown: post.reactionBreakdown || {},
-      userReaction: post.userReaction ?? null,
+      userReaction: normalizeReactionType(post.userReaction),
       repostCount: post.repostCount ?? 0,
       repostOf: post.repostOf || null,
       raw: post,
@@ -587,7 +593,7 @@ export default function HomeFeed() {
       reactionCount: 0,
       shareCount: 0,
       reactionBreakdown: {},
-      userReaction: null,
+      userReaction: normalizeReactionType((ad as any).userReaction),
       repostCount: 0,
       repostOf: null,
       raw: { isAd: true, ad },
@@ -886,8 +892,8 @@ export default function HomeFeed() {
   const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
     try {
       const currentReaction =
-        posts.find((p) => p.id === postId)?.userReaction ??
-        banters.find((p) => p.id === postId)?.userReaction ??
+        normalizeReactionType(posts.find((p) => p.id === postId)?.userReaction) ??
+        normalizeReactionType(banters.find((p) => p.id === postId)?.userReaction) ??
         null;
       const optimisticReaction = currentReaction === type ? null : type;
 
@@ -905,7 +911,7 @@ export default function HomeFeed() {
       const reactionBreakdown = data?.reactionBreakdown;
       const serverReaction =
         Object.prototype.hasOwnProperty.call(data || {}, "reaction")
-          ? data?.reaction?.type ?? null
+          ? normalizeReactionType(data?.reaction?.type) ?? null
           : optimisticReaction;
       setPosts((prev) =>
         prev.map((p) =>
@@ -1642,8 +1648,11 @@ export default function HomeFeed() {
       : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
-    const loveActive = item.userReaction === "LOVE";
-    const dislikeActive = item.userReaction === "ANGRY";
+    const normalizedReaction = normalizeReactionType(item.userReaction);
+    const loveActive = normalizedReaction === "LOVE";
+    const dislikeActive = normalizedReaction === "ANGRY";
+    const loveColor = loveActive ? "#ff8a00" : "#9ca3af";
+    const dislikeColor = dislikeActive ? "#ef4444" : "#9ca3af";
     const isRepost = !!item.repostOf;
     const original = item.repostOf;
     const originalMediaItems = buildMediaItems(
@@ -1826,10 +1835,11 @@ export default function HomeFeed() {
                   <FontAwesome
                     name={loveActive ? "heart" : "heart-o"}
                     size={16}
-                    color={loveActive ? "#f59e0b" : "#9ca3af"}
+                    color={loveColor}
+                    style={{ color: loveColor }}
                   />
                   <Text
-                    style={[styles.actionText, loveActive ? { color: "#f59e0b" } : null]}
+                    style={[styles.actionText, loveActive ? { color: loveColor } : null]}
                   >
                     {loveCount}
                   </Text>
@@ -1852,10 +1862,11 @@ export default function HomeFeed() {
                   <FontAwesome
                     name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
                     size={16}
-                    color={dislikeActive ? "#ef4444" : "#9ca3af"}
+                    color={dislikeColor}
+                    style={{ color: dislikeColor }}
                   />
                   <Text
-                    style={[styles.actionText, dislikeActive ? { color: "#ef4444" } : null]}
+                    style={[styles.actionText, dislikeActive ? { color: dislikeColor } : null]}
                   >
                     {dislikeCount}
                   </Text>
@@ -1962,8 +1973,11 @@ export default function HomeFeed() {
       : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
-    const loveActive = item.userReaction === "LOVE";
-    const dislikeActive = item.userReaction === "ANGRY";
+    const normalizedReaction = normalizeReactionType(item.userReaction);
+    const loveActive = normalizedReaction === "LOVE";
+    const dislikeActive = normalizedReaction === "ANGRY";
+    const loveColor = loveActive ? "#ff8a00" : "#ffffff";
+    const dislikeColor = dislikeActive ? "#ef4444" : "#ffffff";
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
@@ -2142,12 +2156,13 @@ export default function HomeFeed() {
                 <FontAwesome
                   name={loveActive ? "heart" : "heart-o"}
                   size={banterActionIconSize}
-                  color={loveActive ? "#f59e0b" : "#fff"}
+                  color={loveColor}
+                  style={{ color: loveColor }}
                 />
                 <Text
                   style={[
                     styles.banterActionText,
-                    loveActive ? { color: "#f59e0b" } : null,
+                    loveActive ? { color: loveColor } : null,
                   ]}
                 >
                   {loveCount}
@@ -2170,12 +2185,13 @@ export default function HomeFeed() {
                 <FontAwesome
                   name={dislikeActive ? "thumbs-down" : "thumbs-o-down"}
                   size={banterActionIconSize}
-                  color={dislikeActive ? "#ef4444" : "#fff"}
+                  color={dislikeColor}
+                  style={{ color: dislikeColor }}
                 />
                 <Text
                   style={[
                     styles.banterActionText,
-                    dislikeActive ? { color: "#ef4444" } : null,
+                    dislikeActive ? { color: dislikeColor } : null,
                   ]}
                 >
                   {dislikeCount}
