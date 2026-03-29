@@ -35,6 +35,14 @@ import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Session = { token: string; email?: string };
 const LOGOUT_MARKER_KEY = "banter_logged_out";
+const PROFILE_CACHE_PREFIX = "banter_profile_cache_v1:";
+
+type ProfileCachePayload = {
+  balances: Record<string, any> | null;
+  transactions: any[];
+  posts: any[];
+  updatedAt: number;
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -68,6 +76,7 @@ export default function ProfileScreen() {
   const [withdrawSending, setWithdrawSending] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const logoutInFlightRef = useRef(false);
+  const hydratedProfileCacheUserIdRef = useRef<string | null>(null);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
@@ -204,6 +213,46 @@ export default function ProfileScreen() {
     setTransactions(nextTransactions);
   };
 
+  const profileCacheKey = (userId: string) => `${PROFILE_CACHE_PREFIX}${userId}`;
+
+  const hydrateProfileCache = React.useCallback(async (userId?: string | null) => {
+    if (!userId) return;
+    if (hydratedProfileCacheUserIdRef.current === userId) return;
+    try {
+      const raw = await SecureStore.getItemAsync(profileCacheKey(userId));
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<ProfileCachePayload> | null;
+      if (!parsed) return;
+      if (balances === null && parsed.balances && typeof parsed.balances === "object") {
+        setBalances(parsed.balances as Record<string, any>);
+      }
+      if (transactions.length === 0 && Array.isArray(parsed.transactions)) {
+        setTransactions(normalizeTransactions(parsed.transactions));
+      }
+      if (userPosts.length === 0 && Array.isArray(parsed.posts)) {
+        setUserPosts(parsed.posts);
+      }
+      hydratedProfileCacheUserIdRef.current = userId;
+    } catch {
+      // ignore cache parse issues
+    }
+  }, [balances, transactions.length, userPosts.length]);
+
+  const persistProfileCache = React.useCallback(async (userId?: string | null) => {
+    if (!userId) return;
+    try {
+      const payload: ProfileCachePayload = {
+        balances: balances || null,
+        transactions: normalizeTransactions(transactions || []).slice(0, 40),
+        posts: Array.isArray(userPosts) ? userPosts.slice(0, 60) : [],
+        updatedAt: Date.now(),
+      };
+      await SecureStore.setItemAsync(profileCacheKey(userId), JSON.stringify(payload));
+    } catch {
+      // ignore cache write issues
+    }
+  }, [balances, transactions, userPosts]);
+
   useEffect(() => {
     if (!session?.token) return;
     let cancelled = false;
@@ -256,7 +305,8 @@ export default function ProfileScreen() {
       }
     }
 
-    const shouldRefresh = forceSync || !walletsSynced;
+    const hasUsableSnapshot = !!balances || transactions.length > 0;
+    const shouldRefresh = forceSync || (!walletsSynced && !hasUsableSnapshot);
     if (!shouldRefresh) {
       setWalletsSynced(true);
       return;
@@ -293,8 +343,10 @@ export default function ProfileScreen() {
     if (!userId) {
       setUserPosts([]);
       setUserPostsLoading(false);
+      hydratedProfileCacheUserIdRef.current = null;
       return;
     }
+    void hydrateProfileCache(userId);
     setUserPostsLoading(true);
     const loadingGuard = setTimeout(() => {
       setUserPostsLoading(false);
@@ -309,11 +361,15 @@ export default function ProfileScreen() {
       clearTimeout(loadingGuard);
       setUserPostsLoading(false);
     }
-  }, []);
+  }, [hydrateProfileCache]);
 
   useEffect(() => {
-    void fetchMe(true);
+    void fetchMe(false);
   }, [session]);
+
+  useEffect(() => {
+    void hydrateProfileCache(me?.id ? String(me.id) : undefined);
+  }, [me?.id, hydrateProfileCache]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -328,6 +384,11 @@ export default function ProfileScreen() {
   useEffect(() => {
     void fetchUserPosts(me?.id ? String(me.id) : undefined);
   }, [me?.id, fetchUserPosts]);
+
+  useEffect(() => {
+    if (!me?.id) return;
+    void persistProfileCache(String(me.id));
+  }, [me?.id, balances, transactions, userPosts, persistProfileCache]);
 
   useEffect(() => {
     setProfileLocked(!!me?.profileLocked);
@@ -362,6 +423,7 @@ export default function ProfileScreen() {
     setUserPosts([]);
     setMe(null);
     setSession(null);
+    hydratedProfileCacheUserIdRef.current = null;
 
     await Promise.allSettled([
       SecureStore.deleteItemAsync("banter_session"),

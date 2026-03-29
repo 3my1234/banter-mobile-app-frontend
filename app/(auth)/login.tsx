@@ -295,7 +295,7 @@ const AuthLoginScreen = () => {
           console.log("[AUTH DEBUG] Session email:", sessionEmail);
         }
       }
-      void warmAppBootstrap({ force: true });
+      void warmAppBootstrap();
       setRedirecting(true);
       router.replace("/(tabs)");
     } catch (error) {
