@@ -232,7 +232,7 @@ export default function ProfileScreen() {
       setTransactionsLoading(false);
       return;
     }
-    const awaitRefresh = options?.awaitRefresh !== false;
+    const awaitRefresh = options?.awaitRefresh === true;
     const showBlockingLoader = forceSync || (!balances && transactions.length === 0);
     if (showBlockingLoader) {
       setTransactionsLoading(true);
@@ -296,13 +296,17 @@ export default function ProfileScreen() {
       return;
     }
     setUserPostsLoading(true);
+    const loadingGuard = setTimeout(() => {
+      setUserPostsLoading(false);
+    }, 12000);
     try {
-      const data = await apiFetch(`/users/${userId}/posts`);
+      const data = await apiFetch(`/users/${userId}/posts?page=1&limit=50`);
       const posts = Array.isArray(data?.posts) ? data.posts : [];
       setUserPosts(posts);
     } catch {
       // Keep existing posts on transient failures.
     } finally {
+      clearTimeout(loadingGuard);
       setUserPostsLoading(false);
     }
   }, []);
@@ -559,6 +563,8 @@ export default function ProfileScreen() {
     rolFromWallet && String(rolFromWallet.balance || "0") !== "0"
       ? rolFromWallet
       : { balance: rolFallbackRaw, decimals: 8 };
+  const isZeroBalance = (value?: { balance?: string | number | null }) =>
+    String(value?.balance ?? "0") === "0";
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: screenBg }]} edges={["top"]}>
@@ -639,30 +645,30 @@ export default function ProfileScreen() {
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>SOL (gas)</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
-              {solBalance
-                ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
-                : walletBootstrapPending
+              {walletBootstrapPending && isZeroBalance(solBalance)
                 ? "--"
+                : solBalance
+                ? `${formatTokenAmount(solBalance.balance, solBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>USDC (Solana)</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
-              {solanaUsdcBalance
-                ? `${formatTokenAmount(solanaUsdcBalance.balance, solanaUsdcBalance.decimals)}`
-                : walletBootstrapPending
+              {walletBootstrapPending && isZeroBalance(solanaUsdcBalance)
                 ? "--"
+                : solanaUsdcBalance
+                ? `${formatTokenAmount(solanaUsdcBalance.balance, solanaUsdcBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>USDC.e (Movement)</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
-              {movementUsdcBalance
-                ? `${formatTokenAmount(movementUsdcBalance.balance, movementUsdcBalance.decimals)}`
-                : walletBootstrapPending
+              {walletBootstrapPending && isZeroBalance(movementUsdcBalance)
                 ? "--"
+                : movementUsdcBalance
+                ? `${formatTokenAmount(movementUsdcBalance.balance, movementUsdcBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
@@ -679,10 +685,10 @@ export default function ProfileScreen() {
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceLabel, textMutedStyle]}>ROL</Text>
             <Text style={[styles.balanceValue, textSoftStyle]}>
-              {rolBalance
-                ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
-                : walletBootstrapPending
+              {walletBootstrapPending && isZeroBalance(rolBalance)
                 ? "--"
+                : rolBalance
+                ? `${formatTokenAmount(rolBalance.balance, rolBalance.decimals)}`
                 : "0.00"}
             </Text>
           </View>
