@@ -889,6 +889,7 @@ export default function HomeFeed() {
         posts.find((p) => p.id === postId)?.userReaction ??
         banters.find((p) => p.id === postId)?.userReaction ??
         null;
+      const optimisticReaction = currentReaction === type ? null : type;
 
       setPosts((current) =>
         applyReactionOptimistic(current, postId, type, currentReaction)
@@ -903,8 +904,9 @@ export default function HomeFeed() {
       const reactionCount = data?.reactionCount;
       const reactionBreakdown = data?.reactionBreakdown;
       const serverReaction =
-        data?.reaction?.type ??
-        (data?.reaction === null ? null : currentReaction);
+        Object.prototype.hasOwnProperty.call(data || {}, "reaction")
+          ? data?.reaction?.type ?? null
+          : optimisticReaction;
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId
