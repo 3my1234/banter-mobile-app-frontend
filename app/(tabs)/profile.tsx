@@ -189,22 +189,6 @@ export default function ProfileScreen() {
     return deduped;
   };
 
-  const hasNonZeroWalletBalance = (value?: string | null) => {
-    try {
-      return BigInt(value || "0") > 0n;
-    } catch {
-      return false;
-    }
-  };
-
-  const hasWalletSnapshot = (nextBalances: Record<string, any> | null, nextTransactions: any[]) => {
-    if (nextTransactions.length > 0) return true;
-    if (!nextBalances) return false;
-    return [nextBalances.SOL, nextBalances.USDC, nextBalances["USDC.E"]].some(
-      (entry) => hasNonZeroWalletBalance(entry?.balance)
-    );
-  };
-
   const fetchWalletData = async (forceSync: boolean = false) => {
     if (!session?.token) {
       setBalances(null);
@@ -214,60 +198,22 @@ export default function ProfileScreen() {
     }
     setTransactionsLoading(true);
     try {
-      const [data, tx] = await Promise.all([
-        apiFetch("/wallet/balances"),
-        apiFetch("/wallet/transactions?limit=20&page=1"),
-      ]);
-      const initialBalances = data?.balances || null;
-      const initialTransactions = normalizeTransactions(tx?.transactions || []);
-      const shouldSyncWallets =
-        Array.isArray(data?.wallets) &&
-        data.wallets.length > 0 &&
-        (!walletsSynced || forceSync);
-      const canRenderInitialSnapshot = hasWalletSnapshot(initialBalances, initialTransactions);
-
-      if (canRenderInitialSnapshot || !shouldSyncWallets) {
-        setBalances(initialBalances);
-        setTransactions(initialTransactions);
-      }
-
-      if (shouldSyncWallets) {
-        setSyncingWallets(true);
-        try {
-          await Promise.allSettled(
-            data.wallets.map((wallet: any) =>
-              apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
-            )
-          );
-          const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
-            apiFetch("/wallet/balances"),
-            apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1"),
-          ]);
-
-          if (refreshedBalances.status === "fulfilled") {
-            setBalances(refreshedBalances.value?.balances || null);
-          }
-          if (refreshedTransactions.status === "fulfilled") {
-            setTransactions(normalizeTransactions(refreshedTransactions.value?.transactions || []));
-          }
-
-          if (
-            !canRenderInitialSnapshot &&
-            refreshedBalances.status !== "fulfilled" &&
-            refreshedTransactions.status !== "fulfilled"
-          ) {
-            setBalances(initialBalances);
-            setTransactions(initialTransactions);
-          }
-
-          setWalletsSynced(true);
-        } finally {
-          setSyncingWallets(false);
-        }
-      }
+      const shouldRefresh = forceSync || !walletsSynced;
+      setSyncingWallets(shouldRefresh);
+      const data = await apiFetch(
+        shouldRefresh
+          ? "/wallet/overview?limit=20&page=1&refresh=1"
+          : "/wallet/overview?limit=20&page=1"
+      );
+      const nextBalances = data?.balances || null;
+      const nextTransactions = normalizeTransactions(data?.transactions || []);
+      setBalances(nextBalances);
+      setTransactions(nextTransactions);
+      setWalletsSynced(true);
     } catch (e: any) {
       showToast(e.message || "Failed to sync wallet");
     } finally {
+      setSyncingWallets(false);
       setTransactionsLoading(false);
     }
   };
