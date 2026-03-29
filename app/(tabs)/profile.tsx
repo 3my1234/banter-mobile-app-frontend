@@ -230,7 +230,7 @@ export default function ProfileScreen() {
             lastWalletSyncByUser.set(activeUserId, Date.now());
             const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
               apiFetch("/wallet/balances"),
-              apiFetch("/wallet/transactions?limit=20&page=1"),
+              apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1&sync=1"),
             ]);
 
             if (refreshedBalances.status === "fulfilled") {
