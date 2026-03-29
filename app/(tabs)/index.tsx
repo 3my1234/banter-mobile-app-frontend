@@ -23,7 +23,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Text } from "@/components/Themed";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image as ExpoImage } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
 import { useRouter } from "expo-router";
@@ -1833,8 +1833,8 @@ export default function HomeFeed() {
                     transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                   }}
                 >
-                  <Ionicons
-                    name={loveActive ? "heart" : "heart-outline"}
+                  <MaterialIcons
+                    name={loveActive ? "favorite" : "favorite-border"}
                     size={16}
                     color={loveColor}
                     style={{ color: loveColor }}
@@ -1860,8 +1860,8 @@ export default function HomeFeed() {
                     transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
                   }}
                 >
-                  <Ionicons
-                    name={dislikeActive ? "thumbs-down" : "thumbs-down-outline"}
+                  <MaterialIcons
+                    name={dislikeActive ? "thumb-down" : "thumb-down-off-alt"}
                     size={16}
                     color={dislikeColor}
                     style={{ color: dislikeColor }}
@@ -2154,8 +2154,8 @@ export default function HomeFeed() {
                   transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                 }}
               >
-                <Ionicons
-                  name={loveActive ? "heart" : "heart-outline"}
+                <MaterialIcons
+                  name={loveActive ? "favorite" : "favorite-border"}
                   size={banterActionIconSize}
                   color={loveColor}
                   style={{ color: loveColor }}
@@ -2183,8 +2183,8 @@ export default function HomeFeed() {
                   transform: [{ scale: getReactionScaleValue(item.id, "ANGRY") }],
                 }}
               >
-                <Ionicons
-                  name={dislikeActive ? "thumbs-down" : "thumbs-down-outline"}
+                <MaterialIcons
+                  name={dislikeActive ? "thumb-down" : "thumb-down-off-alt"}
                   size={banterActionIconSize}
                   color={dislikeColor}
                   style={{ color: dislikeColor }}

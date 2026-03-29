@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image as ExpoImage } from "expo-image";
 import { Image as RNImage } from "react-native";
 import { Video, ResizeMode } from "expo-av";
@@ -1035,8 +1035,8 @@ socket.off("comment-deleted");
                     transform: [{ scale: loveReactionScale }],
                   }}
                 >
-                  <Ionicons
-                    name={loveActive ? "heart" : "heart-outline"}
+                  <MaterialIcons
+                    name={loveActive ? "favorite" : "favorite-border"}
                     size={16}
                     color={loveColor}
                     style={{ color: loveColor }}
@@ -1065,8 +1065,8 @@ socket.off("comment-deleted");
                     transform: [{ scale: angryReactionScale }],
                   }}
                 >
-                  <Ionicons
-                    name={dislikeActive ? "thumbs-down" : "thumbs-down-outline"}
+                  <MaterialIcons
+                    name={dislikeActive ? "thumb-down" : "thumb-down-off-alt"}
                     size={16}
                     color={dislikeColor}
                     style={{ color: dislikeColor }}
