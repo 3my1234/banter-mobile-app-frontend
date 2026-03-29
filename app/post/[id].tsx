@@ -35,6 +35,7 @@ import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { getWarmPostById, rememberWarmPost } from "@/lib/bootstrap";
 
 const ROAST_PREFIX = "[ROAST]";
+const VIDEO_PRIME_RANGE_BYTES = 1024 * 1024;
 
 const showToast = (message: string) => {
   if (Platform.OS === "android") {
@@ -223,6 +224,66 @@ const removeCommentTree = (comments: Comment[], targetId: string) => {
   });
 };
 
+const mergePostKeepingWarmMedia = (prev: Post | null, next: Post): Post => {
+  if (!prev || prev.id !== next.id) return next;
+
+  let merged = { ...next };
+  const prevPrimary = buildMediaItems(prev.mediaItems, prev.mediaUrl, prev.mediaType)[0];
+  const nextPrimary = buildMediaItems(next.mediaItems, next.mediaUrl, next.mediaType)[0];
+
+  if (
+    prevPrimary?.type === "video" &&
+    nextPrimary?.type === "video" &&
+    prevPrimary.uri !== nextPrimary.uri
+  ) {
+    merged = {
+      ...merged,
+      mediaUrl: prev.mediaUrl ?? merged.mediaUrl,
+      mediaType: prev.mediaType ?? merged.mediaType,
+      mediaItems:
+        Array.isArray(prev.mediaItems) && prev.mediaItems.length
+          ? prev.mediaItems
+          : merged.mediaItems,
+    };
+  }
+
+  const prevRepost = prev.repostOf;
+  const nextRepost = merged.repostOf;
+  if (prevRepost?.id && nextRepost?.id && prevRepost.id === nextRepost.id) {
+    const prevRepostPrimary = buildMediaItems(
+      prevRepost.mediaItems,
+      prevRepost.mediaUrl,
+      prevRepost.mediaType || null
+    )[0];
+    const nextRepostPrimary = buildMediaItems(
+      nextRepost.mediaItems,
+      nextRepost.mediaUrl,
+      nextRepost.mediaType || null
+    )[0];
+
+    if (
+      prevRepostPrimary?.type === "video" &&
+      nextRepostPrimary?.type === "video" &&
+      prevRepostPrimary.uri !== nextRepostPrimary.uri
+    ) {
+      merged = {
+        ...merged,
+        repostOf: {
+          ...nextRepost,
+          mediaUrl: prevRepost.mediaUrl ?? nextRepost.mediaUrl,
+          mediaType: prevRepost.mediaType ?? nextRepost.mediaType,
+          mediaItems:
+            Array.isArray(prevRepost.mediaItems) && prevRepost.mediaItems.length
+              ? prevRepost.mediaItems
+              : nextRepost.mediaItems,
+        },
+      };
+    }
+  }
+
+  return merged;
+};
+
 export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -275,8 +336,11 @@ export default function PostDetail() {
       setError(null);
       const data = await apiFetch(`/posts/${id}`);
       const nextPost = data.post || data;
-      setPost(nextPost);
-      rememberWarmPost(nextPost);
+      setPost((prev) => {
+        const merged = mergePostKeepingWarmMedia(prev, nextPost);
+        rememberWarmPost(merged);
+        return merged;
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -575,6 +639,16 @@ export default function PostDetail() {
       () => setDetailAspect(16 / 9)
     );
   }, [mediaItems.length, mediaUrl, mediaType]);
+
+  useEffect(() => {
+    if (!mediaUrl || mediaType !== "video") return;
+    void fetch(mediaUrl, {
+      method: "GET",
+      headers: { Range: `bytes=0-${VIDEO_PRIME_RANGE_BYTES - 1}` },
+    })
+      .catch(() => fetch(mediaUrl, { method: "HEAD" }))
+      .catch(() => undefined);
+  }, [mediaType, mediaUrl]);
 
   useEffect(() => {
     let active = true;

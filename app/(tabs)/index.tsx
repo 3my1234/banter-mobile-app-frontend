@@ -1629,7 +1629,7 @@ export default function HomeFeed() {
           if (topVideoUri) {
             void fetch(topVideoUri, {
               method: "GET",
-              headers: { Range: "bytes=0-262143" },
+              headers: { Range: "bytes=0-1048575" },
             }).catch(() => undefined);
           }
           rememberWarmPost(item.raw || item);

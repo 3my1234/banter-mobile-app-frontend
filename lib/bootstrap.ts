@@ -35,7 +35,7 @@ const WALLET_REFRESH_COOLDOWN_MS = 60_000;
 const MAX_WARM_IMAGES = 18;
 const MAX_WARM_VIDEOS = 6;
 const MAX_WARM_POSTS = 120;
-const VIDEO_WARM_RANGE_BYTES = 256 * 1024;
+const VIDEO_WARM_RANGE_BYTES = 1024 * 1024;
 const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i;
 
 const ROLLEY_SERVICE_URL =
