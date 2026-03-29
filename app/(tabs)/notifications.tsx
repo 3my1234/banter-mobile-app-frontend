@@ -3,7 +3,7 @@ import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Vie
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "@/components/Themed";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser } from "@/lib/api";
 import {
   setNotificationUnreadCount,
 } from "@/lib/notificationBadge";
@@ -160,7 +160,7 @@ export default function Notifications() {
 
   const loadFallbackDailyRolNotification = useCallback(async () => {
     try {
-      const me = await apiFetch("/auth/me");
+      const me = await getCurrentUser();
       const user = me?.user || {};
       const fallback = buildDailyFallbackNotification(user);
       const nextItems = fallback ? [fallback] : [];
@@ -179,7 +179,7 @@ export default function Notifications() {
         ? response.notifications
         : [];
       try {
-        const me = await apiFetch("/auth/me");
+        const me = await getCurrentUser();
         const fallback = buildDailyFallbackNotification(me?.user || {});
         const filteredItems = apiItems.filter((item) => item.type !== "DAILY_ROL");
         const hasDaily = filteredItems.some((item) => item.type === "DAILY_POINTS");

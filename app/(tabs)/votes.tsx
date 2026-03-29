@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/components/Themed";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser } from "@/lib/api";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import * as Clipboard from "expo-clipboard";
@@ -93,7 +93,7 @@ export default function Votes() {
       const bundleData = await apiFetch("/payments/votes/bundles");
       setBundles(bundleData?.bundles || []);
 
-      const me = await apiFetch("/auth/me");
+      const me = await getCurrentUser();
       setBalance(me?.user?.voteBalance ?? 0);
       const nigeria = isNigeriaUser(me?.user || me);
       const currency = getFlutterwaveCurrency(me?.user || me);
@@ -124,7 +124,7 @@ export default function Votes() {
   };
 
   const refreshBalance = async () => {
-    const me = await apiFetch("/auth/me");
+    const me = await getCurrentUser({ force: true });
     setBalance(me?.user?.voteBalance ?? 0);
   };
 

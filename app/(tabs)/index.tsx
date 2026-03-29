@@ -29,7 +29,7 @@ import { useRouter } from "expo-router";
 import VoteGauge from "@/components/VoteGauge";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
 import ImageCarousel from "@/components/ImageCarousel";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser } from "@/lib/api";
 import {
   normalizeMediaUrl,
   resolvePlayableMediaUrl,
@@ -610,7 +610,7 @@ export default function HomeFeed() {
 
   const loadMe = useCallback(async () => {
     try {
-      const data = await apiFetch("/auth/me", undefined, true);
+      const data = await getCurrentUser();
       const user = data.user || data;
       setMeAvatar(normalizeMediaUrl(user?.avatarUrl) ?? null);
       setMeId(user?.id || null);

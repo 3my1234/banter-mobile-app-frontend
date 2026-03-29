@@ -16,7 +16,7 @@ import * as ExpoLinking from "expo-linking";
 import { Linking } from "react-native";
 import { Text } from "@/components/Themed";
 import CenteredHeartbeatLoader from "@/components/CenteredHeartbeatLoader";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser } from "@/lib/api";
 import * as Clipboard from "expo-clipboard";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -330,7 +330,7 @@ export default function RolleyBotScreen() {
 
   const fetchUserContext = useCallback(async () => {
     try {
-      const me = await apiFetch("/auth/me");
+        const me = await getCurrentUser();
         const id = me?.user?.id ? String(me.user.id) : "";
         setUserId(id);
         const nigeria = isNigeriaUser(me?.user || me);

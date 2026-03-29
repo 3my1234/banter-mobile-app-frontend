@@ -15,7 +15,7 @@ import * as SecureStore from "expo-secure-store";
 import { ResizeMode, Video } from "expo-av";
 import { Image as ExpoImage } from "expo-image";
 import { Text } from "@/components/Themed";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch, getCurrentUser } from "@/lib/api";
 import { normalizeMediaUrl } from "@/lib/media";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
@@ -135,7 +135,7 @@ export default function PCA() {
       setLoadError(null);
       const [categoryRes, meRes] = await Promise.allSettled([
         apiFetch(`/pca/categories?sport=${sport}&activeOnly=1`),
-        apiFetch("/auth/me"),
+        getCurrentUser(),
       ]);
 
       if (categoryRes.status === "fulfilled") {

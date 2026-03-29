@@ -5,8 +5,22 @@ const API_BASE_URL =
 const DEBUG_AUTH = process.env.EXPO_PUBLIC_DEBUG_AUTH === "1";
 const DEDUPED_GET_PREFIXES = ["/auth/me", "/wallet/balances", "/wallet/transactions"];
 const SHORT_CACHE_TTL_MS = 1500;
+const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const inFlightRequests = new Map<string, Promise<any>>();
 const responseCache = new Map<string, { expiresAt: number; data: any }>();
+let currentUserCache:
+  | {
+      token: string;
+      expiresAt: number;
+      response: any;
+    }
+  | null = null;
+let currentUserInFlight:
+  | {
+      token: string;
+      promise: Promise<any>;
+    }
+  | null = null;
 
 export type Session = { token: string; email?: string };
 
@@ -23,6 +37,11 @@ export async function getSession(): Promise<Session | null> {
   } catch {
     return null;
   }
+}
+
+export function invalidateCurrentUserCache() {
+  currentUserCache = null;
+  currentUserInFlight = null;
 }
 
 export async function apiFetch(
@@ -114,6 +133,56 @@ export async function apiFetch(
     return cloneCached(data);
   } finally {
     inFlightRequests.delete(requestKey);
+  }
+}
+
+export async function getCurrentUser(options?: { force?: boolean }) {
+  const session = await getSession();
+  if (!session?.token) {
+    throw new Error("Not authenticated");
+  }
+
+  const force = options?.force === true;
+  const now = Date.now();
+
+  if (
+    !force &&
+    currentUserCache &&
+    currentUserCache.token === session.token &&
+    currentUserCache.expiresAt > now
+  ) {
+    return cloneCached(currentUserCache.response);
+  }
+
+  if (
+    !force &&
+    currentUserInFlight &&
+    currentUserInFlight.token === session.token
+  ) {
+    return currentUserInFlight.promise.then((data) => cloneCached(data));
+  }
+
+  const promise = apiFetch("/auth/me", undefined, true).then((response) => {
+    currentUserCache = {
+      token: session.token,
+      expiresAt: Date.now() + CURRENT_USER_CACHE_TTL_MS,
+      response,
+    };
+    return response;
+  });
+
+  currentUserInFlight = {
+    token: session.token,
+    promise,
+  };
+
+  try {
+    const response = await promise;
+    return cloneCached(response);
+  } finally {
+    if (currentUserInFlight?.promise === promise) {
+      currentUserInFlight = null;
+    }
   }
 }
 

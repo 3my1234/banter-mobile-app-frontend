@@ -14,7 +14,7 @@ import { useRouter } from "expo-router";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Image as ExpoImage } from "expo-image";
 import { Text } from "@/components/Themed";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser, invalidateCurrentUserCache } from "@/lib/api";
 import { normalizeMediaUrl, pickMedia, presignUpload, uploadToS3 } from "@/lib/media";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -40,7 +40,7 @@ export default function EditProfile() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await apiFetch("/auth/me", undefined, true);
+        const data = await getCurrentUser();
         const user = data.user || data;
         setAvatarUrl(normalizeMediaUrl(user.avatarUrl));
         setBannerUrl(normalizeMediaUrl(user.bannerUrl));
@@ -108,6 +108,7 @@ export default function EditProfile() {
         },
         true
       );
+      invalidateCurrentUserCache();
       router.back();
     } catch (e: any) {
       setError(e.message);

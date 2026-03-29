@@ -21,7 +21,7 @@ import { Image as ExpoImage } from "expo-image";
 import { Image as RNImage } from "react-native";
 import { Video, ResizeMode } from "expo-av";
 import { Text } from "@/components/Themed";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import VoteGauge from "@/components/VoteGauge";
 import ImageCarousel from "@/components/ImageCarousel";
@@ -313,7 +313,7 @@ export default function PostDetail() {
 
   const loadMe = useCallback(async () => {
     try {
-      const data = await apiFetch("/auth/me", undefined, true);
+      const data = await getCurrentUser();
       const user = data.user || data;
       setMeId(user?.id || null);
     } catch {

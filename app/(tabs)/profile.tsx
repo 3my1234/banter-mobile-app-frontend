@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Text, View } from "@/components/Themed";
 import { Image as ExpoImage } from "expo-image";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getCurrentUser, invalidateCurrentUserCache } from "@/lib/api";
 import { normalizeMediaUrl, pickMedia, presignUpload, resolvePlayableMediaUrl, uploadToS3 } from "@/lib/media";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -151,7 +151,7 @@ export default function ProfileScreen() {
     }
     try {
       if (showSpinner || !me) setLoading(true);
-      const data = await apiFetch("/auth/me", undefined, true);
+      const data = await getCurrentUser({ force: showSpinner && !me });
       setMe(data.user || data);
     } catch (e: any) {
       showToast(e.message || "Failed to load profile");
@@ -312,6 +312,7 @@ export default function ProfileScreen() {
       SecureStore.deleteItemAsync("banter_pending_registration"),
       SecureStore.setItemAsync(LOGOUT_MARKER_KEY, "1"),
     ]);
+    invalidateCurrentUserCache();
 
     router.replace("/(auth)/login");
 
@@ -342,6 +343,7 @@ export default function ProfileScreen() {
         },
         true
       );
+      invalidateCurrentUserCache();
     } catch (e: any) {
       setProfileLocked((prev) => !prev);
       setMe((prev: any) =>
@@ -379,6 +381,7 @@ export default function ProfileScreen() {
       );
 
       const nextAvatar = normalizeMediaUrl(res.avatarUrl || presign.viewUrl);
+      invalidateCurrentUserCache();
       setMe((prev: any) => ({
         ...(prev || {}),
         avatarUrl: nextAvatar,
