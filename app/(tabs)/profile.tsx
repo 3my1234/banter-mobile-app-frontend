@@ -31,6 +31,8 @@ import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 
 type Session = { token: string; email?: string };
 const LOGOUT_MARKER_KEY = "banter_logged_out";
+const WALLET_SYNC_TTL_MS = 5 * 60 * 1000;
+const lastWalletSyncByUser = new Map<string, number>();
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -207,7 +209,16 @@ export default function ProfileScreen() {
       const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
       setTransactions(normalizeTransactions(tx?.transactions || []));
 
-      if (!walletsSynced && data?.wallets?.length) {
+      const activeUserId = (me?.id || "").toString();
+      const lastSyncedAt = activeUserId ? lastWalletSyncByUser.get(activeUserId) || 0 : 0;
+      const shouldSyncWallets =
+        !!activeUserId &&
+        !walletsSynced &&
+        Array.isArray(data?.wallets) &&
+        data.wallets.length > 0 &&
+        Date.now() - lastSyncedAt > WALLET_SYNC_TTL_MS;
+
+      if (shouldSyncWallets) {
         setSyncingWallets(true);
         void (async () => {
           try {
@@ -216,9 +227,10 @@ export default function ProfileScreen() {
                 apiFetch(`/wallet/sync/${wallet.id}`, { method: "POST" })
               )
             );
+            lastWalletSyncByUser.set(activeUserId, Date.now());
             const [refreshedBalances, refreshedTransactions] = await Promise.allSettled([
               apiFetch("/wallet/balances"),
-              apiFetch("/wallet/transactions?limit=20&page=1&includeIndexer=1"),
+              apiFetch("/wallet/transactions?limit=20&page=1"),
             ]);
 
             if (refreshedBalances.status === "fulfilled") {
