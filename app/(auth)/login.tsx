@@ -33,6 +33,7 @@ const AuthLoginScreen = () => {
   const [loginLoading, setLoginLoading] = useState(false);
   const [authFlowActive, setAuthFlowActive] = useState(oauthFlowInProgress);
   const [logoutMarkerActive, setLogoutMarkerActive] = useState(false);
+  const [authBootstrapReady, setAuthBootstrapReady] = useState(false);
   const handledLoginRef = useRef(false);
   const userRef = useRef<any>(null);
 
@@ -82,6 +83,7 @@ const AuthLoginScreen = () => {
       } finally {
         setCheckingSession(false);
         setIsInitializing(false);
+        setAuthBootstrapReady(true);
       }
     };
     checkExistingSession();
@@ -354,12 +356,12 @@ const AuthLoginScreen = () => {
   };
 
   useEffect(() => {
-    if (!isReady || !user || handledLoginRef.current || logoutMarkerActive) return;
+    if (!authBootstrapReady || !isReady || !user || handledLoginRef.current || logoutMarkerActive) return;
     processAuthenticatedUser(user);
-  }, [isReady, user, logoutMarkerActive]);
+  }, [authBootstrapReady, isReady, user, logoutMarkerActive]);
 
   useEffect(() => {
-    if (!oauthState || oauthState.status !== "error") return;
+    if (!authBootstrapReady || logoutMarkerActive || !oauthState || oauthState.status !== "error") return;
     const raw =
       (oauthState as any)?.error?.message ||
       (oauthState as any)?.error ||
@@ -380,10 +382,10 @@ const AuthLoginScreen = () => {
     if (recoverable && userRef.current) {
       processAuthenticatedUser(userRef.current);
     }
-  }, [oauthState]);
+  }, [authBootstrapReady, logoutMarkerActive, oauthState]);
 
   useEffect(() => {
-    if (!oauthState || oauthState.status !== "done") return;
+    if (!authBootstrapReady || logoutMarkerActive || !oauthState || oauthState.status !== "done") return;
     if (handledLoginRef.current) return;
     oauthFlowInProgress = true;
     setAuthFlowActive(true);
@@ -403,7 +405,7 @@ const AuthLoginScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [oauthState?.status]);
+  }, [authBootstrapReady, logoutMarkerActive, oauthState?.status]);
 
   if (checkingSession || redirecting) {
     return (
