@@ -36,8 +36,12 @@ import { sendEmbeddedSolanaUsdc } from "@/lib/privySolana";
 type Session = { token: string; email?: string };
 const LOGOUT_MARKER_KEY = "banter_logged_out";
 const PROFILE_CACHE_PREFIX = "banter_profile_cache_v1:";
+const PROFILE_CACHE_LAST_KEY = `${PROFILE_CACHE_PREFIX}last`;
+const PROFILE_REQUEST_TIMEOUT_MS = 12_000;
 
 type ProfileCachePayload = {
+  userId?: string | null;
+  sessionEmail?: string | null;
   balances: Record<string, any> | null;
   transactions: any[];
   posts: any[];
@@ -77,6 +81,7 @@ export default function ProfileScreen() {
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const logoutInFlightRef = useRef(false);
   const hydratedProfileCacheUserIdRef = useRef<string | null>(null);
+  const hydratedSessionCacheRef = useRef<string | null>(null);
   const movementExplorerBase =
     process.env.EXPO_PUBLIC_MOVEMENT_EXPLORER_BASE ??
     "https://explorer.movementlabs.xyz/tx/";
@@ -214,6 +219,29 @@ export default function ProfileScreen() {
   };
 
   const profileCacheKey = (userId: string) => `${PROFILE_CACHE_PREFIX}${userId}`;
+  const profileSessionCacheKey = (email: string) =>
+    `${PROFILE_CACHE_PREFIX}session:${email.toLowerCase()}`;
+
+  const withTimeout = async <T,>(
+    promise: Promise<T>,
+    ms: number = PROFILE_REQUEST_TIMEOUT_MS
+  ): Promise<T> => {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error("Request timeout")), ms)
+      ),
+    ]);
+  };
+
+  const hasUsableWalletSnapshot = (input?: {
+    balances?: Record<string, any> | null;
+    transactions?: any[] | null;
+  }) => {
+    const hasBalances = !!input?.balances && Object.keys(input.balances || {}).length > 0;
+    const hasTransactions = Array.isArray(input?.transactions) && input!.transactions!.length > 0;
+    return hasBalances || hasTransactions;
+  };
 
   const hydrateProfileCache = React.useCallback(async (userId?: string | null) => {
     if (!userId) return;
@@ -238,27 +266,77 @@ export default function ProfileScreen() {
     }
   }, [balances, transactions.length, userPosts.length]);
 
+  const hydrateSessionProfileCache = React.useCallback(
+    async (email?: string | null) => {
+      const normalized = (email || "").trim().toLowerCase();
+      if (!normalized) return;
+      if (hydratedSessionCacheRef.current === normalized) return;
+      try {
+        const keys = [profileSessionCacheKey(normalized), PROFILE_CACHE_LAST_KEY];
+        for (const key of keys) {
+          const raw = await SecureStore.getItemAsync(key);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw) as Partial<ProfileCachePayload> | null;
+          if (!parsed) continue;
+          if (
+            typeof parsed.sessionEmail === "string" &&
+            parsed.sessionEmail.toLowerCase() !== normalized
+          ) {
+            continue;
+          }
+          if (balances === null && parsed.balances && typeof parsed.balances === "object") {
+            setBalances(parsed.balances as Record<string, any>);
+          }
+          if (transactions.length === 0 && Array.isArray(parsed.transactions)) {
+            setTransactions(normalizeTransactions(parsed.transactions));
+          }
+          if (userPosts.length === 0 && Array.isArray(parsed.posts)) {
+            setUserPosts(parsed.posts);
+          }
+          hydratedSessionCacheRef.current = normalized;
+          break;
+        }
+      } catch {
+        // ignore session cache parse issues
+      }
+    },
+    [balances, transactions.length, userPosts.length]
+  );
+
   const persistProfileCache = React.useCallback(async (userId?: string | null) => {
-    if (!userId) return;
+    const sessionEmail = (session?.email || "").trim().toLowerCase();
+    if (!userId && !sessionEmail) return;
+    if (!hasUsableWalletSnapshot({ balances, transactions }) && userPosts.length === 0) {
+      return;
+    }
     try {
       const payload: ProfileCachePayload = {
+        userId: userId || null,
+        sessionEmail: sessionEmail || null,
         balances: balances || null,
         transactions: normalizeTransactions(transactions || []).slice(0, 40),
         posts: Array.isArray(userPosts) ? userPosts.slice(0, 60) : [],
         updatedAt: Date.now(),
       };
-      await SecureStore.setItemAsync(profileCacheKey(userId), JSON.stringify(payload));
+      if (userId) {
+        await SecureStore.setItemAsync(profileCacheKey(userId), JSON.stringify(payload));
+      }
+      if (sessionEmail) {
+        await SecureStore.setItemAsync(profileSessionCacheKey(sessionEmail), JSON.stringify(payload));
+      }
+      await SecureStore.setItemAsync(PROFILE_CACHE_LAST_KEY, JSON.stringify(payload));
     } catch {
       // ignore cache write issues
     }
-  }, [balances, transactions, userPosts]);
+  }, [balances, transactions, userPosts, session?.email]);
 
   useEffect(() => {
     if (!session?.token) return;
+    void hydrateSessionProfileCache(session?.email);
     let cancelled = false;
     void (async () => {
       try {
-        const snapshot = await fetchWalletOverview({ limit: 20, page: 1 });
+        const snapshot = await withTimeout(fetchWalletOverview({ limit: 20, page: 1 }));
         if (cancelled) return;
         applyWalletSnapshot(snapshot);
         setTransactionsLoading(false);
@@ -269,7 +347,7 @@ export default function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [session?.token]);
+  }, [session?.token, session?.email, hydrateSessionProfileCache]);
 
   const fetchWalletData = async (
     forceSync: boolean = false,
@@ -288,11 +366,11 @@ export default function ProfileScreen() {
     }
     let hasRenderedSnapshot = false;
     try {
-      const snapshot = await fetchWalletOverview({
+      const snapshot = await withTimeout(fetchWalletOverview({
         force: forceSync,
         limit: 20,
         page: 1,
-      });
+      }));
       applyWalletSnapshot(snapshot);
       hasRenderedSnapshot = true;
     } catch (e: any) {
@@ -305,7 +383,10 @@ export default function ProfileScreen() {
       }
     }
 
-    const hasUsableSnapshot = !!balances || transactions.length > 0;
+    const hasUsableSnapshot = hasUsableWalletSnapshot({
+      balances: balances || undefined,
+      transactions,
+    });
     const shouldRefresh = forceSync || (!walletsSynced && !hasUsableSnapshot);
     if (!shouldRefresh) {
       setWalletsSynced(true);
@@ -313,14 +394,16 @@ export default function ProfileScreen() {
     }
 
     const refreshTask = (async () => {
-      setSyncingWallets(true);
+      if (forceSync) {
+        setSyncingWallets(true);
+      }
       try {
-        const refreshed = await fetchWalletOverview({
+        const refreshed = await withTimeout(fetchWalletOverview({
           force: true,
           refresh: true,
           limit: 20,
           page: 1,
-        });
+        }));
         applyWalletSnapshot(refreshed);
         setWalletsSynced(true);
       } catch (e: any) {
@@ -328,7 +411,9 @@ export default function ProfileScreen() {
           showToast(e.message || "Failed to sync wallet");
         }
       } finally {
-        setSyncingWallets(false);
+        if (forceSync) {
+          setSyncingWallets(false);
+        }
       }
     })();
 
@@ -352,7 +437,9 @@ export default function ProfileScreen() {
       setUserPostsLoading(false);
     }, 12000);
     try {
-      const data = await apiFetch(`/users/${userId}/posts?page=1&limit=50`);
+      const data = await withTimeout(
+        apiFetch(`/users/${userId}/posts?page=1&limit=50`)
+      );
       const posts = Array.isArray(data?.posts) ? data.posts : [];
       setUserPosts(posts);
     } catch {
@@ -398,9 +485,12 @@ export default function ProfileScreen() {
     try {
       setRefreshing(true);
       setWalletsSynced(false);
-      await Promise.allSettled([
-        fetchMe(),
-        fetchUserPosts(me?.id ? String(me.id) : undefined),
+      await Promise.race([
+        Promise.allSettled([
+          fetchMe(),
+          fetchUserPosts(me?.id ? String(me.id) : undefined),
+        ]),
+        new Promise((resolve) => setTimeout(resolve, PROFILE_REQUEST_TIMEOUT_MS)),
       ]);
       void fetchWalletData(true, { awaitRefresh: false });
     } finally {
@@ -424,6 +514,7 @@ export default function ProfileScreen() {
     setMe(null);
     setSession(null);
     hydratedProfileCacheUserIdRef.current = null;
+    hydratedSessionCacheRef.current = null;
 
     await Promise.allSettled([
       SecureStore.deleteItemAsync("banter_session"),
