@@ -324,6 +324,9 @@ export default function PostDetail() {
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
   const [repliesByComment, setRepliesByComment] = useState<Record<string, Comment[]>>({});
+  const [reactionOverride, setReactionOverride] = useState<"LOVE" | "ANGRY" | null | undefined>(
+    undefined
+  );
   const loveReactionScale = React.useRef(new Animated.Value(1)).current;
   const angryReactionScale = React.useRef(new Animated.Value(1)).current;
 
@@ -360,6 +363,10 @@ export default function PostDetail() {
     setPost(warm as Post);
     setLoading(false);
   }, [id]);
+
+  useEffect(() => {
+    setReactionOverride(undefined);
+  }, [post?.id]);
 
   const loadPost = useCallback(async () => {
     if (!id) return;
@@ -463,9 +470,15 @@ export default function PostDetail() {
 
   const handleReaction = async (type: "LOVE" | "ANGRY") => {
     if (!post) return;
+    let previousReaction: "LOVE" | "ANGRY" | null = null;
     try {
-      const currentReaction = normalizeReactionType(post.userReaction) ?? null;
+      const currentReaction =
+        (reactionOverride !== undefined
+          ? reactionOverride
+          : normalizeReactionType(post.userReaction)) ?? null;
+      previousReaction = currentReaction as "LOVE" | "ANGRY" | null;
       const nextReaction = currentReaction === type ? null : type;
+      setReactionOverride(nextReaction);
       const breakdown = { ...(post.reactionBreakdown || {}) } as Record<
         string,
         number
@@ -508,18 +521,21 @@ export default function PostDetail() {
         );
       }
       if (data?.reaction || data?.reaction === null) {
+        const serverReaction = data.reaction
+          ? normalizeReactionType(data.reaction.type)
+          : null;
+        setReactionOverride((serverReaction as "LOVE" | "ANGRY" | null) ?? null);
         setPost((prev) =>
           prev
             ? {
                 ...prev,
-                userReaction: data.reaction
-                  ? normalizeReactionType(data.reaction.type)
-                  : null,
+                userReaction: serverReaction,
               }
             : prev
         );
       }
     } catch (e: any) {
+      setReactionOverride(previousReaction);
       setError(e.message);
     }
   };
@@ -1006,11 +1022,15 @@ socket.off("comment-deleted");
             )}
             <View style={styles.metaRow}>
               {(() => {
-                const normalizedReaction = normalizeReactionType(post.userReaction);
+                const normalizedReaction =
+                  reactionOverride !== undefined
+                    ? reactionOverride
+                    : normalizeReactionType(post.userReaction);
                 const loveActive = normalizedReaction === "LOVE";
                 const dislikeActive = normalizedReaction === "ANGRY";
                 const loveColor = loveActive ? "#ff8a00" : "#9ca3af";
                 const dislikeColor = dislikeActive ? "#ef4444" : "#9ca3af";
+                const loveGlyph = loveActive ? "♥" : "♡";
                 return (
                   <>
               <View style={styles.metaItem}>
@@ -1035,12 +1055,9 @@ socket.off("comment-deleted");
                     transform: [{ scale: loveReactionScale }],
                   }}
                 >
-                  <MaterialIcons
-                    name={loveActive ? "favorite" : "favorite-border"}
-                    size={16}
-                    color={loveColor}
-                    style={{ color: loveColor }}
-                  />
+                  <Text style={[styles.heartGlyph, { color: loveColor }]}>
+                    {loveGlyph}
+                  </Text>
                   <Text
                     style={[
                       styles.metaText,
@@ -1613,6 +1630,13 @@ const createStyles = (colors: AppThemeColors) =>
     borderRadius: 999,
   },
   metaText: { color: colors.textMuted, fontSize: 12 },
+  heartGlyph: {
+    fontSize: 17,
+    fontWeight: "700",
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
   repostLabel: { color: "#ff6b35", fontWeight: "700", marginBottom: 6 },
   repostCard: {
     marginTop: 8,

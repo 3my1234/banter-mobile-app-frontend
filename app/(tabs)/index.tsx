@@ -464,6 +464,9 @@ export default function HomeFeed() {
   const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
   const [expandedMediaUri, setExpandedMediaUri] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [reactionOverrideById, setReactionOverrideById] = useState<
+    Record<string, "LOVE" | "ANGRY" | null>
+  >({});
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -731,6 +734,15 @@ export default function HomeFeed() {
       }),
     []
   );
+  const getDisplayReaction = useCallback(
+    (postId: string, fallback?: string | null) => {
+      if (Object.prototype.hasOwnProperty.call(reactionOverrideById, postId)) {
+        return reactionOverrideById[postId];
+      }
+      return normalizeReactionType(fallback);
+    },
+    [reactionOverrideById]
+  );
 
   React.useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (event) => {
@@ -891,12 +903,22 @@ export default function HomeFeed() {
   };
 
   const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
+    let previousReaction: "LOVE" | "ANGRY" | null = null;
     try {
       const currentReaction =
-        normalizeReactionType(posts.find((p) => p.id === postId)?.userReaction) ??
-        normalizeReactionType(banters.find((p) => p.id === postId)?.userReaction) ??
+        getDisplayReaction(
+          postId,
+          posts.find((p) => p.id === postId)?.userReaction ??
+            banters.find((p) => p.id === postId)?.userReaction ??
+            null
+        ) ??
         null;
+      previousReaction = currentReaction as "LOVE" | "ANGRY" | null;
       const optimisticReaction = currentReaction === type ? null : type;
+      setReactionOverrideById((prev) => ({
+        ...prev,
+        [postId]: optimisticReaction,
+      }));
 
       setPosts((current) =>
         applyReactionOptimistic(current, postId, type, currentReaction)
@@ -914,6 +936,10 @@ export default function HomeFeed() {
         Object.prototype.hasOwnProperty.call(data || {}, "reaction")
           ? normalizeReactionType(data?.reaction?.type) ?? null
           : optimisticReaction;
+      setReactionOverrideById((prev) => ({
+        ...prev,
+        [postId]: (serverReaction as "LOVE" | "ANGRY" | null) ?? null,
+      }));
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId
@@ -941,6 +967,10 @@ export default function HomeFeed() {
         )
       );
     } catch (e: any) {
+      setReactionOverrideById((prev) => ({
+        ...prev,
+        [postId]: previousReaction,
+      }));
       showToast(e.message || "Failed to react");
     }
   };
@@ -1649,11 +1679,12 @@ export default function HomeFeed() {
       : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
-    const normalizedReaction = normalizeReactionType(item.userReaction);
+    const normalizedReaction = getDisplayReaction(item.id, item.userReaction);
     const loveActive = normalizedReaction === "LOVE";
     const dislikeActive = normalizedReaction === "ANGRY";
     const loveColor = loveActive ? "#ff8a00" : "#9ca3af";
     const dislikeColor = dislikeActive ? "#ef4444" : "#9ca3af";
+    const loveGlyph = loveActive ? "♥" : "♡";
     const isRepost = !!item.repostOf;
     const original = item.repostOf;
     const originalMediaItems = buildMediaItems(
@@ -1833,12 +1864,9 @@ export default function HomeFeed() {
                     transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                   }}
                 >
-                  <MaterialIcons
-                    name={loveActive ? "favorite" : "favorite-border"}
-                    size={16}
-                    color={loveColor}
-                    style={{ color: loveColor }}
-                  />
+                  <Text style={[styles.heartGlyph, { color: loveColor }]}>
+                    {loveGlyph}
+                  </Text>
                   <Text
                     style={[styles.actionText, loveActive ? { color: loveColor } : null]}
                   >
@@ -1974,11 +2002,12 @@ export default function HomeFeed() {
       : false;
     const loveCount = item.reactionBreakdown?.LOVE ?? 0;
     const dislikeCount = item.reactionBreakdown?.ANGRY ?? 0;
-    const normalizedReaction = normalizeReactionType(item.userReaction);
+    const normalizedReaction = getDisplayReaction(item.id, item.userReaction);
     const loveActive = normalizedReaction === "LOVE";
     const dislikeActive = normalizedReaction === "ANGRY";
     const loveColor = loveActive ? "#ff8a00" : "#ffffff";
     const dislikeColor = dislikeActive ? "#ef4444" : "#ffffff";
+    const loveGlyph = loveActive ? "♥" : "♡";
     const media = item.media;
     const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
@@ -2154,12 +2183,9 @@ export default function HomeFeed() {
                   transform: [{ scale: getReactionScaleValue(item.id, "LOVE") }],
                 }}
               >
-                <MaterialIcons
-                  name={loveActive ? "favorite" : "favorite-border"}
-                  size={banterActionIconSize}
-                  color={loveColor}
-                  style={{ color: loveColor }}
-                />
+                <Text style={[styles.banterHeartGlyph, { color: loveColor }]}>
+                  {loveGlyph}
+                </Text>
                 <Text
                   style={[
                     styles.banterActionText,
@@ -3170,6 +3196,13 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     borderRadius: 999,
   },
   actionText: { color: colors.textMuted, fontSize: 13 },
+  heartGlyph: {
+    fontSize: 17,
+    fontWeight: "700",
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
   pendingPill: {
     backgroundColor: "rgba(255,107,53,0.15)",
     borderColor: "rgba(255,107,53,0.35)",
@@ -3440,6 +3473,13 @@ const createStyles = (colors: AppThemeColors, mediaHeight: number) =>
     },
     banterActionBusy: { opacity: 0.92 },
     banterActionText: { color: colors.text, fontSize: 12 },
+  banterHeartGlyph: {
+    fontSize: 34,
+    fontWeight: "700",
+    lineHeight: 34,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
   banterStayDropRow: {
     flexDirection: "row",
     gap: 12,
