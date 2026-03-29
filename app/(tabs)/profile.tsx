@@ -206,7 +206,15 @@ export default function ProfileScreen() {
       const tx = await apiFetch("/wallet/transactions?limit=20&page=1");
       setTransactions(normalizeTransactions(tx?.transactions || []));
 
-      const activeUserId = (me?.id || "").toString();
+      let activeUserId = (me?.id || "").toString();
+      if (!activeUserId) {
+        try {
+          const currentUser = await getCurrentUser();
+          activeUserId = String(currentUser?.user?.id || currentUser?.id || "");
+        } catch {
+          activeUserId = "";
+        }
+      }
       const lastSyncedAt = activeUserId ? lastWalletSyncByUser.get(activeUserId) || 0 : 0;
       const shouldSyncWallets =
         !!activeUserId &&
