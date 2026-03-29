@@ -48,6 +48,7 @@ export default function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [userPosts, setUserPosts] = useState<any[]>([]);
+  const [userPostsLoading, setUserPostsLoading] = useState(false);
   const [showAvatar, setShowAvatar] = useState(false);
   const [showBanner, setShowBanner] = useState(false);
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null);
@@ -221,13 +222,17 @@ export default function ProfileScreen() {
     };
   }, [session?.token]);
 
-  const fetchWalletData = async (forceSync: boolean = false) => {
+  const fetchWalletData = async (
+    forceSync: boolean = false,
+    options?: { awaitRefresh?: boolean }
+  ) => {
     if (!session?.token) {
       setBalances(null);
       setTransactions([]);
       setTransactionsLoading(false);
       return;
     }
+    const awaitRefresh = options?.awaitRefresh !== false;
     const showBlockingLoader = forceSync || (!balances && transactions.length === 0);
     if (showBlockingLoader) {
       setTransactionsLoading(true);
@@ -257,24 +262,50 @@ export default function ProfileScreen() {
       return;
     }
 
-    setSyncingWallets(true);
-    try {
-      const refreshed = await fetchWalletOverview({
-        force: true,
-        refresh: true,
-        limit: 20,
-        page: 1,
-      });
-      applyWalletSnapshot(refreshed);
-      setWalletsSynced(true);
-    } catch (e: any) {
-      if (!hasRenderedSnapshot) {
-        showToast(e.message || "Failed to sync wallet");
+    const refreshTask = (async () => {
+      setSyncingWallets(true);
+      try {
+        const refreshed = await fetchWalletOverview({
+          force: true,
+          refresh: true,
+          limit: 20,
+          page: 1,
+        });
+        applyWalletSnapshot(refreshed);
+        setWalletsSynced(true);
+      } catch (e: any) {
+        if (!hasRenderedSnapshot) {
+          showToast(e.message || "Failed to sync wallet");
+        }
+      } finally {
+        setSyncingWallets(false);
       }
-    } finally {
-      setSyncingWallets(false);
+    })();
+
+    if (awaitRefresh) {
+      await refreshTask;
+    } else {
+      void refreshTask;
     }
   };
+
+  const fetchUserPosts = React.useCallback(async (userId?: string | null) => {
+    if (!userId) {
+      setUserPosts([]);
+      setUserPostsLoading(false);
+      return;
+    }
+    setUserPostsLoading(true);
+    try {
+      const data = await apiFetch(`/users/${userId}/posts`);
+      const posts = Array.isArray(data?.posts) ? data.posts : [];
+      setUserPosts(posts);
+    } catch {
+      // Keep existing posts on transient failures.
+    } finally {
+      setUserPostsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void fetchMe(true);
@@ -285,22 +316,14 @@ export default function ProfileScreen() {
       if (sessionLoaded) {
         void fetchMe(false);
         void fetchWalletData();
+        void fetchUserPosts(me?.id ? String(me.id) : undefined);
       }
-    }, [sessionLoaded, session?.token])
+    }, [sessionLoaded, session?.token, me?.id, fetchUserPosts])
   );
 
   useEffect(() => {
-    const fetchPosts = async () => {
-      if (!me?.id) return;
-      try {
-        const data = await apiFetch(`/users/${me.id}/posts`);
-      setUserPosts(data.posts || []);
-      } catch {
-        setUserPosts([]);
-      }
-    };
-    fetchPosts();
-  }, [me]);
+    void fetchUserPosts(me?.id ? String(me.id) : undefined);
+  }, [me?.id, fetchUserPosts]);
 
   useEffect(() => {
     setProfileLocked(!!me?.profileLocked);
@@ -310,7 +333,11 @@ export default function ProfileScreen() {
     try {
       setRefreshing(true);
       setWalletsSynced(false);
-      await Promise.all([fetchMe(), fetchWalletData(true)]);
+      await Promise.allSettled([
+        fetchMe(),
+        fetchUserPosts(me?.id ? String(me.id) : undefined),
+      ]);
+      void fetchWalletData(true, { awaitRefresh: false });
     } finally {
       setRefreshing(false);
     }
@@ -535,7 +562,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: screenBg }]} edges={["top"]}>
-      <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading profile..." : "Refreshing..."} />
+      <CenteredHeartbeatLoader visible={loading} text="Loading profile..." />
       <ScrollView
         style={[styles.container, { backgroundColor: screenBg }]}
         contentContainerStyle={styles.content}
@@ -864,7 +891,9 @@ export default function ProfileScreen() {
               if (filtered.length === 0) {
                 return (
                   <Text style={[styles.muted, textMutedStyle]}>
-                    {profileTab === "posts"
+                    {userPostsLoading
+                      ? "Loading your activity..."
+                      : profileTab === "posts"
                       ? "Posts will appear here."
                       : "Banter will appear here."}
                   </Text>
