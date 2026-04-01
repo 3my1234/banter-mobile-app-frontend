@@ -131,7 +131,7 @@ const showToast = (message: string) => {
 
 const ROAST_PREFIX = "[ROAST]";
 const REACTION_POP_SCALE = 1.22;
-const MAX_MEDIA_WARM_IMAGES = 28;
+const MAX_MEDIA_WARM_IMAGES = 12;
 
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
@@ -543,19 +543,6 @@ export default function HomeFeed() {
 
         const repostAvatarUrl = normalizeMediaUrl(item.repostOf?.user?.avatarUrl);
         if (repostAvatarUrl) imageUris.add(repostAvatarUrl);
-
-        const medias = item.mediaItems?.length
-          ? item.mediaItems
-          : item.media
-          ? [item.media]
-          : [];
-
-        medias.forEach((media) => {
-          if (!media?.uri) return;
-          if (media.type === "image") {
-            imageUris.add(media.uri);
-          }
-        });
       });
 
       warmImageUris(Array.from(imageUris));
@@ -714,7 +701,7 @@ export default function HomeFeed() {
     const rawPosts = Array.isArray(data?.posts) ? data.posts : [];
     rememberWarmPosts(rawPosts);
     const mapped = rawPosts.map(mapPost);
-    warmPostMedia(mapped.slice(0, 16));
+    warmPostMedia(mapped.slice(0, 8));
     if (type === "posts") {
       setPosts(mapped);
       loadedFeedKeysRef.current.posts = feed;
@@ -767,15 +754,35 @@ export default function HomeFeed() {
     if (mainTab === "posts") {
       setActiveBanterId(null);
     }
-    if (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0) {
+    if (
+      mainTab === "posts" &&
+      (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0)
+    ) {
       loadPosts("posts", postTab);
     }
-    if (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0) {
+    if (
+      mainTab === "banter" &&
+      (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0)
+    ) {
       loadPosts("banter", banterTab);
     }
+    const idlePrefetch = setTimeout(() => {
+      if (
+        mainTab === "posts" &&
+        (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0)
+      ) {
+        loadPosts("banter", banterTab);
+      } else if (
+        mainTab === "banter" &&
+        (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0)
+      ) {
+        loadPosts("posts", postTab);
+      }
+    }, 1500);
     if (!meId) {
       loadMe();
     }
+    return () => clearTimeout(idlePrefetch);
   }, [loadPosts, loadMe, mainTab, postTab, banterTab, posts.length, banters.length, meId]);
 
   const applyReactionOptimistic = useCallback(

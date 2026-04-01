@@ -31,7 +31,6 @@ const FEED_TTL_MS = 45_000;
 const WALLET_TTL_MS = 20_000;
 const ROLLEY_STAKE_TTL_MS = 20_000;
 const BOOTSTRAP_COOLDOWN_MS = 8_000;
-const WALLET_REFRESH_COOLDOWN_MS = 60_000;
 const MAX_WARM_IMAGES = 18;
 const MAX_WARM_VIDEOS = 0;
 const MAX_WARM_POSTS = 120;
@@ -48,8 +47,6 @@ const ROLLEY_FETCH_TIMEOUT_MS = Number.parseInt(
 let activeSessionToken: string | null = null;
 let walletCache: CacheEntry<WalletOverviewSnapshot> | null = null;
 let walletInFlight: Promise<WalletOverviewSnapshot> | null = null;
-let walletRefreshInFlight: Promise<WalletOverviewSnapshot | null> | null = null;
-let lastWalletRefreshAt = 0;
 let rolleyStakeCache: CacheEntry<RolleyStakeSnapshot> | null = null;
 let rolleyStakeInFlight: Promise<RolleyStakeSnapshot> | null = null;
 let bootstrapInFlight: Promise<void> | null = null;
@@ -101,8 +98,6 @@ const detectMediaType = (uri?: string): "image" | "video" | null => {
 const resetRuntimeCaches = () => {
   walletCache = null;
   walletInFlight = null;
-  walletRefreshInFlight = null;
-  lastWalletRefreshAt = 0;
   rolleyStakeCache = null;
   rolleyStakeInFlight = null;
   feedCache.clear();
@@ -111,37 +106,6 @@ const resetRuntimeCaches = () => {
   warmedMediaUris.clear();
   bootstrapInFlight = null;
   lastBootstrapAt = 0;
-};
-
-const triggerBackgroundWalletRefresh = (force = false) => {
-  const now = Date.now();
-  if (!force && walletRefreshInFlight) return walletRefreshInFlight;
-  if (!force && now - lastWalletRefreshAt < WALLET_REFRESH_COOLDOWN_MS) return null;
-
-  walletRefreshInFlight = fetchWalletOverview({
-    force: true,
-    refresh: true,
-    limit: 20,
-    page: 1,
-  })
-    .then(async (snapshot) => {
-      // Read back the latest stored snapshot after refresh task has had time to complete.
-      await sleep(1200);
-      await fetchWalletOverview({
-        force: true,
-        refresh: false,
-        limit: 20,
-        page: 1,
-      }).catch(() => null);
-      lastWalletRefreshAt = Date.now();
-      return snapshot;
-    })
-    .catch(() => null)
-    .finally(() => {
-      walletRefreshInFlight = null;
-    });
-
-  return walletRefreshInFlight;
 };
 
 const ensureActiveToken = async () => {
@@ -442,12 +406,8 @@ export async function warmAppBootstrap(options?: { force?: boolean }) {
     await Promise.allSettled([
       getCurrentUser(),
       registerDevicePushToken(),
-      fetchWalletOverview({ force }),
       fetchFeedSnapshot("posts", "forYou", { force }),
-      fetchFeedSnapshot("banter", "hot", { force }),
-      fetchRolleyStakeSnapshot({ force }),
     ]);
-    void triggerBackgroundWalletRefresh(force);
     lastBootstrapAt = Date.now();
   })();
 
