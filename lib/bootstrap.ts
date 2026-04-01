@@ -40,6 +40,10 @@ const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i;
 
 const ROLLEY_SERVICE_URL =
   process.env.EXPO_PUBLIC_ROLLEY_SERVICE_URL ?? "https://sportbanter.online/rolley";
+const ROLLEY_FETCH_TIMEOUT_MS = Number.parseInt(
+  process.env.EXPO_PUBLIC_ROLLEY_FETCH_TIMEOUT_MS || "10000",
+  10
+);
 
 let activeSessionToken: string | null = null;
 let walletCache: CacheEntry<WalletOverviewSnapshot> | null = null;
@@ -61,6 +65,24 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const buildRolleyUrl = (path: string) => {
   const base = ROLLEY_SERVICE_URL.replace(/\/+$/, "");
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+};
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithTimeout = async (
+  input: string,
+  init?: RequestInit,
+  timeoutMs: number = ROLLEY_FETCH_TIMEOUT_MS
+) => {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 };
 
 const normalizeMediaType = (value?: unknown): "image" | "video" | null => {
@@ -102,7 +124,15 @@ const triggerBackgroundWalletRefresh = (force = false) => {
     limit: 20,
     page: 1,
   })
-    .then((snapshot) => {
+    .then(async (snapshot) => {
+      // Read back the latest stored snapshot after refresh task has had time to complete.
+      await sleep(1200);
+      await fetchWalletOverview({
+        force: true,
+        refresh: false,
+        limit: 20,
+        page: 1,
+      }).catch(() => null);
       lastWalletRefreshAt = Date.now();
       return snapshot;
     })
@@ -319,10 +349,12 @@ export async function fetchWalletOverview(options?: {
       transactions: Array.isArray(data?.transactions) ? data.transactions : [],
       pagination: data?.pagination,
     };
-    walletCache = {
-      data: snapshot,
-      expiresAt: Date.now() + WALLET_TTL_MS,
-    };
+    if (!refresh) {
+      walletCache = {
+        data: snapshot,
+        expiresAt: Date.now() + WALLET_TTL_MS,
+      };
+    }
     return snapshot;
   })();
 
@@ -362,7 +394,7 @@ export async function fetchRolleyStakeSnapshot(options?: { force?: boolean }) {
     if (!userId) {
       return { userId: "", stakes: [] } as RolleyStakeSnapshot;
     }
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       buildRolleyUrl(`/api/v1/stakes?user_id=${encodeURIComponent(userId)}`)
     );
     if (!response.ok) {

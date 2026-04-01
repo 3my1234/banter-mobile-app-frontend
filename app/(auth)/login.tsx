@@ -13,12 +13,38 @@ import { registerDevicePushToken } from "@/lib/pushNotifications";
 // Point base URL directly at API root (includes /api to avoid double-prefix issues).
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
+const AUTH_REQUEST_TIMEOUT_MS = Number.parseInt(
+  process.env.EXPO_PUBLIC_AUTH_TIMEOUT_MS || "12000",
+  10
+);
 
 // Module-level guards survive screen remounts during OAuth callbacks.
 const processingPrivyUserIds = new Set<string>();
 const walletProvisionAttemptedUserIds = new Set<string>();
 let oauthFlowInProgress = false;
 const LOGOUT_MARKER_KEY = "banter_logged_out";
+
+const fetchWithTimeout = async (
+  url: string,
+  init?: RequestInit,
+  timeoutMs: number = AUTH_REQUEST_TIMEOUT_MS
+) => {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+};
 
 const AuthLoginScreen = () => {
   const router = useRouter();
@@ -47,7 +73,7 @@ const AuthLoginScreen = () => {
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const validateStoredSession = async (token: string) => {
       try {
-        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+        const res = await fetchWithTimeout(`${API_BASE_URL}/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -92,7 +118,7 @@ const AuthLoginScreen = () => {
   }, [router]);
 
   const verifyPrivy = async (privyToken: string) => {
-    const res = await fetch(`${API_BASE_URL}/auth/privy/verify`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/auth/privy/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ privyToken }),

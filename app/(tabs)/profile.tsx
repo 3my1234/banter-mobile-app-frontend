@@ -407,6 +407,23 @@ export default function ProfileScreen() {
         }));
         applyWalletSnapshot(refreshed);
         setWalletsSynced(true);
+
+        const followUpRead = async () => {
+          await new Promise((resolve) => setTimeout(resolve, 1800));
+          try {
+            const latest = await withTimeout(
+              fetchWalletOverview({
+                force: true,
+                limit: 20,
+                page: 1,
+              })
+            );
+            applyWalletSnapshot(latest);
+          } catch {
+            // Keep last known wallet state on transient follow-up failures.
+          }
+        };
+        void followUpRead();
       } catch (e: any) {
         if (!hasRenderedSnapshot) {
           showToast(e.message || "Failed to sync wallet");

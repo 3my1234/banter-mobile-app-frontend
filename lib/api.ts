@@ -3,8 +3,33 @@ import * as SecureStore from "expo-secure-store";
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
 const DEBUG_AUTH = process.env.EXPO_PUBLIC_DEBUG_AUTH === "1";
-const DEDUPED_GET_PREFIXES = ["/auth/me"];
-const SHORT_CACHE_TTL_MS = 1500;
+const API_FETCH_TIMEOUT_MS = Number.parseInt(
+  process.env.EXPO_PUBLIC_API_TIMEOUT_MS || "12000",
+  10
+);
+const API_GET_RETRY_COUNT = Number.parseInt(
+  process.env.EXPO_PUBLIC_API_GET_RETRY_COUNT || "1",
+  10
+);
+const API_GET_RETRY_DELAY_MS = Number.parseInt(
+  process.env.EXPO_PUBLIC_API_GET_RETRY_DELAY_MS || "400",
+  10
+);
+const GET_CACHE_RULES: Array<{
+  prefix: string;
+  ttlMs: number;
+  when?: (path: string) => boolean;
+}> = [
+  { prefix: "/auth/me", ttlMs: 1500 },
+  { prefix: "/posts?", ttlMs: 6000 },
+  {
+    prefix: "/wallet/overview",
+    ttlMs: 6000,
+    when: (path) => !/[?&]refresh=1(?:&|$)/.test(path),
+  },
+  { prefix: "/notifications?unreadOnly=1", ttlMs: 10_000 },
+  { prefix: "/messages/unread-count", ttlMs: 10_000 },
+];
 const CURRENT_USER_CACHE_TTL_MS = 30_000;
 const inFlightRequests = new Map<string, Promise<any>>();
 const responseCache = new Map<string, { expiresAt: number; data: any }>();
@@ -24,10 +49,51 @@ let currentUserInFlight:
 
 export type Session = { token: string; email?: string };
 
-const shouldDedupeGet = (path: string, method: string) =>
-  method === "GET" && DEDUPED_GET_PREFIXES.some((prefix) => path.startsWith(prefix));
+const getGetCacheTtl = (path: string, method: string) => {
+  if (method !== "GET") return 0;
+  const rule = GET_CACHE_RULES.find(
+    (item) => path.startsWith(item.prefix) && (!item.when || item.when(path))
+  );
+  return rule?.ttlMs ?? 0;
+};
 
 const cloneCached = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isLikelyRetryableNetworkError = (error: unknown) => {
+  const err = error as any;
+  const name = String(err?.name || "");
+  const message = String(err?.message || "").toLowerCase();
+  if (name === "AbortError") return true;
+  return (
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("network request failed") ||
+    message.includes("failed to fetch")
+  );
+};
+
+const isRetryableHttpStatus = (status?: number) =>
+  status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+
+const fetchWithTimeout = async (url: string, init: RequestInit) => {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timeout after ${API_FETCH_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+};
 
 export async function getSession(): Promise<Session | null> {
   const raw = await SecureStore.getItemAsync("banter_session");
@@ -66,7 +132,8 @@ export async function apiFetch(
     headers.set("Authorization", `Bearer ${session.token}`);
   }
 
-  const requestKey = shouldDedupeGet(path, method)
+  const cacheTtlMs = getGetCacheTtl(path, method);
+  const requestKey = cacheTtlMs > 0
     ? `${method}:${path}:${requireAuth ? authToken : "anon"}`
     : null;
 
@@ -82,45 +149,68 @@ export async function apiFetch(
   }
 
   const requestPromise = (async () => {
-    const res = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
-      headers,
-    });
+    const maxAttempts = method === "GET" ? API_GET_RETRY_COUNT + 1 : 1;
+    let lastError: unknown;
 
-    if (!res.ok) {
-      const contentType = res.headers.get("content-type") || "";
-      const raw = await res.text().catch(() => "");
-      let message = raw;
-      if (contentType.includes("application/json")) {
-        try {
-          const data = JSON.parse(raw);
-          const details =
-            data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
-          message = (data?.message || data?.error || raw) + details;
-        } catch {
-          // ignore
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const res = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
+          ...options,
+          headers,
+        });
+
+        if (!res.ok) {
+          const contentType = res.headers.get("content-type") || "";
+          const raw = await res.text().catch(() => "");
+          let message = raw;
+          if (contentType.includes("application/json")) {
+            try {
+              const data = JSON.parse(raw);
+              const details =
+                data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
+              message = (data?.message || data?.error || raw) + details;
+            } catch {
+              // ignore
+            }
+          } else {
+            try {
+              const data = JSON.parse(raw);
+              const details =
+                data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
+              message = (data?.message || data?.error || raw) + details;
+            } catch {
+              // ignore
+            }
+          }
+          const statusError = new Error(message || `Request failed (${res.status})`) as Error & {
+            status?: number;
+          };
+          statusError.status = res.status;
+          throw statusError;
         }
-      } else {
-        try {
-          const data = JSON.parse(raw);
-          const details =
-            data?.details ? ` | details: ${JSON.stringify(data.details)}` : "";
-          message = (data?.message || data?.error || raw) + details;
-        } catch {
-          // ignore
+
+        const data = await res.json();
+        if (requestKey) {
+          responseCache.set(requestKey, {
+            data,
+            expiresAt: Date.now() + cacheTtlMs,
+          });
         }
+        return data;
+      } catch (error: any) {
+        lastError = error;
+        const retryableHttp = isRetryableHttpStatus(error?.status);
+        const retryableNetwork = isLikelyRetryableNetworkError(error);
+        const shouldRetry =
+          attempt < maxAttempts && method === "GET" && (retryableHttp || retryableNetwork);
+        if (!shouldRetry) {
+          throw error;
+        }
+        await sleep(API_GET_RETRY_DELAY_MS * attempt);
       }
-      throw new Error(message || `Request failed (${res.status})`);
     }
 
-    const data = await res.json();
-    if (requestKey) {
-      responseCache.set(requestKey, {
-        data,
-        expiresAt: Date.now() + SHORT_CACHE_TTL_MS,
-      });
-    }
-    return data;
+    throw lastError instanceof Error ? lastError : new Error("Request failed");
   })();
 
   if (!requestKey) {
