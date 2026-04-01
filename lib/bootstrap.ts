@@ -32,8 +32,8 @@ const WALLET_TTL_MS = 20_000;
 const ROLLEY_STAKE_TTL_MS = 20_000;
 const BOOTSTRAP_COOLDOWN_MS = 8_000;
 const WALLET_REFRESH_COOLDOWN_MS = 60_000;
-const MAX_WARM_IMAGES = 18;
-const MAX_WARM_VIDEOS = 6;
+const MAX_WARM_IMAGES = 24;
+const MAX_WARM_VIDEOS = 8;
 const MAX_WARM_POSTS = 120;
 const VIDEO_WARM_RANGE_BYTES = 1024 * 1024;
 const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i;
@@ -203,7 +203,7 @@ const warmMediaForPosts = (posts: any[]) => {
   const imageUris = new Set<string>();
   const videoUris = new Set<string>();
 
-  posts.slice(0, 12).forEach((post) => collectMediaFromPost(post, imageUris, videoUris));
+  posts.slice(0, 20).forEach((post) => collectMediaFromPost(post, imageUris, videoUris));
 
   const images = Array.from(imageUris).slice(0, MAX_WARM_IMAGES);
   const videos = Array.from(videoUris).slice(0, MAX_WARM_VIDEOS);
