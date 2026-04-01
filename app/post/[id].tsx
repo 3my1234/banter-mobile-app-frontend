@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -363,6 +363,7 @@ export default function PostDetail() {
   const [reactionOverride, setReactionOverride] = useState<"LOVE" | "ANGRY" | null | undefined>(
     undefined
   );
+  const reactionMutationSeqRef = useRef(0);
   const loveReactionScale = React.useRef(new Animated.Value(1)).current;
   const angryReactionScale = React.useRef(new Animated.Value(1)).current;
 
@@ -506,6 +507,8 @@ export default function PostDetail() {
 
   const handleReaction = async (type: "LOVE" | "ANGRY") => {
     if (!post) return;
+    reactionMutationSeqRef.current += 1;
+    const mutationSeq = reactionMutationSeqRef.current;
     let previousReaction: "LOVE" | "ANGRY" | null = null;
     try {
       const currentReaction =
@@ -566,6 +569,9 @@ export default function PostDetail() {
           const normalized = normalizeReactionType(data?.reaction?.type);
           serverReaction = (normalized as "LOVE" | "ANGRY" | null) ?? nextReaction;
         }
+        if (reactionMutationSeqRef.current !== mutationSeq) {
+          return;
+        }
         setReactionOverride(serverReaction);
         setPost((prev) =>
           prev
@@ -577,6 +583,9 @@ export default function PostDetail() {
         );
       }
     } catch (e: any) {
+      if (reactionMutationSeqRef.current !== mutationSeq) {
+        return;
+      }
       setReactionOverride(previousReaction);
       setError(e.message);
     }

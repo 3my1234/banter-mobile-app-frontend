@@ -503,6 +503,7 @@ export default function HomeFeed() {
   const [reactionOverrideById, setReactionOverrideById] = useState<
     Record<string, "LOVE" | "ANGRY" | null>
   >({});
+  const reactionMutationSeqByPostRef = useRef<Record<string, number>>({});
   const commentSheetY = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<Record<string, number>>({}); 
   const heartbeatScale = useRef(new Animated.Value(1)).current;
@@ -939,6 +940,8 @@ export default function HomeFeed() {
   };
 
   const handleReaction = async (postId: string, type: "LOVE" | "ANGRY") => {
+    const mutationSeq = (reactionMutationSeqByPostRef.current[postId] || 0) + 1;
+    reactionMutationSeqByPostRef.current[postId] = mutationSeq;
     let previousReaction: "LOVE" | "ANGRY" | null = null;
     try {
       const currentReaction =
@@ -983,6 +986,9 @@ export default function HomeFeed() {
           serverReaction = (normalized as "LOVE" | "ANGRY" | null) ?? optimisticReaction;
         }
       }
+      if (reactionMutationSeqByPostRef.current[postId] !== mutationSeq) {
+        return;
+      }
       setReactionOverrideById((prev) => ({
         ...prev,
         [postId]: serverReaction,
@@ -1014,6 +1020,9 @@ export default function HomeFeed() {
         )
       );
     } catch (e: any) {
+      if (reactionMutationSeqByPostRef.current[postId] !== mutationSeq) {
+        return;
+      }
       setReactionOverrideById((prev) => ({
         ...prev,
         [postId]: previousReaction,
