@@ -132,6 +132,10 @@ const showToast = (message: string) => {
 const ROAST_PREFIX = "[ROAST]";
 const REACTION_POP_SCALE = 1.22;
 const MAX_MEDIA_WARM_IMAGES = 12;
+const INITIAL_AVATAR_WARM_LIMIT = 16;
+const INITIAL_AVATAR_WARM_TIMEOUT_MS = 1200;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const detectMediaType = (uri?: string | null) => {
   if (!uri) return undefined;
@@ -511,6 +515,7 @@ export default function HomeFeed() {
   const pendingCountRef = useRef(0);
   const reactionScaleByKeyRef = useRef<Record<string, Animated.Value>>({});
   const warmedImageUrisRef = useRef<Set<string>>(new Set());
+  const initialAvatarWarmDoneRef = useRef(false);
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 });
@@ -546,6 +551,35 @@ export default function HomeFeed() {
       });
 
       warmImageUris(Array.from(imageUris));
+    },
+    [warmImageUris]
+  );
+  const warmInitialAvatars = useCallback(
+    async (rawPosts: any[]) => {
+      if (initialAvatarWarmDoneRef.current) return;
+      if (!Array.isArray(rawPosts) || rawPosts.length === 0) return;
+
+      initialAvatarWarmDoneRef.current = true;
+      const avatarUris = new Set<string>();
+      rawPosts.slice(0, INITIAL_AVATAR_WARM_LIMIT).forEach((post) => {
+        const authorAvatar = normalizeMediaUrl(post?.user?.avatarUrl);
+        if (authorAvatar) avatarUris.add(authorAvatar);
+        const repostAvatar = normalizeMediaUrl(post?.repostOf?.user?.avatarUrl);
+        if (repostAvatar) avatarUris.add(repostAvatar);
+      });
+
+      const batch = Array.from(avatarUris).slice(0, INITIAL_AVATAR_WARM_LIMIT);
+      if (!batch.length) return;
+
+      warmImageUris(batch);
+      try {
+        await Promise.race([
+          ExpoImage.prefetch(batch).then(() => undefined),
+          wait(INITIAL_AVATAR_WARM_TIMEOUT_MS),
+        ]);
+      } catch {
+        // swallow; this is only a best-effort warm-up
+      }
     },
     [warmImageUris]
   );
@@ -728,6 +762,7 @@ export default function HomeFeed() {
         setLoading(false);
       }
       const data = await fetchFeedSnapshot(type, feed, { force });
+      await warmInitialAvatars(data?.posts || []);
       void loadAds();
       applyFeedResponse(type, feed, data);
     } catch (e: any) {

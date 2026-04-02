@@ -1,13 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { Tabs } from "expo-router";
+import { Tabs, usePathname, useRouter } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  AppState,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  ToastAndroid,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/components/useColorScheme";
 import { useClientOnlyValue } from "@/components/useClientOnlyValue";
 import { apiFetch } from "@/lib/api";
+import { warmAppBootstrap } from "@/lib/bootstrap";
 import {
   decrementNotificationUnreadCount,
   getNotificationUnreadCount,
@@ -105,10 +115,13 @@ function HorizontalTabBar({
 }
 
 export default function TabLayout() {
+  const router = useRouter();
+  const pathname = usePathname();
   useColorScheme();
   const [notificationUnread, setNotificationUnread] = useState(getNotificationUnreadCount());
   const [messageUnread, setMessageUnread] = useState(getMessageUnreadCount());
   const unreadRefreshRef = useRef({ inFlight: false, lastAt: 0 });
+  const lastBackPressAtRef = useRef(0);
 
   const loadNotificationUnread = useCallback(async () => {
     try {
@@ -158,8 +171,10 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
+    void warmAppBootstrap();
     refreshUnreadBadges(true);
     const retry = setTimeout(() => {
+      void warmAppBootstrap();
       refreshUnreadBadges(true);
     }, 1500);
     let socket: any;
@@ -214,6 +229,7 @@ export default function TabLayout() {
   useEffect(() => {
     const onAppStateChange = (nextState: string) => {
       if (nextState === "active") {
+        void warmAppBootstrap();
         refreshUnreadBadges();
       }
     };
@@ -222,6 +238,28 @@ export default function TabLayout() {
       sub.remove();
     };
   }, [refreshUnreadBadges]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      const isTabsHome = pathname === "/" || pathname === "/index";
+      if (!isTabsHome) {
+        router.replace("/");
+        return true;
+      }
+
+      const now = Date.now();
+      if (now - lastBackPressAtRef.current < 1400) {
+        BackHandler.exitApp();
+        return true;
+      }
+      lastBackPressAtRef.current = now;
+      ToastAndroid.show("Press back again to exit", ToastAndroid.SHORT);
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [pathname, router]);
 
   return (
     <Tabs
