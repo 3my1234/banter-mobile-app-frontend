@@ -37,6 +37,7 @@ import {
   rememberWarmPosts,
 } from "@/lib/bootstrap";
 import {
+  getMediaFallbackUrl,
   normalizeMediaUrl,
   resolvePlayableMediaUrl,
   saveMediaToLibrary,
@@ -504,6 +505,9 @@ export default function HomeFeed() {
   );
   const [downloadingMediaUri, setDownloadingMediaUri] = useState<string | null>(null);
   const [expandedMediaUri, setExpandedMediaUri] = useState<string | null>(null);
+  const [mediaFallbackByUri, setMediaFallbackByUri] = useState<Record<string, string>>(
+    {}
+  );
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [reactionOverrideById, setReactionOverrideById] = useState<
     Record<string, "LOVE" | "ANGRY" | null>
@@ -583,6 +587,22 @@ export default function HomeFeed() {
     },
     [warmImageUris]
   );
+  const resolveMediaUri = useCallback(
+    (uri?: string | null) => {
+      if (!uri) return "";
+      return mediaFallbackByUri[uri] || uri;
+    },
+    [mediaFallbackByUri]
+  );
+  const activateMediaFallback = useCallback((uri?: string | null) => {
+    if (!uri) return;
+    const fallbackUri = getMediaFallbackUrl(uri);
+    if (!fallbackUri || fallbackUri === uri) return;
+    setMediaFallbackByUri((prev) => {
+      if (prev[uri] === fallbackUri) return prev;
+      return { ...prev, [uri]: fallbackUri };
+    });
+  }, []);
   const getReactionScaleValue = useCallback(
     (postId: string, type: "LOVE" | "ANGRY") => {
       const key = `${postId}:${type}`;
@@ -762,7 +782,7 @@ export default function HomeFeed() {
         setLoading(false);
       }
       const data = await fetchFeedSnapshot(type, feed, { force });
-      await warmInitialAvatars(data?.posts || []);
+      void warmInitialAvatars(data?.posts || []);
       void loadAds();
       applyFeedResponse(type, feed, data);
     } catch (e: any) {
@@ -1704,28 +1724,30 @@ export default function HomeFeed() {
     media: MediaItem,
     allowDownload: boolean
   ) => {
-    const isDownloading = downloadingMediaUri === media.uri;
+    const sourceUri = resolveMediaUri(media.uri) || media.uri;
+    const isDownloading = downloadingMediaUri === sourceUri;
     if (media.type === "video") {
       return (
         <View style={[styles.mediaWrapper, styles.mediaFrame]}>
                   <Video
-                    source={{ uri: media.uri }}
+                    source={{ uri: sourceUri }}
                     style={styles.mediaFill}
                     resizeMode={ResizeMode.COVER}
                     shouldPlay={false}
                     useNativeControls
+                    onError={() => activateMediaFallback(media.uri)}
                     ref={(ref) => {
                       if (ref) {
-                        inlineVideoRefs.current.set(media.uri, ref);
+                        inlineVideoRefs.current.set(sourceUri, ref);
                       } else {
-                        inlineVideoRefs.current.delete(media.uri);
+                        inlineVideoRefs.current.delete(sourceUri);
                       }
                     }}
                   />
           {allowDownload ? (
             <Pressable
               style={[styles.mediaDownload, isDownloading && styles.mediaDownloadBusy]}
-              onPress={() => downloadMedia(media.uri)}
+              onPress={() => downloadMedia(sourceUri)}
                 disabled={isDownloading}
                 hitSlop={12}
             >
@@ -1742,14 +1764,15 @@ export default function HomeFeed() {
 
     return (
       <View style={[styles.mediaWrapper, styles.mediaFrame]}>
-        <Pressable style={styles.mediaFill} onPress={() => setExpandedMediaUri(media.uri)}>
+        <Pressable style={styles.mediaFill} onPress={() => setExpandedMediaUri(sourceUri)}>
           <ExpoImage
-            source={{ uri: media.uri }}
+            source={{ uri: sourceUri }}
             style={styles.mediaFill}
             contentFit="cover"
             contentPosition="center"
             transition={180}
             cachePolicy="memory-disk"
+            onError={() => activateMediaFallback(media.uri)}
           />
         </Pressable>
       </View>
@@ -1764,7 +1787,7 @@ export default function HomeFeed() {
     return (
       <View style={[styles.mediaWrapper, styles.mediaFrame]}>
         <ImageCarousel
-          items={mediaItems.map((item) => ({ uri: item.uri }))}
+          items={mediaItems.map((item) => ({ uri: resolveMediaUri(item.uri) || item.uri }))}
           height={postMediaHeight}
           onDownload={allowDownload ? downloadMedia : undefined}
           downloadingUri={downloadingMediaUri}
@@ -1837,7 +1860,9 @@ export default function HomeFeed() {
             showToast("Still uploading. Please wait.");
             return;
           }
-          const topVideoUri = item.mediaItems?.find((media) => media.type === "video")?.uri;
+          const topVideoUri = resolveMediaUri(
+            item.mediaItems?.find((media) => media.type === "video")?.uri
+          );
           if (topVideoUri) {
             void fetch(topVideoUri, {
               method: "GET",
@@ -1865,12 +1890,13 @@ export default function HomeFeed() {
           >
             {item.avatarUrl ? (
               <ExpoImage
-                source={{ uri: item.avatarUrl }}
+                source={{ uri: resolveMediaUri(item.avatarUrl) || item.avatarUrl }}
                 style={styles.avatar}
                 contentFit="cover"
                 transition={180}
                 cachePolicy="memory-disk"
                 priority="high"
+                onError={() => activateMediaFallback(item.avatarUrl)}
               />
             ) : (
               <View style={styles.avatar} />
@@ -1917,11 +1943,12 @@ export default function HomeFeed() {
                 <View style={styles.repostHeader}>
                   {repostAvatarUrl ? (
                     <ExpoImage
-                      source={{ uri: repostAvatarUrl }}
+                      source={{ uri: resolveMediaUri(repostAvatarUrl) || repostAvatarUrl }}
                       style={styles.repostAvatar}
                       contentFit="cover"
                       transition={180}
                       cachePolicy="memory-disk"
+                      onError={() => activateMediaFallback(repostAvatarUrl)}
                     />
                   ) : (
                     <View style={styles.repostAvatar} />
@@ -2048,9 +2075,10 @@ export default function HomeFeed() {
   };
 
   const renderBanterItem = ({ item }: { item: Post; index: number }) => {
-    if (item.raw?.isAd) {
-      const ad = item.raw?.ad as AdCampaign | undefined;
-      const media = item.media;
+	    if (item.raw?.isAd) {
+	      const ad = item.raw?.ad as AdCampaign | undefined;
+	      const media = item.media;
+	      const mediaUri = resolveMediaUri(media?.uri) || media?.uri || "";
       const isVideo = media?.type === "video";
       const isSheetOpen = !!banterCommentTarget;
       const ctaLabel = ad?.ctaLabel || "Learn more";
@@ -2066,8 +2094,8 @@ export default function HomeFeed() {
             {media ? (
               isVideo ? (
                 <Video
-                  key={`${item.id}-${media.uri}`}
-                  source={{ uri: media.uri }}
+                  key={`${item.id}-${mediaUri}`}
+                  source={{ uri: mediaUri }}
                   style={styles.banterMediaFill}
                   resizeMode={ResizeMode.COVER}
                   shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
@@ -2075,6 +2103,7 @@ export default function HomeFeed() {
                   useNativeControls
                   isMuted={false}
                   volume={1.0}
+                  onError={() => activateMediaFallback(media?.uri)}
                   ref={(ref) => {
                     if (ref) {
                       videoRefs.current.set(item.id, ref);
@@ -2085,11 +2114,12 @@ export default function HomeFeed() {
                 />
               ) : (
                 <ExpoImage
-                  source={{ uri: media.uri }}
+                  source={{ uri: mediaUri }}
                   style={styles.banterMediaFill}
                   contentFit="cover"
                   transition={180}
                   cachePolicy="memory-disk"
+                  onError={() => activateMediaFallback(media?.uri)}
                 />
               )
             ) : (
@@ -2133,9 +2163,10 @@ export default function HomeFeed() {
     const loveColor = loveActive ? "#fe2c55" : "#ffffff";
     const dislikeColor = dislikeActive ? "#facc15" : "#ffffff";
     const loveGlyph = loveActive ? "♥" : "♡";
-    const dislikeEmoji = "\u{1F44E}";
-    const media = item.media;
-    const isVideo = media?.type === "video";
+	    const dislikeEmoji = "\u{1F44E}";
+	    const media = item.media;
+	    const mediaUri = resolveMediaUri(media?.uri) || media?.uri || "";
+	    const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
     const nativeControlsHeight = isVideo ? 74 : 0;
     const stayDropBottom = 10 + nativeControlsHeight;
@@ -2177,8 +2208,8 @@ export default function HomeFeed() {
           {media ? (
             isVideo ? (
               <Video
-                key={`${item.id}-${media.uri}`}
-                source={{ uri: media.uri }}
+                key={`${item.id}-${mediaUri}`}
+                source={{ uri: mediaUri }}
                 style={styles.banterMediaFill}
                 resizeMode={ResizeMode.COVER}
                 shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
@@ -2186,6 +2217,7 @@ export default function HomeFeed() {
                 useNativeControls
                 isMuted={false}
                 volume={1.0}
+                onError={() => activateMediaFallback(media?.uri)}
                 onPlaybackStatusUpdate={(status) => {
                   if (!status.isLoaded) return;
                   if (seekingVideoId === item.id) return;
@@ -2206,11 +2238,12 @@ export default function HomeFeed() {
               />
             ) : (
               <ExpoImage
-                source={{ uri: media.uri }}
+                source={{ uri: mediaUri }}
                 style={styles.banterMediaFill}
                 contentFit="cover"
                 transition={180}
                 cachePolicy="memory-disk"
+                onError={() => activateMediaFallback(media?.uri)}
               />
             )
           ) : (
@@ -2231,12 +2264,13 @@ export default function HomeFeed() {
               >
                 {item.avatarUrl ? (
                   <ExpoImage
-                    source={{ uri: item.avatarUrl }}
+                    source={{ uri: resolveMediaUri(item.avatarUrl) || item.avatarUrl }}
                     style={styles.banterAvatar}
                     contentFit="cover"
                     transition={180}
                     cachePolicy="memory-disk"
                     priority="high"
+                    onError={() => activateMediaFallback(item.avatarUrl)}
                   />
                 ) : (
                   <View style={styles.banterAvatar} />
@@ -2344,18 +2378,18 @@ export default function HomeFeed() {
             </Pressable>
             {media ? (
               <Pressable
-                style={[styles.banterAction, downloadingMediaUri === media.uri && styles.banterActionBusy]}
-                onPress={() => downloadMedia(media.uri)}
-                disabled={downloadingMediaUri === media.uri}
+                style={[styles.banterAction, downloadingMediaUri === mediaUri && styles.banterActionBusy]}
+                onPress={() => mediaUri && downloadMedia(mediaUri)}
+                disabled={downloadingMediaUri === mediaUri}
                 hitSlop={12}
               >
-                {downloadingMediaUri === media.uri ? (
+                {downloadingMediaUri === mediaUri ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <FontAwesome name="download" size={banterActionIconSize} color="#fff" />
                 )}
                 <Text style={styles.banterActionText}>
-                  {downloadingMediaUri === media.uri ? "Saving..." : "Save"}
+                  {downloadingMediaUri === mediaUri ? "Saving..." : "Save"}
                 </Text>
               </Pressable>
             ) : null}
@@ -2842,11 +2876,12 @@ export default function HomeFeed() {
             />
             <View style={styles.modalContent}>
               <ExpoImage
-                source={{ uri: expandedMediaUri }}
+                source={{ uri: resolveMediaUri(expandedMediaUri) || expandedMediaUri }}
                 style={styles.modalImage}
                 contentFit="contain"
                 transition={180}
                 cachePolicy="memory-disk"
+                onError={() => activateMediaFallback(expandedMediaUri)}
               />
             </View>
             <View style={[styles.modalActionsRow, { paddingBottom: 12 + insets.bottom }]}>
@@ -2855,10 +2890,10 @@ export default function HomeFeed() {
               </Pressable>
               <Pressable
                 style={styles.modalActionPrimary}
-                onPress={() => downloadMedia(expandedMediaUri)}
-                disabled={downloadingMediaUri === expandedMediaUri}
+                onPress={() => downloadMedia(resolveMediaUri(expandedMediaUri) || expandedMediaUri)}
+                disabled={downloadingMediaUri === (resolveMediaUri(expandedMediaUri) || expandedMediaUri)}
               >
-                {downloadingMediaUri === expandedMediaUri ? (
+                {downloadingMediaUri === (resolveMediaUri(expandedMediaUri) || expandedMediaUri) ? (
                   <ActivityIndicator color="#0d0d0d" />
                 ) : (
                   <Text style={styles.modalActionPrimaryText}>Save</Text>

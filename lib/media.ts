@@ -238,6 +238,12 @@ function extractMediaKey(url?: string | null) {
   }
 }
 
+export function getMediaFallbackUrl(url?: string | null) {
+  const key = extractMediaKey(url);
+  if (!key) return undefined;
+  return toBackendPublicViewUrl(key);
+}
+
 export function normalizeMediaUrl(url?: string | null) {
   if (!url) return undefined;
   let normalized = url;
