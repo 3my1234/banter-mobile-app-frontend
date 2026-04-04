@@ -33,9 +33,9 @@ const WALLET_TTL_MS = 20_000;
 const ROLLEY_STAKE_TTL_MS = 20_000;
 const BOOTSTRAP_COOLDOWN_MS = 8_000;
 const MAX_WARM_IMAGES = 8;
-const MAX_WARM_VIDEOS = 0;
+const MAX_WARM_VIDEOS = 2;
 const MAX_WARM_POSTS = 120;
-const VIDEO_WARM_RANGE_BYTES = 1024 * 1024;
+const VIDEO_WARM_RANGE_BYTES = 512 * 1024;
 const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i;
 
 const ROLLEY_SERVICE_URL =
@@ -150,10 +150,28 @@ const collectMediaFromPost = (
 
   if (!post || typeof post !== "object") return;
 
-  // Prioritize avatar warm-up. Warming large post media on cold start can
-  // compete with visible feed rendering on slower mobile networks.
+  // Always warm avatars first.
   includeUrl(post.user?.avatarUrl, "image");
   includeUrl(post.repostOf?.user?.avatarUrl, "image");
+
+  // Warm only the first playable video for quicker first-frame banter playback
+  // without saturating cold-start bandwidth.
+  const includePrimaryVideo = (rawUrl?: unknown, rawType?: unknown) => {
+    const uri = normalizeItemUrl(rawUrl);
+    if (!uri || warmedMediaUris.has(uri)) return false;
+    const type = normalizeMediaType(rawType) || detectMediaType(uri);
+    if (type !== "video") return false;
+    videoUris.add(uri);
+    return true;
+  };
+
+  const mediaItems = Array.isArray(post.mediaItems) ? post.mediaItems : [];
+  for (const item of mediaItems) {
+    if (includePrimaryVideo(item?.url, item?.type ?? item?.mediaType)) {
+      return;
+    }
+  }
+  includePrimaryVideo(post.mediaUrl, post.mediaType);
 };
 
 const warmMediaForPosts = (posts: any[]) => {

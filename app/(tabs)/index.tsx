@@ -136,6 +136,7 @@ const MAX_MEDIA_WARM_IMAGES = 12;
 const INITIAL_AVATAR_WARM_LIMIT = 16;
 const INITIAL_AVATAR_WARM_TIMEOUT_MS = 1200;
 const INITIAL_VIDEO_WARM_RANGE_BYTES = 512 * 1024;
+const INITIAL_VIDEO_WARM_COUNT = 3;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -520,6 +521,7 @@ export default function HomeFeed() {
   const reactionScaleByKeyRef = useRef<Record<string, Animated.Value>>({});
   const warmedImageUrisRef = useRef<Set<string>>(new Set());
   const warmedVideoUrisRef = useRef<Set<string>>(new Set());
+  const adsHydrationScheduledRef = useRef(false);
   const initialAvatarWarmDoneRef = useRef(false);
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -561,19 +563,21 @@ export default function HomeFeed() {
   );
   const warmFirstBanterVideo = useCallback((items: Post[]) => {
     if (!Array.isArray(items) || items.length === 0) return;
-    const firstVideo = items.find(
-      (item) => item.media?.type === "video" && !!item.media?.uri
-    );
-    const targetUri = firstVideo?.media?.uri || "";
-    if (!targetUri) return;
-    if (warmedVideoUrisRef.current.has(targetUri)) return;
-    warmedVideoUrisRef.current.add(targetUri);
-    void fetch(targetUri, {
-      method: "GET",
-      headers: { Range: `bytes=0-${INITIAL_VIDEO_WARM_RANGE_BYTES - 1}` },
-    })
-      .catch(() => fetch(targetUri, { method: "HEAD" }))
-      .catch(() => undefined);
+    const targets = items
+      .filter((item) => item.media?.type === "video" && !!item.media?.uri)
+      .slice(0, INITIAL_VIDEO_WARM_COUNT)
+      .map((item) => item.media?.uri as string);
+    targets.forEach((targetUri) => {
+      if (!targetUri) return;
+      if (warmedVideoUrisRef.current.has(targetUri)) return;
+      warmedVideoUrisRef.current.add(targetUri);
+      void fetch(targetUri, {
+        method: "GET",
+        headers: { Range: `bytes=0-${INITIAL_VIDEO_WARM_RANGE_BYTES - 1}` },
+      })
+        .catch(() => fetch(targetUri, { method: "HEAD" }))
+        .catch(() => undefined);
+    });
   }, []);
   const warmInitialAvatars = useCallback(
     async (rawPosts: any[]) => {
@@ -720,10 +724,11 @@ export default function HomeFeed() {
     } as Post;
   };
 
-  const mapAdToPost = (ad: AdCampaign): Post => {
+  const mapAdToPost = (ad: AdCampaign, instanceKey?: string): Post => {
+    const adKey = `${ad.id}-${instanceKey || "default"}`;
     const mediaItems = buildMediaItems([], ad.mediaUrl || "", ad.mediaType || null);
     return {
-      id: `ad-${ad.id}`,
+      id: `ad-${adKey}`,
       name: ad.title || "Sponsored",
       handle: "Sponsored",
       time: "Sponsored",
@@ -743,7 +748,7 @@ export default function HomeFeed() {
       userReaction: normalizeReactionType((ad as any).userReaction),
       repostCount: 0,
       repostOf: null,
-      raw: { isAd: true, ad },
+      raw: { isAd: true, ad, adCampaignId: ad.id, adInstanceKey: adKey },
     } as Post;
   };
 
@@ -790,8 +795,14 @@ export default function HomeFeed() {
     }
     setBanters(mapped);
     loadedFeedKeysRef.current.banter = feed;
-    setActiveBanterId(mapped[0]?.id || null);
+    const firstBanterId = mapped[0]?.id || null;
+    setActiveBanterId(firstBanterId);
     warmFirstBanterVideo(mapped);
+    if (firstBanterId) {
+      requestAnimationFrame(() => {
+        setTimeout(() => resumeBanterVideo(firstBanterId), 40);
+      });
+    }
     setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
   };
 
@@ -810,7 +821,12 @@ export default function HomeFeed() {
       }
       const data = await fetchFeedSnapshot(type, feed, { force });
       void warmInitialAvatars(data?.posts || []);
-      void loadAds();
+      if (!adsHydrationScheduledRef.current) {
+        adsHydrationScheduledRef.current = true;
+        setTimeout(() => {
+          void loadAds();
+        }, 900);
+      }
       applyFeedResponse(type, feed, data);
     } catch (e: any) {
       setError(e.message);
@@ -818,7 +834,7 @@ export default function HomeFeed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [loadAds, warmFirstBanterVideo]);
+  }, [loadAds, resumeBanterVideo, warmFirstBanterVideo]);
 
   const loadMe = useCallback(async () => {
     try {
@@ -1329,7 +1345,7 @@ export default function HomeFeed() {
   }, [pendingPosts, meAvatar, meId]);
 
   const injectAds = useCallback(
-    (items: Post[], ads: AdCampaign[], frequency: number | undefined) => {
+    (items: Post[], ads: AdCampaign[], frequency: number | undefined, streamKey: string) => {
       if (!adSettings?.isEnabled) return items;
       if (!ads?.length) return items;
       const slot = Number(frequency || 0);
@@ -1341,13 +1357,13 @@ export default function HomeFeed() {
         if ((idx + 1) % slot === 0) {
           const ad = ads[adIndex % ads.length];
           if (ad) {
-            result.push(mapAdToPost(ad));
+            result.push(mapAdToPost(ad, `${streamKey}-${idx + 1}-${adIndex}`));
             adIndex += 1;
           }
         }
       });
       if (adIndex === 0 && items.length > 0) {
-        result.push(mapAdToPost(ads[0]));
+        result.push(mapAdToPost(ads[0], `${streamKey}-tail-0`));
       }
       return result;
     },
@@ -1358,7 +1374,7 @@ export default function HomeFeed() {
     const normalPending = pendingPostItems.filter(
       (pending) => !pending.raw?.isRoast
     );
-    const injected = injectAds(posts, postAds, adSettings?.postFrequency);
+    const injected = injectAds(posts, postAds, adSettings?.postFrequency, "post");
     return [...normalPending, ...injected];
   }, [pendingPostItems, posts, injectAds, postAds, adSettings?.postFrequency]);
 
@@ -1366,9 +1382,19 @@ export default function HomeFeed() {
     const videoPending = pendingPostItems.filter(
       (pending) => pending.raw?.isRoast
     );
-    const injected = injectAds(banters, banterAds, adSettings?.banterFrequency);
+    const adPool = banterAds.length ? banterAds : postAds;
+    const frequency = adSettings?.banterFrequency || adSettings?.postFrequency;
+    const injected = injectAds(banters, adPool, frequency, "banter");
     return [...videoPending, ...injected];
-  }, [pendingPostItems, banters, injectAds, banterAds, adSettings?.banterFrequency]);
+  }, [
+    pendingPostItems,
+    banters,
+    injectAds,
+    banterAds,
+    postAds,
+    adSettings?.banterFrequency,
+    adSettings?.postFrequency,
+  ]);
   const activeOwnedBanter = useMemo(() => {
     if (!activeBanterId) return null;
     const current = visibleBanters.find((banter) => banter.id === activeBanterId) ?? null;
@@ -1727,7 +1753,7 @@ export default function HomeFeed() {
                     style={styles.mediaFill}
                     resizeMode={ResizeMode.COVER}
                     shouldPlay={false}
-                    useNativeControls
+                    useNativeControls={false}
                     onError={() => activateMediaFallback(media.uri)}
                     ref={(ref) => {
                       if (ref) {
@@ -2101,7 +2127,7 @@ export default function HomeFeed() {
                   resizeMode={ResizeMode.COVER}
                   shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
                   isLooping
-                  useNativeControls
+                  useNativeControls={false}
                   isMuted={false}
                   volume={1.0}
                   onError={() => activateMediaFallback(media?.uri)}
@@ -2172,7 +2198,7 @@ export default function HomeFeed() {
 	        : resolveMediaUri(media?.uri) || media?.uri || "";
 	    const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const nativeControlsHeight = isVideo ? 74 : 0;
+    const nativeControlsHeight = 0;
     const stayDropBottom = 10 + nativeControlsHeight;
     const sideActionsBottom = stayDropBottom + 82;
     const metaBottom = stayDropBottom + 104;
@@ -2218,7 +2244,7 @@ export default function HomeFeed() {
                 resizeMode={ResizeMode.COVER}
                 shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
                 isLooping
-                useNativeControls
+                useNativeControls={false}
                 isMuted={false}
                 volume={1.0}
                 onError={() => activateMediaFallback(media?.uri)}
