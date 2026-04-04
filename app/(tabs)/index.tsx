@@ -2198,7 +2198,7 @@ export default function HomeFeed() {
 	        : resolveMediaUri(media?.uri) || media?.uri || "";
 	    const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const nativeControlsHeight = 0;
+    const nativeControlsHeight = isVideo ? 74 : 0;
     const stayDropBottom = 10 + nativeControlsHeight;
     const sideActionsBottom = stayDropBottom + 82;
     const metaBottom = stayDropBottom + 104;
