@@ -68,7 +68,7 @@ export default function ProfileScreen() {
   const [balances, setBalances] = useState<Record<string, any> | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [profileTab, setProfileTab] = useState<"posts" | "banter" | "comments">("posts");
+  const [profileTab, setProfileTab] = useState<"banter" | "comments">("banter");
   const [syncingWallets, setSyncingWallets] = useState(false);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [walletsSynced, setWalletsSynced] = useState(false);
@@ -81,6 +81,8 @@ export default function ProfileScreen() {
   const [withdrawSending, setWithdrawSending] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const logoutInFlightRef = useRef(false);
+  const userPostsFetchInFlightRef = useRef<Promise<void> | null>(null);
+  const userPostsFetchUserIdRef = useRef<string | null>(null);
   const hydratedProfileCacheUserIdRef = useRef<string | null>(null);
   const hydratedSessionCacheRef = useRef<string | null>(null);
   const movementExplorerBase =
@@ -446,25 +448,46 @@ export default function ProfileScreen() {
     if (!userId) {
       setUserPosts([]);
       setUserPostsLoading(false);
+      userPostsFetchInFlightRef.current = null;
+      userPostsFetchUserIdRef.current = null;
       hydratedProfileCacheUserIdRef.current = null;
       return;
     }
-    void hydrateProfileCache(userId);
-    setUserPostsLoading(true);
-    const loadingGuard = setTimeout(() => {
-      setUserPostsLoading(false);
-    }, 12000);
+    if (
+      userPostsFetchInFlightRef.current &&
+      userPostsFetchUserIdRef.current === userId
+    ) {
+      await userPostsFetchInFlightRef.current;
+      return;
+    }
+    const task = (async () => {
+      void hydrateProfileCache(userId);
+      setUserPostsLoading(true);
+      const loadingGuard = setTimeout(() => {
+        setUserPostsLoading(false);
+      }, 12000);
+      try {
+        const data = await withTimeout(
+          apiFetch(`/users/${userId}/posts?page=1&limit=30`)
+        );
+        const posts = Array.isArray(data?.posts) ? data.posts : [];
+        setUserPosts(posts);
+      } catch {
+        // Keep existing posts on transient failures.
+      } finally {
+        clearTimeout(loadingGuard);
+        setUserPostsLoading(false);
+      }
+    })();
+    userPostsFetchInFlightRef.current = task;
+    userPostsFetchUserIdRef.current = userId;
     try {
-      const data = await withTimeout(
-        apiFetch(`/users/${userId}/posts?page=1&limit=50`)
-      );
-      const posts = Array.isArray(data?.posts) ? data.posts : [];
-      setUserPosts(posts);
-    } catch {
-      // Keep existing posts on transient failures.
+      await task;
     } finally {
-      clearTimeout(loadingGuard);
-      setUserPostsLoading(false);
+      if (userPostsFetchInFlightRef.current === task) {
+        userPostsFetchInFlightRef.current = null;
+        userPostsFetchUserIdRef.current = null;
+      }
     }
   }, [hydrateProfileCache]);
 
@@ -1011,25 +1034,12 @@ export default function ProfileScreen() {
         </View>
 
         <View style={[styles.card, cardStyle]}>
-          <Text style={[styles.sectionTitle, textPrimaryStyle]}>Your activity</Text>
+          <Text style={[styles.sectionTitle, textPrimaryStyle]}>Your banter activity</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.profileTabsRow}
           >
-            <Pressable
-              style={[styles.profileTab, profileTab === "posts" && styles.profileTabActive]}
-              onPress={() => setProfileTab("posts")}
-            >
-              <Text
-                style={[
-                  styles.profileTabText,
-                  profileTab === "posts" && styles.profileTabTextActive,
-                ]}
-              >
-                Posts
-              </Text>
-            </Pressable>
             <Pressable
               style={[styles.profileTab, profileTab === "banter" && styles.profileTabActive]}
               onPress={() => setProfileTab("banter")}
@@ -1062,17 +1072,12 @@ export default function ProfileScreen() {
             <Text style={[styles.muted, textMutedStyle]}>Your comments and replies will appear here.</Text>
           ) : (
             (() => {
-              const filtered =
-                profileTab === "posts"
-                  ? userPosts.filter((p) => !p.isRoast)
-                  : userPosts.filter((p) => p.isRoast);
+              const filtered = userPosts;
               if (filtered.length === 0) {
                 return (
                   <Text style={[styles.muted, textMutedStyle]}>
                     {userPostsLoading
                       ? "Loading your activity..."
-                      : profileTab === "posts"
-                      ? "Posts will appear here."
                       : "Banter will appear here."}
                   </Text>
                 );

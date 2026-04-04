@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import * as Notifications from "expo-notifications";
 import {
   AppState,
   BackHandler,
@@ -32,6 +33,11 @@ import {
   setMessageUnreadCount,
   subscribeMessageUnreadCount,
 } from "@/lib/messageBadge";
+import {
+  STARTUP_PUSH_RESPONSE_MAX_AGE_MS,
+  initializePushNotifications,
+  shouldHandleNotificationResponse,
+} from "@/lib/pushNotifications";
 import { getSocket } from "@/lib/socket";
 import { AppThemeColors, useAppThemeColors } from "@/components/theme";
 
@@ -172,6 +178,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     void warmAppBootstrap();
+    void initializePushNotifications();
     refreshUnreadBadges(true);
     const retry = setTimeout(() => {
       void warmAppBootstrap();
@@ -179,6 +186,26 @@ export default function TabLayout() {
     }, 1500);
     let socket: any;
     let disposed = false;
+    const handleNotificationResponse = async (
+      response: Notifications.NotificationResponse | null | undefined
+    ) => {
+      if (
+        !(await shouldHandleNotificationResponse(response, {
+          requireTimestamp: true,
+          maxAgeMs: STARTUP_PUSH_RESPONSE_MAX_AGE_MS,
+        }))
+      ) {
+        return;
+      }
+      router.replace("/(tabs)/notifications");
+      refreshUnreadBadges(true);
+    };
+
+    const notificationResponseSub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        void handleNotificationResponse(response);
+      }
+    );
     const setup = async () => {
       try {
         socket = await getSocket();
@@ -213,6 +240,7 @@ export default function TabLayout() {
     setup();
     return () => {
       clearTimeout(retry);
+      notificationResponseSub.remove();
       disposed = true;
       if (socket) {
         socket.off("notifications.new");
@@ -224,7 +252,7 @@ export default function TabLayout() {
         socket.off("messages.request_resolved");
       }
     };
-  }, [loadMessageUnread, loadNotificationUnread, refreshUnreadBadges]);
+  }, [loadMessageUnread, loadNotificationUnread, refreshUnreadBadges, router]);
 
   useEffect(() => {
     const onAppStateChange = (nextState: string) => {
@@ -241,9 +269,13 @@ export default function TabLayout() {
 
   useEffect(() => {
     const onBackPress = () => {
-      const isTabsHome = pathname === "/" || pathname === "/index";
+      const isTabsHome =
+        pathname === "/" ||
+        pathname === "/index" ||
+        pathname === "/(tabs)" ||
+        pathname === "/(tabs)/index";
       if (!isTabsHome) {
-        router.replace("/");
+        router.replace("/(tabs)");
         return true;
       }
 

@@ -28,10 +28,11 @@ type CacheEntry<T> = {
 };
 
 const FEED_TTL_MS = 45_000;
+const FEED_PAGE_SIZE = 12;
 const WALLET_TTL_MS = 20_000;
 const ROLLEY_STAKE_TTL_MS = 20_000;
 const BOOTSTRAP_COOLDOWN_MS = 8_000;
-const MAX_WARM_IMAGES = 18;
+const MAX_WARM_IMAGES = 8;
 const MAX_WARM_VIDEOS = 0;
 const MAX_WARM_POSTS = 120;
 const VIDEO_WARM_RANGE_BYTES = 1024 * 1024;
@@ -149,17 +150,10 @@ const collectMediaFromPost = (
 
   if (!post || typeof post !== "object") return;
 
+  // Prioritize avatar warm-up. Warming large post media on cold start can
+  // compete with visible feed rendering on slower mobile networks.
   includeUrl(post.user?.avatarUrl, "image");
-  includeUrl(post.mediaUrl, post.mediaType);
-  if (Array.isArray(post.mediaItems)) {
-    post.mediaItems.forEach((item: any) => includeUrl(item?.url, item?.type));
-  }
-
   includeUrl(post.repostOf?.user?.avatarUrl, "image");
-  includeUrl(post.repostOf?.mediaUrl, post.repostOf?.mediaType);
-  if (Array.isArray(post.repostOf?.mediaItems)) {
-    post.repostOf.mediaItems.forEach((item: any) => includeUrl(item?.url, item?.type));
-  }
 };
 
 const warmMediaForPosts = (posts: any[]) => {
@@ -247,7 +241,9 @@ export async function fetchFeedSnapshot(
   }
 
   const requestPromise = (async () => {
-    const data = await apiFetch(`/posts?type=${type}&feed=${feed}&page=1&limit=20`);
+    const data = await apiFetch(
+      `/posts?type=${type}&feed=${feed}&page=1&limit=${FEED_PAGE_SIZE}`
+    );
     const snapshot: FeedSnapshot = {
       posts: Array.isArray(data?.posts) ? data.posts : [],
       pagination: data?.pagination,
@@ -406,7 +402,7 @@ export async function warmAppBootstrap(options?: { force?: boolean }) {
     await Promise.allSettled([
       getCurrentUser(),
       registerDevicePushToken(),
-      fetchFeedSnapshot("posts", "forYou", { force }),
+      fetchFeedSnapshot("banter", "hot", { force }),
     ]);
     lastBootstrapAt = Date.now();
   })();

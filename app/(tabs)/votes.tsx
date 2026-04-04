@@ -90,10 +90,11 @@ export default function Votes() {
   const loadVotesPage = async () => {
     try {
       setLoading(true);
-      const bundleData = await apiFetch("/payments/votes/bundles");
-      setBundles(bundleData?.bundles || []);
-
-      const me = await getCurrentUser();
+      const [bundleData, me] = await Promise.all([
+        apiFetch("/payments/votes/bundles"),
+        getCurrentUser(),
+      ]);
+      setBundles(Array.isArray(bundleData?.bundles) ? bundleData.bundles : []);
       setBalance(me?.user?.voteBalance ?? 0);
       const nigeria = isNigeriaUser(me?.user || me);
       const currency = getFlutterwaveCurrency(me?.user || me);
@@ -342,7 +343,7 @@ export default function Votes() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <CenteredHeartbeatLoader visible={loading || refreshing} text={loading ? "Loading votes..." : "Refreshing..."} />
+      <CenteredHeartbeatLoader visible={loading && bundles.length === 0} text="Loading votes..." />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -360,7 +361,7 @@ export default function Votes() {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Your vote balance</Text>
           <Text style={styles.balanceValue}>
-            {loading ? "â€¦" : balance}
+            {loading ? "..." : balance}
           </Text>
         </View>
 
@@ -455,12 +456,12 @@ export default function Votes() {
           )}
 
           <Text style={styles.guideLabel}>Buy USDC safely via Bybit P2P</Text>
-          <Text style={styles.guideStep}>1. Open Bybit → Buy Crypto → P2P Trading → set to Buy.</Text>
+          <Text style={styles.guideStep}>1. Open Bybit, go to Buy Crypto, then P2P Trading, then set to Buy.</Text>
           <Text style={styles.guideStep}>2. Select Asset = USDC. If liquidity is low, buy USDT then swap to USDC.</Text>
           <Text style={styles.guideStep}>3. Set Currency = NGN.</Text>
-          <Text style={styles.guideStep}>4. Filter: Verified advertisers, Online only, 500+ orders, 99–100% completion.</Text>
+          <Text style={styles.guideStep}>4. Filter: Verified advertisers, Online only, 500+ orders, 99-100% completion.</Text>
           <Text style={styles.guideStep}>5. Enter your NGN amount and tap Buy.</Text>
-          <Text style={styles.guideStep}>6. Transfer to the seller’s bank, then tap “Payment completed”.</Text>
+          <Text style={styles.guideStep}>6. Transfer to the seller's bank, then tap "Payment completed".</Text>
           <Text style={styles.guideStep}>7. Wait for release (usually under 5 minutes). USDC arrives in Funding Account.</Text>
         </View>
       </ScrollView>
@@ -738,3 +739,4 @@ const createStyles = (colors: AppThemeColors) =>
     fontWeight: "700",
   },
 });
+

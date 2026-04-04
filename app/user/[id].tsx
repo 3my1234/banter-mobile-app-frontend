@@ -30,7 +30,6 @@ export default function UserProfileScreen() {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [profileTab, setProfileTab] = useState<"posts" | "banter">("posts");
   const [profileLocked, setProfileLocked] = useState(false);
 
   const detectMediaType = (uri?: string | null, fallback?: string | null) => {
@@ -159,7 +158,7 @@ export default function UserProfileScreen() {
       <SafeAreaView style={styles.safe}>
         <RNView style={styles.center}>
           <Text style={styles.muted}>This profile is locked.</Text>
-          <Text style={styles.muted}>Follow the user to view their posts.</Text>
+          <Text style={styles.muted}>Follow the user to view their banter.</Text>
           <Pressable
             onPress={toggleFollow}
             style={[styles.followBtn, followLoading && styles.followingBtn]}
@@ -246,49 +245,13 @@ export default function UserProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Activity</Text>
-          <RNView style={styles.profileTabsRow}>
-            <Pressable
-              style={[styles.profileTab, profileTab === "posts" && styles.profileTabActive]}
-              onPress={() => setProfileTab("posts")}
-            >
-              <Text
-                style={[
-                  styles.profileTabText,
-                  profileTab === "posts" && styles.profileTabTextActive,
-                ]}
-              >
-                Posts
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.profileTab, profileTab === "banter" && styles.profileTabActive]}
-              onPress={() => setProfileTab("banter")}
-            >
-              <Text
-                style={[
-                  styles.profileTabText,
-                  profileTab === "banter" && styles.profileTabTextActive,
-                ]}
-              >
-                Banter
-              </Text>
-            </Pressable>
-          </RNView>
+          <Text style={styles.sectionTitle}>Banter</Text>
 
           {(() => {
-            const filtered =
-              profileTab === "posts"
-                ? userPosts.filter((p) => !p.isRoast)
-                : userPosts.filter((p) => p.isRoast);
-            if (filtered.length === 0) {
-              return (
-                <Text style={styles.muted}>
-                  {profileTab === "posts" ? "No posts yet." : "No banter yet."}
-                </Text>
-              );
+            if (userPosts.length === 0) {
+              return <Text style={styles.muted}>No banter yet.</Text>;
             }
-            return filtered.map((post) => {
+            return userPosts.map((post) => {
               const mediaItems = getMediaItems(post.mediaItems, post.mediaUrl, post.mediaType);
               const mediaUrl = mediaItems[0]?.uri;
               const mediaType = mediaItems[0]?.type;

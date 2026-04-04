@@ -135,6 +135,7 @@ const REACTION_POP_SCALE = 1.22;
 const MAX_MEDIA_WARM_IMAGES = 12;
 const INITIAL_AVATAR_WARM_LIMIT = 16;
 const INITIAL_AVATAR_WARM_TIMEOUT_MS = 1200;
+const INITIAL_VIDEO_WARM_RANGE_BYTES = 512 * 1024;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -449,8 +450,7 @@ export default function HomeFeed() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mainTab, setMainTab] = useState<"posts" | "banter">("posts");
-  const [postTab, setPostTab] = useState<"forYou" | "following">("forYou");
+  const mainTab: "banter" = "banter";
   const [banterTab, setBanterTab] = useState<"hot" | "following">("hot");
   const [meAvatar, setMeAvatar] = useState<string | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
@@ -519,6 +519,7 @@ export default function HomeFeed() {
   const pendingCountRef = useRef(0);
   const reactionScaleByKeyRef = useRef<Record<string, Animated.Value>>({});
   const warmedImageUrisRef = useRef<Set<string>>(new Set());
+  const warmedVideoUrisRef = useRef<Set<string>>(new Set());
   const initialAvatarWarmDoneRef = useRef(false);
 
   const commentEmojiOptions = ["😂", "🔥", "❤️", "👏", "😮", "😢"];
@@ -558,6 +559,22 @@ export default function HomeFeed() {
     },
     [warmImageUris]
   );
+  const warmFirstBanterVideo = useCallback((items: Post[]) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const firstVideo = items.find(
+      (item) => item.media?.type === "video" && !!item.media?.uri
+    );
+    const targetUri = firstVideo?.media?.uri || "";
+    if (!targetUri) return;
+    if (warmedVideoUrisRef.current.has(targetUri)) return;
+    warmedVideoUrisRef.current.add(targetUri);
+    void fetch(targetUri, {
+      method: "GET",
+      headers: { Range: `bytes=0-${INITIAL_VIDEO_WARM_RANGE_BYTES - 1}` },
+    })
+      .catch(() => fetch(targetUri, { method: "HEAD" }))
+      .catch(() => undefined);
+  }, []);
   const warmInitialAvatars = useCallback(
     async (rawPosts: any[]) => {
       if (initialAvatarWarmDoneRef.current) return;
@@ -593,6 +610,15 @@ export default function HomeFeed() {
       return mediaFallbackByUri[uri] || uri;
     },
     [mediaFallbackByUri]
+  );
+  const resolveImageUri = useCallback(
+    (uri?: string | null) => {
+      if (!uri) return "";
+      const preferred = getMediaFallbackUrl(uri);
+      if (preferred) return preferred;
+      return resolveMediaUri(uri) || uri;
+    },
+    [resolveMediaUri]
   );
   const activateMediaFallback = useCallback((uri?: string | null) => {
     if (!uri) return;
@@ -765,6 +791,7 @@ export default function HomeFeed() {
     setBanters(mapped);
     loadedFeedKeysRef.current.banter = feed;
     setActiveBanterId(mapped[0]?.id || null);
+    warmFirstBanterVideo(mapped);
     setFollowedUserIds((prev) => ({ ...prev, ...pullFollowingFrom(mapped) }));
   };
 
@@ -791,7 +818,7 @@ export default function HomeFeed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [loadAds]);
+  }, [loadAds, warmFirstBanterVideo]);
 
   const loadMe = useCallback(async () => {
     try {
@@ -806,39 +833,13 @@ export default function HomeFeed() {
   }, []);
 
   React.useEffect(() => {
-    if (mainTab === "posts") {
-      setActiveBanterId(null);
-    }
-    if (
-      mainTab === "posts" &&
-      (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0)
-    ) {
-      loadPosts("posts", postTab);
-    }
-    if (
-      mainTab === "banter" &&
-      (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0)
-    ) {
+    if (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0) {
       loadPosts("banter", banterTab);
     }
-    const idlePrefetch = setTimeout(() => {
-      if (
-        mainTab === "posts" &&
-        (loadedFeedKeysRef.current.banter !== banterTab || banters.length === 0)
-      ) {
-        loadPosts("banter", banterTab);
-      } else if (
-        mainTab === "banter" &&
-        (loadedFeedKeysRef.current.posts !== postTab || posts.length === 0)
-      ) {
-        loadPosts("posts", postTab);
-      }
-    }, 1500);
     if (!meId) {
       loadMe();
     }
-    return () => clearTimeout(idlePrefetch);
-  }, [loadPosts, loadMe, mainTab, postTab, banterTab, posts.length, banters.length, meId]);
+  }, [loadPosts, loadMe, banterTab, banters.length, meId]);
 
   const applyReactionOptimistic = useCallback(
     (
@@ -907,13 +908,9 @@ export default function HomeFeed() {
     const prevCount = pendingCountRef.current;
     pendingCountRef.current = pendingPosts.length;
     if (prevCount > 0 && pendingPosts.length === 0) {
-      if (mainTab === "posts") {
-        loadPosts("posts", postTab, { force: true });
-      } else {
-        loadPosts("banter", banterTab, { force: true });
-      }
+      loadPosts("banter", banterTab, { force: true });
     }
-  }, [pendingPosts, mainTab, postTab, banterTab, loadPosts]);
+  }, [pendingPosts, banterTab, loadPosts]);
 
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -961,34 +958,24 @@ export default function HomeFeed() {
 
   useFocusEffect(
     useCallback(() => {
-      if (mainTab === "posts") {
-        if (!posts.length) {
-          loadPosts("posts", postTab);
-        }
-      } else {
-        if (!banters.length) {
-          loadPosts("banter", banterTab);
-        }
+      if (!banters.length) {
+        loadPosts("banter", banterTab);
       }
       if (!meId) {
         loadMe();
       }
-      if (mainTab === "banter" && lastActiveBanterIdRef.current) {
+      if (lastActiveBanterIdRef.current) {
         setActiveBanterId(lastActiveBanterIdRef.current);
       }
       return () => {
         pauseAllVideos();
       };
-    }, [loadPosts, loadMe, mainTab, postTab, banterTab, pauseAllVideos, posts.length, banters.length, meId])
+    }, [loadPosts, loadMe, banterTab, pauseAllVideos, banters.length, meId])
   );
 
   const handleRefresh = () => {
     setRefreshing(true);
-    if (mainTab === "posts") {
-      loadPosts("posts", postTab, { force: true });
-    } else {
-      loadPosts("banter", banterTab, { force: true });
-    }
+    loadPosts("banter", banterTab, { force: true });
   };
 
   const handleVote = async (postId: string, voteType: "STAY" | "DROP") => {
@@ -1015,6 +1002,13 @@ export default function HomeFeed() {
         );
       }
     } catch (e: any) {
+      const message = String(e?.message || "");
+      if (
+        message.toLowerCase().includes("post not found") ||
+        message.toLowerCase().includes("no longer active")
+      ) {
+        setBanters((prev) => prev.filter((post) => post.id !== postId));
+      }
       showToast(e.message || "Failed to vote");
     }
   };
@@ -1475,11 +1469,7 @@ export default function HomeFeed() {
           )
         );
       }
-      if (mainTab === "posts") {
-        loadPosts("posts", postTab);
-      } else {
-        loadPosts("banter", banterTab);
-      }
+      loadPosts("banter", banterTab);
     } catch (e: any) {
       setError(e.message);
     }
@@ -1724,7 +1714,10 @@ export default function HomeFeed() {
     media: MediaItem,
     allowDownload: boolean
   ) => {
-    const sourceUri = resolveMediaUri(media.uri) || media.uri;
+    const sourceUri =
+      media.type === "image"
+        ? resolveImageUri(media.uri) || media.uri
+        : resolveMediaUri(media.uri) || media.uri;
     const isDownloading = downloadingMediaUri === sourceUri;
     if (media.type === "video") {
       return (
@@ -1787,7 +1780,12 @@ export default function HomeFeed() {
     return (
       <View style={[styles.mediaWrapper, styles.mediaFrame]}>
         <ImageCarousel
-          items={mediaItems.map((item) => ({ uri: resolveMediaUri(item.uri) || item.uri }))}
+          items={mediaItems.map((item) => ({
+            uri:
+              item.type === "image"
+                ? resolveImageUri(item.uri) || item.uri
+                : resolveMediaUri(item.uri) || item.uri,
+          }))}
           height={postMediaHeight}
           onDownload={allowDownload ? downloadMedia : undefined}
           downloadingUri={downloadingMediaUri}
@@ -1889,8 +1887,8 @@ export default function HomeFeed() {
             }}
           >
             {item.avatarUrl ? (
-              <ExpoImage
-                source={{ uri: resolveMediaUri(item.avatarUrl) || item.avatarUrl }}
+                <ExpoImage
+                source={{ uri: resolveImageUri(item.avatarUrl) || item.avatarUrl }}
                 style={styles.avatar}
                 contentFit="cover"
                 transition={180}
@@ -1943,7 +1941,7 @@ export default function HomeFeed() {
                 <View style={styles.repostHeader}>
                   {repostAvatarUrl ? (
                     <ExpoImage
-                      source={{ uri: resolveMediaUri(repostAvatarUrl) || repostAvatarUrl }}
+                      source={{ uri: resolveImageUri(repostAvatarUrl) || repostAvatarUrl }}
                       style={styles.repostAvatar}
                       contentFit="cover"
                       transition={180}
@@ -2078,7 +2076,10 @@ export default function HomeFeed() {
 	    if (item.raw?.isAd) {
 	      const ad = item.raw?.ad as AdCampaign | undefined;
 	      const media = item.media;
-	      const mediaUri = resolveMediaUri(media?.uri) || media?.uri || "";
+	      const mediaUri =
+	        media?.type === "image"
+	          ? resolveImageUri(media?.uri) || media?.uri || ""
+	          : resolveMediaUri(media?.uri) || media?.uri || "";
       const isVideo = media?.type === "video";
       const isSheetOpen = !!banterCommentTarget;
       const ctaLabel = ad?.ctaLabel || "Learn more";
@@ -2165,7 +2166,10 @@ export default function HomeFeed() {
     const loveGlyph = loveActive ? "♥" : "♡";
 	    const dislikeEmoji = "\u{1F44E}";
 	    const media = item.media;
-	    const mediaUri = resolveMediaUri(media?.uri) || media?.uri || "";
+	    const mediaUri =
+	      media?.type === "image"
+	        ? resolveImageUri(media?.uri) || media?.uri || ""
+	        : resolveMediaUri(media?.uri) || media?.uri || "";
 	    const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
     const nativeControlsHeight = isVideo ? 74 : 0;
@@ -2263,8 +2267,8 @@ export default function HomeFeed() {
                 onPress={() => ownerId && router.push(`/user/${ownerId}`)}
               >
                 {item.avatarUrl ? (
-                  <ExpoImage
-                    source={{ uri: resolveMediaUri(item.avatarUrl) || item.avatarUrl }}
+                    <ExpoImage
+                    source={{ uri: resolveImageUri(item.avatarUrl) || item.avatarUrl }}
                     style={styles.banterAvatar}
                     contentFit="cover"
                     transition={180}
@@ -2622,20 +2626,20 @@ export default function HomeFeed() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.container}>
-        <View
-          style={[
-            styles.headerStack,
-            mainTab === "banter" && styles.headerStackOverlay,
-          ]}
-          pointerEvents="box-none"
-        >
-	          <View
-	            style={[
-	              styles.topBar,
-	              mainTab === "banter" && styles.topBarOverlay,
-	            ]}
-	          >
-	            <Pressable onPress={() => router.push("/(tabs)/profile")}>
+	        <View
+	          style={[
+	            styles.headerStack,
+	            mainTab === "banter" && styles.headerStackOverlay,
+	          ]}
+	          pointerEvents="box-none"
+	        >
+		          <View
+		            style={[
+		              styles.topBar,
+		              mainTab === "banter" && styles.topBarOverlay,
+		            ]}
+		          >
+		            <Pressable onPress={() => router.push("/(tabs)/profile")}>
               {meAvatar ? (
                 <ExpoImage
                   source={{ uri: meAvatar }}
@@ -2647,54 +2651,17 @@ export default function HomeFeed() {
               ) : (
                 <View style={styles.avatarSmall} />
               )}
-            </Pressable>
-	            <View
-	              style={[
-	                styles.mainTabs,
-	                mainTab === "banter" && styles.tabsOverlay,
-	              ]}
-	            >
-              <Pressable
-                hitSlop={14}
-                onPress={() => {
-                  pauseAllVideos();
-                  setActiveBanterId(null);
-                  setMainTab("posts");
-                }}
-              >
-                <Text
-                  style={[
-                    styles.mainTab,
-                    mainTab === "posts" && styles.mainTabActive,
-                    mainTab === "banter" && styles.tabOverlayText,
-                  ]}
-                >
-                  Posts
-                </Text>
-              </Pressable>
-              <Pressable
-                hitSlop={14}
-                onPress={() => {
-                  pauseAllVideos();
-                  setMainTab("banter");
-                }}
-              >
-                <Text
-                  style={[
-                    styles.mainTab,
-                    mainTab === "banter" && styles.mainTabActive,
-                    mainTab === "banter" && styles.tabOverlayText,
-                  ]}
-                >
-                  Banter
-	                </Text>
-	              </Pressable>
-	            </View>
-		            <View style={styles.topBarActionSlot}>
-		              {mainTab === "banter" && activeOwnedBanter ? (
-		                <Pressable
-		                  onPress={() => deletePost(activeOwnedBanter.id, "banter")}
-		                  hitSlop={12}
+		            </Pressable>
+		            <View style={[styles.mainTabs, styles.tabsOverlay]}>
+		              <Text style={[styles.mainTab, styles.mainTabActive, styles.tabOverlayText]}>
+		                Banter
+		              </Text>
+		            </View>
+			            <View style={styles.topBarActionSlot}>
+			              {mainTab === "banter" && activeOwnedBanter ? (
+			                <Pressable
+			                  onPress={() => deletePost(activeOwnedBanter.id, "banter")}
+			                  hitSlop={12}
 		                  style={styles.topBarDeleteButton}
 		                  disabled={deletingPostId === activeOwnedBanter.id}
 		                >
@@ -2710,92 +2677,56 @@ export default function HomeFeed() {
 	            </View>
 	          </View>
 
-          <View
-            style={[
-              styles.subTabs,
-              mainTab === "banter" && styles.tabsOverlay,
-            ]}
-          >
-            {mainTab === "posts" ? (
-              <>
-                <Pressable onPress={() => setPostTab("forYou")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      postTab === "forYou" && styles.tabActive,
-                    ]}
-                  >
-                    For you
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => setPostTab("following")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      postTab === "following" && styles.tabActive,
-                    ]}
-                  >
-                    Following
-                  </Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Pressable onPress={() => setBanterTab("hot")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      banterTab === "hot" && styles.tabActive,
-                      styles.tabOverlayText,
-                    ]}
-                  >
-                    Trending
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => setBanterTab("following")}>
-                  <Text
-                    style={[
-                      styles.tab,
-                      banterTab === "following" && styles.tabActive,
-                      styles.tabOverlayText,
-                    ]}
-                  >
-                    Following
-                  </Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        </View>
+	          <View
+	            style={[
+	              styles.subTabs,
+	              mainTab === "banter" && styles.tabsOverlay,
+	            ]}
+	          >
+	            <Pressable onPress={() => setBanterTab("hot")}>
+	              <Text
+	                style={[
+	                  styles.tab,
+	                  banterTab === "hot" && styles.tabActive,
+	                  styles.tabOverlayText,
+	                ]}
+	              >
+	                Trending
+	              </Text>
+	            </Pressable>
+	            <Pressable onPress={() => setBanterTab("following")}>
+	              <Text
+	                style={[
+	                  styles.tab,
+	                  banterTab === "following" && styles.tabActive,
+	                  styles.tabOverlayText,
+	                ]}
+	              >
+	                Following
+	              </Text>
+	            </Pressable>
+	          </View>
+	        </View>
 
         {error ? (
           <View style={styles.errorToast}>
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
-        {loading ? (
-          <CenteredHeartbeatLoader
-            visible
-            text={mainTab === "posts" ? "Loading posts..." : "Loading banter..."}
-          />
-        ) : null}
+	        {loading ? (
+	          <CenteredHeartbeatLoader
+	            visible
+	            text="Loading banter..."
+	          />
+	        ) : null}
 
-        <View style={styles.feedViewport} onLayout={handleFeedViewportLayout}>
-          <PostsFeedPane
-            visible={mainTab === "posts"}
-            visiblePosts={visiblePosts}
-            refreshing={refreshing && mainTab === "posts"}
-            handleRefresh={handleRefresh}
-            renderPostItem={renderPostItem}
-            windowHeight={windowHeight}
-          />
-
-          <BanterFeedPane
-            visible={mainTab === "banter"}
-            visibleBanters={visibleBanters}
-            renderBanterItem={renderBanterItem}
-            banterHeight={banterHeight}
-            refreshing={refreshing && mainTab === "banter"}
+	        <View style={styles.feedViewport} onLayout={handleFeedViewportLayout}>
+	          <BanterFeedPane
+	            visible={mainTab === "banter"}
+	            visibleBanters={visibleBanters}
+	            renderBanterItem={renderBanterItem}
+	            banterHeight={banterHeight}
+	            refreshing={refreshing && mainTab === "banter"}
             handleRefresh={handleRefresh}
             handleBanterScroll={handleBanterScroll}
             isSeeking={isSeeking}
@@ -2808,17 +2739,15 @@ export default function HomeFeed() {
               if (next?.id) setActiveBanterId(next.id);
             }}
             windowHeight={windowHeight}
-          />
-        </View>
+	          />
+	        </View>
 
-        {mainTab === "posts" ? (
-          <Pressable
-            style={styles.fab}
-            onPress={() => router.push("/(tabs)/compose")}
-          >
-            <FontAwesome name="plus" size={20} color="#0d0d0d" />
-          </Pressable>
-        ) : null}
+	        <Pressable
+	          style={styles.fab}
+	          onPress={() => router.push("/(tabs)/compose")}
+	        >
+	          <FontAwesome name="plus" size={20} color="#0d0d0d" />
+	        </Pressable>
 
         {showRepostModal && repostTarget ? (
           <Modal transparent animationType="fade" visible>
