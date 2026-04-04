@@ -33,9 +33,9 @@ const WALLET_TTL_MS = 20_000;
 const ROLLEY_STAKE_TTL_MS = 20_000;
 const BOOTSTRAP_COOLDOWN_MS = 8_000;
 const MAX_WARM_IMAGES = 8;
-const MAX_WARM_VIDEOS = 2;
+const MAX_WARM_VIDEOS = 1;
 const MAX_WARM_POSTS = 120;
-const VIDEO_WARM_RANGE_BYTES = 512 * 1024;
+const VIDEO_WARM_RANGE_BYTES = 256 * 1024;
 const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i;
 
 const ROLLEY_SERVICE_URL =

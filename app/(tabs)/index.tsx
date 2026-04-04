@@ -135,8 +135,8 @@ const REACTION_POP_SCALE = 1.22;
 const MAX_MEDIA_WARM_IMAGES = 12;
 const INITIAL_AVATAR_WARM_LIMIT = 16;
 const INITIAL_AVATAR_WARM_TIMEOUT_MS = 1200;
-const INITIAL_VIDEO_WARM_RANGE_BYTES = 512 * 1024;
-const INITIAL_VIDEO_WARM_COUNT = 3;
+const INITIAL_VIDEO_WARM_RANGE_BYTES = 256 * 1024;
+const INITIAL_VIDEO_WARM_COUNT = 1;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -1753,7 +1753,7 @@ export default function HomeFeed() {
                     style={styles.mediaFill}
                     resizeMode={ResizeMode.COVER}
                     shouldPlay={false}
-                    useNativeControls={false}
+                    useNativeControls
                     onError={() => activateMediaFallback(media.uri)}
                     ref={(ref) => {
                       if (ref) {
@@ -2127,7 +2127,7 @@ export default function HomeFeed() {
                   resizeMode={ResizeMode.COVER}
                   shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
                   isLooping
-                  useNativeControls={false}
+                  useNativeControls
                   isMuted={false}
                   volume={1.0}
                   onError={() => activateMediaFallback(media?.uri)}
@@ -2244,7 +2244,7 @@ export default function HomeFeed() {
                 resizeMode={ResizeMode.COVER}
                 shouldPlay={activeBanterId === item.id && mainTab === "banter" && !isSheetOpen}
                 isLooping
-                useNativeControls={false}
+                useNativeControls
                 isMuted={false}
                 volume={1.0}
                 onError={() => activateMediaFallback(media?.uri)}
