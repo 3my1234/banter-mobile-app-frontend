@@ -2198,8 +2198,8 @@ export default function HomeFeed() {
 	        : resolveMediaUri(media?.uri) || media?.uri || "";
 	    const isVideo = media?.type === "video";
     const isRepost = !!item.repostOf;
-    const nativeControlsHeight = isVideo ? 74 : 0;
-    const stayDropBottom = 10 + nativeControlsHeight;
+    const nativeControlsHeight = isVideo ? (96 + Math.max(insets.bottom, 12)) : 0;
+    const stayDropBottom = 12 + nativeControlsHeight;
     const sideActionsBottom = stayDropBottom + 82;
     const metaBottom = stayDropBottom + 104;
     const banterActionIconSize = 34;
