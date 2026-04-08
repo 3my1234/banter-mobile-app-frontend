@@ -299,6 +299,7 @@ export async function fetchWalletOverview(options?: {
   refresh?: boolean;
   limit?: number;
   page?: number;
+  timeoutMs?: number;
 }) {
   await ensureActiveToken();
 
@@ -306,6 +307,7 @@ export async function fetchWalletOverview(options?: {
   const refresh = options?.refresh === true;
   const limit = options?.limit ?? 20;
   const page = options?.page ?? 1;
+  const timeoutMs = options?.timeoutMs ?? 30_000;
 
   if (!force && !refresh && walletCache && walletCache.expiresAt > Date.now()) {
     return clone(walletCache.data);
@@ -320,7 +322,7 @@ export async function fetchWalletOverview(options?: {
     : `/wallet/overview?limit=${limit}&page=${page}`;
 
   const requestPromise = (async () => {
-    const data = await apiFetch(path);
+    const data = await apiFetch(path, { timeoutMs });
     const snapshot: WalletOverviewSnapshot = {
       balances: data?.balances || null,
       wallets: Array.isArray(data?.wallets) ? data.wallets : [],

@@ -38,7 +38,7 @@ type Session = { token: string; email?: string };
 const LOGOUT_MARKER_KEY = "banter_logged_out";
 const PROFILE_CACHE_PREFIX = "banter_profile_cache_v1:";
 const PROFILE_CACHE_LAST_KEY = `${PROFILE_CACHE_PREFIX}last`;
-const PROFILE_REQUEST_TIMEOUT_MS = 12_000;
+const PROFILE_REQUEST_TIMEOUT_MS = 30_000;
 
 type ProfileCachePayload = {
   userId?: string | null;
@@ -465,7 +465,7 @@ export default function ProfileScreen() {
       setUserPostsLoading(true);
       const loadingGuard = setTimeout(() => {
         setUserPostsLoading(false);
-      }, 12000);
+      }, PROFILE_REQUEST_TIMEOUT_MS);
       try {
         const data = await withTimeout(
           apiFetch(`/users/${userId}/posts?page=1&limit=30`)

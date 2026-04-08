@@ -4,7 +4,7 @@ const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://sportbanter.online/api";
 const DEBUG_AUTH = process.env.EXPO_PUBLIC_DEBUG_AUTH === "1";
 const API_FETCH_TIMEOUT_MS = Number.parseInt(
-  process.env.EXPO_PUBLIC_API_TIMEOUT_MS || "12000",
+  process.env.EXPO_PUBLIC_API_TIMEOUT_MS || "20000",
   10
 );
 const API_GET_RETRY_COUNT = Number.parseInt(
@@ -77,9 +77,9 @@ const isLikelyRetryableNetworkError = (error: unknown) => {
 const isRetryableHttpStatus = (status?: number) =>
   status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 
-const fetchWithTimeout = async (url: string, init: RequestInit) => {
+const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number) => {
   const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       ...init,
@@ -87,12 +87,16 @@ const fetchWithTimeout = async (url: string, init: RequestInit) => {
     });
   } catch (error: any) {
     if (error?.name === "AbortError") {
-      throw new Error(`Request timeout after ${API_FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
     }
     throw error;
   } finally {
     clearTimeout(timeoutHandle);
   }
+};
+
+type ApiFetchOptions = RequestInit & {
+  timeoutMs?: number;
 };
 
 export async function getSession(): Promise<Session | null> {
@@ -112,11 +116,12 @@ export function invalidateCurrentUserCache() {
 
 export async function apiFetch(
   path: string,
-  options: RequestInit = {},
+  options: ApiFetchOptions = {},
   requireAuth: boolean = true
 ) {
-  const method = (options.method || "GET").toUpperCase();
-  const headers = new Headers(options.headers || {});
+  const { timeoutMs = API_FETCH_TIMEOUT_MS, ...requestOptions } = options;
+  const method = (requestOptions.method || "GET").toUpperCase();
+  const headers = new Headers(requestOptions.headers || {});
   headers.set("Content-Type", "application/json");
   let authToken = "";
 
@@ -155,9 +160,9 @@ export async function apiFetch(
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         const res = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
-          ...options,
+          ...requestOptions,
           headers,
-        });
+        }, timeoutMs);
 
         if (!res.ok) {
           const contentType = res.headers.get("content-type") || "";
